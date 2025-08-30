@@ -413,7 +413,7 @@ jobs:
             "$SF_USER@frs.sourceforge.net:/home/frs/project/wolfos/Cybr-v${OSVER}.iso"
 
       - name: Upload Build Artifact
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         if: always()
         with:
           name: cybr-iso
