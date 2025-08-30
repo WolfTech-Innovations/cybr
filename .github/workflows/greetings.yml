@@ -1,4 +1,4 @@
-name: Build Cybr ISO (New)
+name: Build Cybr ISO
 
 on:
   workflow_dispatch:
@@ -40,34 +40,29 @@ jobs:
         run: |
           git clone https://gitlab.com/kalilinux/build-scripts/live-build-config.git
           cd live-build-config
+          
+          # Use the existing auto/config as base and modify it
+          if [ -f auto/config ]; then
+            cp auto/config auto/config.orig
+          fi
 
       - name: Configure Build Settings
         run: |
           cd live-build-config
-          cat > auto/config << 'EOF'
-          #!/bin/bash
-          lb config noauto 
-            --iso-application "Cybr Security OS" \
-            --iso-volume "CYBR" \
-            --iso-publisher "WolfTech Innovations" \
-            --bootappend-live "boot=live components hostname=cybr username=cybr" \
-            --linux-flavours "amd64" \
-            --debian-installer false \
-            --archive-areas "main contrib non-free non-free-firmware" \
-            --backports false \
-            --security true \
-            --apt-indices false \
-            --firmware-chroot true \
-            --firmware-binary true \
-            --memtest memtest86+ \
-            --bootloader grub-efi \
-            --grub-splash false \
-            --hdd-label "CYBR" \
-            --compression xz \
-            --zsync false \
-            "${@}"
-          EOF
+          
+          # Modify the existing auto/config from Kali
+          cat auto/config.orig | sed \
+            -e 's/--bootappend-live "[^"]*"/--bootappend-live "boot=live components hostname=cybr username=cybr"/' \
+            -e 's/--iso-application "[^"]*"/--iso-application "Cybr Security OS"/' \
+            -e 's/--iso-volume "[^"]*"/--iso-volume "CYBR"/' \
+            -e 's/--iso-publisher "[^"]*"/--iso-publisher "WolfTech Innovations"/' \
+            > auto/config
+          
+          # Ensure it's executable
           chmod +x auto/config
+          
+          echo "=== Modified auto/config ==="
+          cat auto/config
 
       - name: Setup Package Lists
         run: |
@@ -228,6 +223,7 @@ jobs:
           
           import subprocess
           import sys
+          import os
           import tkinter as tk
           from tkinter import ttk, messagebox, scrolledtext
           import threading
@@ -535,39 +531,55 @@ jobs:
         run: |
           cd live-build-config
           
+          # Clean any previous builds
+          lb clean --purge || true
+          
           # Configure the build
-          lb config
+          ./auto/config
           
-          # Build the ISO
-          lb build 2>&1 | tee build.log
+          # Build the ISO using Kali's build script
+          ./build.sh --variant minimal --verbose 2>&1 | tee build.log
           
-          # Check if build was successful
-          if [ ! -f live-image-amd64.hybrid.iso ]; then
-              echo "Build failed! Check build.log for details."
+          # Find the generated ISO
+          ISO_FILE=$(find . -name "*.iso" -type f | head -n1)
+          if [ -z "$ISO_FILE" ]; then
+              echo "Build failed! No ISO file found."
+              echo "=== Build log tail ==="
               tail -n 100 build.log
+              echo "=== Directory listing ==="
+              find . -name "*.iso" -o -name "*live*" | head -20
               exit 1
           fi
+          
+          echo "Found ISO: $ISO_FILE"
 
       - name: Rename and Verify ISO
         run: |
           cd live-build-config
-          if [ -f live-image-amd64.hybrid.iso ]; then
-              mv live-image-amd64.hybrid.iso ../cybr-v2.iso
+          
+          # Find the generated ISO file
+          ISO_FILE=$(find . -name "*.iso" -type f | head -n1)
+          if [ -n "$ISO_FILE" ]; then
+              echo "Moving $ISO_FILE to ../cybr-v2.iso"
+              mv "$ISO_FILE" ../cybr-v2.iso
               cd ..
-              ls -lh cybr-v2.iso
               
-              # Get file info
+              # Verify the ISO
+              ls -lh cybr-v2.iso
               file cybr-v2.iso
               
               # Calculate checksums
               sha256sum cybr-v2.iso > cybr-v2.iso.sha256
               md5sum cybr-v2.iso > cybr-v2.iso.md5
               
-              echo "ISO built successfully:"
-              cat cybr-v2.iso.sha256
-              cat cybr-v2.iso.md5
+              echo "=== ISO Information ==="
+              echo "Size: $(stat -c%s cybr-v2.iso) bytes"
+              echo "SHA256: $(cat cybr-v2.iso.sha256)"
+              echo "MD5: $(cat cybr-v2.iso.md5)"
           else
               echo "ISO file not found!"
+              echo "=== Available files ==="
+              find live-build-config -name "*" -type f | grep -E '\.(iso|img)$' | head -10
               exit 1
           fi
 
