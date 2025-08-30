@@ -138,6 +138,7 @@ jobs:
               apt update && \
               apt install -y git curl debootstrap syslinux-utils isolinux xorriso squashfs-tools mtools rsync live-build && \
               bash ./build.sh --variant minimal --verbose
+              cat /build/build.log
             "
 
       - name: Rename and Verify ISO
