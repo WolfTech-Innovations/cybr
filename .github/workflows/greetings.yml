@@ -33,7 +33,7 @@ jobs:
         run: |
           cd live-build-config
           mkdir -p config/package-lists
-          echo "firefox-esr python3 python3-tk policykit-1" | tee config/package-lists/cybr.list.chroot
+          echo "firefox-esr python3 python3-tk polkitd" | tee config/package-lists/cybr.list.chroot
 
       - name: Create Branding + GUI Installer Hook
         run: |
