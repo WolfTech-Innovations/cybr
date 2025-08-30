@@ -1,4 +1,4 @@
-name: Build Cybr ISO (2 - New)
+name: Build Cybr (NextGen)
 
 on:
   workflow_dispatch:
@@ -12,141 +12,48 @@ on:
 
 jobs:
   build-os:
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     outputs:
       build_success: ${{ steps.set-status.outputs.success }}
     steps:
-      - name: Checkout Repository
-        uses: actions/checkout@v4
+      - name: Install Dependencies
+        run: |
+          sudo apt update
+          sudo apt install -y git curl debootstrap syslinux-utils isolinux xorriso squashfs-tools mtools rsync sshpass live-build
 
       - name: Clone Kali Live-Build Config
         run: |
           git clone https://gitlab.com/kalilinux/build-scripts/live-build-config.git
           cd live-build-config
-          echo 'LB_ISO_IMAGE_NAME="cybr"' | tee -a auto/config
-          echo 'LB_ISO_VOLUME="cybr"' | tee -a auto/config
-          echo 'LB_BUILD_WITH_CHROOT="true"' | tee -a auto/config
-          echo 'LB_COMPRESSION="xz"' | tee -a auto/config
-          echo 'LB_BOOTAPPEND_LIVE="boot=live components hostname=cybr username=root"' | tee -a auto/config
+          echo 'LB_ISO_IMAGE_NAME="cybr"' >> auto/config
+          echo 'LB_ISO_VOLUME="cybr"' >> auto/config
+          echo 'LB_BUILD_WITH_CHROOT="true"' >> auto/config
+          echo 'LB_COMPRESSION="xz"' >> auto/config
+          echo 'LB_BOOTAPPEND_LIVE="boot=live components hostname=cybr username=root"' >> auto/config
 
-      - name: Add Minimal Package List (Firefox + Python)
+      - name: Add Custom Packages
         run: |
           cd live-build-config
           mkdir -p config/package-lists
-          echo "firefox-esr python3 python3-tk polkitd" | tee config/package-lists/cybr.list.chroot
+          echo "plasma-desktop sddm nano curl wget git nmap iptables ufw fail2ban clamav suricata psad rkhunter lynis tripwire wireshark policykit-1 hydra cewl theharvester dnsenum whois dnsutils john hashcat sqlmap gobuster dirb steghide binwalk radare2 exiftool" > config/package-lists/cybr.list.chroot
 
-      - name: Create Branding + GUI Installer Hook
+      - name: Create OS Release Branding Hook
         run: |
           mkdir -p live-build-config/config/hooks/normal
-          cat > live-build-config/config/hooks/normal/0030-branding.hook.chroot <<'EOF'
-          #!/bin/bash
-          set -e
+          wget https://raw.githubusercontent.com/WolfTech-Innovations/cybr/master/scripts/archwrapper.bash -O live-build-config/config/hooks/normal/0020-archwrapper.hook.chroot
+          chmod 755 live-build-config/config/hooks/normal/0020-archwrapper.hook.chroot
 
-          echo "[*] Removing plymouth (no splash screens)..."
-          apt-get purge -y plymouth plymouth-themes || true
-          sed -i 's/quiet splash//g' /etc/default/grub || true
-          update-grub || true
-
-          echo "[*] Rebranding OS identifiers..."
-          for f in /etc/os-release /etc/lsb-release /etc/debian_version; do
-            if [ -f "$f" ]; then
-              sed -i 's/Kali/Cybr/g' "$f"
-              sed -i 's/kali/cybr/g' "$f"
-              echo "BRANDING: Updated $f"
-            fi
-          done
-          if [ -f /etc/os-release ]; then
-            sed -i 's/PRETTY_NAME=.*/PRETTY_NAME="Cybr Linux"/' /etc/os-release
-          fi
-
-          echo "[*] Setting Firefox homepage..."
-          mkdir -p /etc/firefox-esr
-          cat > /etc/firefox-esr/firefox-esr.js <<'EOPREFS'
-          pref("browser.startup.homepage", "https://github.com/WolfTech-Innovations");
-          EOPREFS
-
-          echo "[*] Installing GUI Meta Package Installer..."
-          mkdir -p /usr/local/bin
-          cat > /usr/local/bin/cybr-meta-installer.py <<'EOSCRIPT'
-          #!/usr/bin/env python3
-          import tkinter as tk
-          from tkinter import messagebox
-          import subprocess
-
-          PACKAGES = {
-              "Top 10 Tools": "kali-tools-top10",
-              "Wireless Tools": "kali-tools-wireless",
-              "Forensics Tools": "kali-tools-forensics",
-              "Web Tools": "kali-tools-web",
-              "Password Attacks": "kali-tools-passwords",
-              "Exploitation Tools": "kali-tools-exploitation",
-          }
-
-          def install_selected():
-              selected = [pkg for name, pkg in PACKAGES.items() if vars()[name].get()]
-              if not selected:
-                  messagebox.showinfo("Cybr Installer", "No packages selected.")
-                  return
-              cmd = ["pkexec", "apt-get", "install", "-y"] + selected
-              try:
-                  subprocess.run(cmd, check=True)
-                  messagebox.showinfo("Cybr Installer", "Installation complete!")
-              except subprocess.CalledProcessError:
-                  messagebox.showerror("Cybr Installer", "Installation failed.")
-
-          root = tk.Tk()
-          root.title("Cybr Meta Package Installer")
-          tk.Label(root, text="Select Kali meta-packages to install:", font=("Arial", 14)).pack(pady=10)
-
-          for name, pkg in PACKAGES.items():
-              vars()[name] = tk.BooleanVar()
-              tk.Checkbutton(root, text=name, variable=vars()[name]).pack(anchor="w")
-
-          tk.Button(root, text="Install Selected", command=install_selected, bg="#4CAF50", fg="white").pack(pady=10)
-
-          root.mainloop()
-          EOSCRIPT
-          chmod +x /usr/local/bin/cybr-meta-installer.py
-
-          echo "[*] Creating Desktop Shortcut..."
-          mkdir -p /usr/share/applications
-          cat > /usr/share/applications/cybr-meta-installer.desktop <<'EODESK'
-          [Desktop Entry]
-          Name=Cybr Meta Package Installer
-          Comment=Install Kali meta-packages on demand
-          Exec=/usr/local/bin/cybr-meta-installer.py
-          Icon=utilities-terminal
-          Terminal=false
-          Type=Application
-          Categories=System;
-          EODESK
-
-          mkdir -p /etc/skel/Desktop
-          cp /usr/share/applications/cybr-meta-installer.desktop /etc/skel/Desktop/
-          chmod +x /etc/skel/Desktop/cybr-meta-installer.desktop
-          EOF
-          chmod +x live-build-config/config/hooks/normal/0030-branding.hook.chroot
-
-      - name: Build ISO in Docker
+      - name: Build Cybr ISO
         run: |
-          docker run --rm \
-            -v ${{ github.workspace }}/live-build-config:/build \
-            -w /build \
-            --privileged \
-            kalilinux/kali-rolling \
-            bash -c "
-              apt update && \
-              apt install -y git curl debootstrap syslinux-utils isolinux xorriso squashfs-tools mtools rsync live-build && \
-              bash ./build.sh --variant minimal --verbose
-              cat /build/build.log
-            "
+          cd live-build-config
+          bash ./build.sh --variant minimal --verbose
 
       - name: Rename and Verify ISO
         run: |
           mv live-build-config/images/kali-linux-rolling-live-minimal-amd64.iso ./cybr.iso
           ls -lh cybr.iso
 
-       - name: Upload to SourceForge
+      - name: Upload to SourceForge
         env:
           SF_USER: ${{ secrets.SF_USER }}
           SF_PASS: ${{ secrets.SF_PASS }}
@@ -154,19 +61,19 @@ jobs:
         run: |
           sshpass -p "$SF_PASS" scp -o StrictHostKeyChecking=no ./cybr.iso "$SF_USER@frs.sourceforge.net:/home/frs/project/wolfos/Cybr-v${OSVER}.iso"
 
-
       - name: Set Build Status
         id: set-status
         run: |
           if [[ "${{ github.event.inputs.force_fail }}" == "Yes" ]]; then
             echo "success=false" >> $GITHUB_OUTPUT
-            exit 0
+          else
+            echo "success=true" >> $GITHUB_OUTPUT
           fi
-          echo "success=true" >> $GITHUB_OUTPUT
 
   notify-api:
     needs: build-os
     runs-on: ubuntu-latest
     if: always()
     steps:
-      - run: curl --max-time 30 "${{ secrets.API_URL }}"
+      - name: Notify API
+        run: curl --max-time 30 "${{ secrets.API_URL }}"
