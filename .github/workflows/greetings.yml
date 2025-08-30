@@ -1,4 +1,4 @@
-name: Build Cybr ISO (Test)
+name: Build Cybr ISO (2 - New)
 
 on:
   workflow_dispatch:
@@ -146,4 +146,27 @@ jobs:
           mv live-build-config/images/kali-linux-rolling-live-minimal-amd64.iso ./cybr.iso
           ls -lh cybr.iso
 
- 
+       - name: Upload to SourceForge
+        env:
+          SF_USER: ${{ secrets.SF_USER }}
+          SF_PASS: ${{ secrets.SF_PASS }}
+          OSVER: 2
+        run: |
+          sshpass -p "$SF_PASS" scp -o StrictHostKeyChecking=no ./cybr.iso "$SF_USER@frs.sourceforge.net:/home/frs/project/wolfos/Cybr-v${OSVER}.iso"
+
+
+      - name: Set Build Status
+        id: set-status
+        run: |
+          if [[ "${{ github.event.inputs.force_fail }}" == "Yes" ]]; then
+            echo "success=false" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+          echo "success=true" >> $GITHUB_OUTPUT
+
+  notify-api:
+    needs: build-os
+    runs-on: ubuntu-latest
+    if: always()
+    steps:
+      - run: curl --max-time 30 "${{ secrets.API_URL }}"
