@@ -53,8 +53,7 @@ jobs:
 
             # Add branding hook
             mkdir -p config/hooks/normal &&
-            wget https://raw.githubusercontent.com/WolfTech-Innovations/cybr/master/scripts/archwrapper.bash -O config/hooks/normal/0020-archwrapper.hook.chroot &&
-            chmod 755 config/hooks/normal/0020-archwrapper.hook.chroot &&
+     
 
             # Add rebrand + remove splash hook
             cat > config/hooks/normal/0030-rebrand-remove-splash.hook.chroot << 'HOOK_EOF'
