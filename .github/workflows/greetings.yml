@@ -1,4 +1,4 @@
-name: Build Cybr ISO
+name: Build Cybr ISO (New)
 
 on:
   workflow_dispatch:
