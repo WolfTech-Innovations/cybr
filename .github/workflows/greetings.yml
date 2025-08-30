@@ -16,42 +16,69 @@ jobs:
     outputs:
       build_success: ${{ steps.set-status.outputs.success }}
     steps:
-      - name: Install Dependencies
-        run: |
-          sudo apt update
-          sudo apt install -y git curl debootstrap syslinux-utils isolinux xorriso squashfs-tools mtools rsync sshpass live-build
+      - name: Checkout Repo
+        uses: actions/checkout@v3
 
-      - name: Clone Kali Live-Build Config
+      - name: Build in Docker
         run: |
-          git clone https://gitlab.com/kalilinux/build-scripts/live-build-config.git
-          cd live-build-config
-          echo 'LB_ISO_IMAGE_NAME="cybr"' >> auto/config
-          echo 'LB_ISO_VOLUME="cybr"' >> auto/config
-          echo 'LB_BUILD_WITH_CHROOT="true"' >> auto/config
-          echo 'LB_COMPRESSION="xz"' >> auto/config
-          echo 'LB_BOOTAPPEND_LIVE="boot=live components hostname=cybr username=root"' >> auto/config
+          # Create Dockerfile
+          cat > Dockerfile << 'EOF'
+          FROM kalilinux/kali-rolling
 
-      - name: Add Custom Packages
-        run: |
-          cd live-build-config
-          mkdir -p config/package-lists
-          echo "plasma-desktop sddm nano curl wget git nmap iptables ufw fail2ban clamav suricata psad rkhunter lynis tripwire wireshark policykit-1 hydra cewl theharvester dnsenum whois dnsutils john hashcat sqlmap gobuster dirb steghide binwalk radare2 exiftool" > config/package-lists/cybr.list.chroot
+          RUN apt update && apt install -y \
+              git curl debootstrap syslinux-utils isolinux xorriso \
+              squashfs-tools mtools rsync sshpass live-build wget nano sed
 
-      - name: Create OS Release Branding Hook
-        run: |
-          mkdir -p live-build-config/config/hooks/normal
-          wget https://raw.githubusercontent.com/WolfTech-Innovations/cybr/master/scripts/archwrapper.bash -O live-build-config/config/hooks/normal/0020-archwrapper.hook.chroot
-          chmod 755 live-build-config/config/hooks/normal/0020-archwrapper.hook.chroot
+          WORKDIR /build
+          EOF
 
-      - name: Build Cybr ISO
-        run: |
-          cd live-build-config
-          bash ./build.sh --variant minimal --verbose
+          # Build Docker image
+          docker build -t cybr-builder .
 
-      - name: Rename and Verify ISO
-        run: |
-          mv live-build-config/images/kali-linux-rolling-live-minimal-amd64.iso ./cybr.iso
-          ls -lh cybr.iso
+          # Run build inside Docker
+          docker run --rm -v $PWD:/build cybr-builder bash -c "
+            git clone https://gitlab.com/kalilinux/build-scripts/live-build-config.git &&
+            cd live-build-config &&
+
+            # Configure ISO build
+            echo 'LB_ISO_IMAGE_NAME=\"cybr\"' >> auto/config &&
+            echo 'LB_ISO_VOLUME=\"cybr\"' >> auto/config &&
+            echo 'LB_BUILD_WITH_CHROOT=\"true\"' >> auto/config &&
+            echo 'LB_COMPRESSION=\"xz\"' >> auto/config &&
+            echo 'LB_BOOTAPPEND_LIVE=\"boot=live components hostname=cybr username=root\"' >> auto/config &&
+
+            # Add custom packages
+            mkdir -p config/package-lists &&
+            echo 'plasma-desktop sddm nano curl wget git nmap iptables ufw fail2ban clamav suricata psad rkhunter lynis tripwire wireshark policykit-1 hydra cewl theharvester dnsenum whois dnsutils john hashcat sqlmap gobuster dirb steghide binwalk radare2 exiftool' > config/package-lists/cybr.list.chroot &&
+
+            # Add branding hook
+            mkdir -p config/hooks/normal &&
+            wget https://raw.githubusercontent.com/WolfTech-Innovations/cybr/master/scripts/archwrapper.bash -O config/hooks/normal/0020-archwrapper.hook.chroot &&
+            chmod 755 config/hooks/normal/0020-archwrapper.hook.chroot &&
+
+            # Add rebrand + remove splash hook
+            cat > config/hooks/normal/0030-rebrand-remove-splash.hook.chroot << 'HOOK_EOF'
+            #!/bin/bash
+            # Rebrand OS
+            sed -i 's/Kali/Cybr/g' /etc/os-release
+            sed -i 's/Kali/Cybr/g' /etc/issue
+
+            # Remove boot splash (Plymouth)
+            apt purge -y plymouth
+            sed -i '/splash/d' /etc/default/grub
+            update-grub || true
+            HOOK_EOF
+            chmod 755 config/hooks/normal/0030-rebrand-remove-splash.hook.chroot &&
+
+            # Build the ISO
+            bash ./build.sh --variant minimal --verbose &&
+
+            # Move ISO to host
+            mv images/kali-linux-rolling-live-minimal-amd64.iso /build/cybr.iso
+          "
+
+      - name: List ISO
+        run: ls -lh cybr.iso
 
       - name: Upload to SourceForge
         env:
@@ -68,7 +95,6 @@ jobs:
             echo "success=false" >> $GITHUB_OUTPUT
           else
             echo "success=true" >> $GITHUB_OUTPUT
-          fi
 
   notify-api:
     needs: build-os
