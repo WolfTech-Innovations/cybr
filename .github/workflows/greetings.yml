@@ -327,37 +327,7 @@ jobs:
           BRANDING
           
           chmod +x config/hooks/normal/0010-cybr-branding.hook.chroot
-          
-          # Create GRUB customization hook
-          cat > config/hooks/normal/0020-grub-customization.hook.chroot << 'GRUB'
-          #!/bin/bash
-          set -e
-          
-          echo "Customizing GRUB..."
-          
-          # Create custom GRUB config
-          mkdir -p /etc/default/grub.d
-          cat > /etc/default/grub.d/cybr.cfg << 'GRUBCFG'
-          GRUB_DISTRIBUTOR="Cybr"
-          GRUB_DEFAULT=0
-          GRUB_TIMEOUT=5
-          GRUB_CMDLINE_LINUX_DEFAULT="quiet splash"
-          GRUB_INIT_TUNE="480 440 1"
-          GRUBCFG
-          
-          # Custom GRUB theme colors
-          cat > /boot/grub/custom.cfg << 'GRUBTHEME'
-          set color_normal=light-cyan/black
-          set color_highlight=black/light-cyan
-          set menu_color_normal=light-cyan/black
-          set menu_color_highlight=black/light-cyan
-          GRUBTHEME
-          
-          echo "GRUB customization completed!"
-          GRUB
-          
-          chmod +x config/hooks/normal/0020-grub-customization.hook.chroot
-          
+
           # Build the ISO
           echo "Building Cybr ISO..."
           sudo lb build 2>&1 | tee build.log
