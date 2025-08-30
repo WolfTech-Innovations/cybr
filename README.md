@@ -1,7 +1,7 @@
-[![Build WolfOS](https://github.com/WolfTech-Innovations/WolfOS/actions/workflows/build.yaml/badge.svg)](https://github.com/WolfTech-Innovations/WolfOS/actions/workflows/build.yaml)
-___
-# Welcome to cybr . . . the minimal Kali Linux fork.
-# Or Text (888) 680-2509 (TEXTING ONLY)
+
+# Welcome to cybr! -- The Version of Kali for everybody
+
+Cybr is meant for all users, new users to professionals, or even people just wanting a regular distro, Cybr comes in handy, for all walks of life
 
 ## Installation:
 
