@@ -25,24 +25,24 @@ jobs:
         run: |
           git clone https://gitlab.com/kalilinux/build-scripts/live-build-config.git
           cd live-build-config
-          echo 'LB_ISO_IMAGE_NAME="cybr"' | tee -a auto/config
-          echo 'LB_ISO_VOLUME="cybr"' | tee -a auto/config
-          echo 'LB_BUILD_WITH_CHROOT="true"' | tee -a auto/config
-          echo 'LB_COMPRESSION="xz"' | tee -a auto/config
-          echo 'LB_BOOTAPPEND_LIVE="boot=live components hostname=cybr username=root"' | tee -a auto/config
-      
+          echo 'LB_ISO_IMAGE_NAME="cybr"' >> auto/config
+          echo 'LB_ISO_VOLUME="cybr"' >> auto/config
+          echo 'LB_BUILD_WITH_CHROOT="true"' >> auto/config
+          echo 'LB_COMPRESSION="xz"' >> auto/config
+          echo 'LB_BOOTAPPEND_LIVE="boot=live components hostname=cybr username=root"' >> auto/config
+
       - name: Add Custom Packages
         run: |
-             cd live-build-config
-             mkdir -p config/package-lists
-             echo "plasma-desktop sddm nano curl wget git nmap iptables ufw fail2ban clamav suricata psad rkhunter lynis tripwire wireshark policykit-1 hydra cewl theharvester dnsenum whois dnsutils john hashcat sqlmap gobuster dirb steghide binwalk radare2 exiftool" | tee config/package-lists/cybr.list.chroot
+          cd live-build-config
+          mkdir -p config/package-lists
+          echo "plasma-desktop sddm nano curl wget git nmap iptables ufw fail2ban clamav suricata psad rkhunter lynis tripwire wireshark policykit-1 hydra cewl theharvester dnsenum whois dnsutils john hashcat sqlmap gobuster dirb steghide binwalk radare2 exiftool" > config/package-lists/cybr.list.chroot
 
       - name: Create OS Release Branding Hook
         run: |
           mkdir -p live-build-config/config/hooks/normal
           wget https://raw.githubusercontent.com/WolfTech-Innovations/cybr/master/scripts/archwrapper.bash -O live-build-config/config/hooks/normal/0020-archwrapper.hook.chroot
-          chmod 777 live-build-config/config/hooks/normal/0020-archwrapper.hook.chroot
-    
+          chmod 755 live-build-config/config/hooks/normal/0020-archwrapper.hook.chroot
+
       - name: Build Cybr ISO
         run: |
           cd live-build-config
@@ -61,19 +61,18 @@ jobs:
         run: |
           sshpass -p "$SF_PASS" scp -o StrictHostKeyChecking=no ./cybr.iso "$SF_USER@frs.sourceforge.net:/home/frs/project/wolfos/Cybr-v${OSVER}.iso"
 
-
       - name: Set Build Status
         id: set-status
         run: |
           if [[ "${{ github.event.inputs.force_fail }}" == "Yes" ]]; then
             echo "success=false" >> $GITHUB_OUTPUT
-            exit 0
-          fi
-          echo "success=true" >> $GITHUB_OUTPUT
+          else
+            echo "success=true" >> $GITHUB_OUTPUT
 
   notify-api:
     needs: build-os
     runs-on: ubuntu-latest
     if: always()
     steps:
-      - run: curl --max-time 30 "${{ secrets.API_URL }}"
+      - name: Notify API
+        run: curl --max-time 30 "${{ secrets.API_URL }}"
