@@ -41,28 +41,32 @@ jobs:
           git clone https://gitlab.com/kalilinux/build-scripts/live-build-config.git
           cd live-build-config
           
-          # Use the existing auto/config as base and modify it
+          # Backup the original auto/config
           if [ -f auto/config ]; then
             cp auto/config auto/config.orig
           fi
+          
+          # Also add our simple config overrides like the original script
+          echo 'LB_ISO_IMAGE_NAME="cybr"' >> auto/config
+          echo 'LB_ISO_VOLUME="cybr"' >> auto/config
 
       - name: Configure Build Settings
         run: |
           cd live-build-config
           
-          # Modify the existing auto/config from Kali
-          cat auto/config.orig | sed \
-            -e 's/--bootappend-live "[^"]*"/--bootappend-live "boot=live components hostname=cybr username=cybr"/' \
-            -e 's/--iso-application "[^"]*"/--iso-application "Cybr Security OS"/' \
-            -e 's/--iso-volume "[^"]*"/--iso-volume "CYBR"/' \
-            -e 's/--iso-publisher "[^"]*"/--iso-publisher "WolfTech Innovations"/' \
-            > auto/config
+          # Keep the original auto/config and just modify the branding values
+          if [ -f auto/config.orig ]; then
+            # Only change the bootappend parameter to set hostname and username
+            sed -i 's/hostname=kali/hostname=cybr/g' auto/config.orig
+            sed -i 's/username=kali/username=cybr/g' auto/config.orig
+            cp auto/config.orig auto/config
+          fi
           
           # Ensure it's executable
           chmod +x auto/config
           
-          echo "=== Modified auto/config ==="
-          cat auto/config
+          echo "=== Using Kali's original config with hostname/username changes ==="
+          grep -E "(hostname|username)" auto/config || echo "No hostname/username found in config"
 
       - name: Setup Package Lists
         run: |
