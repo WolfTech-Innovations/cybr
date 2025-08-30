@@ -11,7 +11,7 @@ on:
       build_variant:
         description: "Build variant"
         required: false
-        default: "standard"
+        default: "minimal"
         type: choice
         options: ["minimal", "standard", "full"]
       skip_upload:
@@ -39,7 +39,7 @@ jobs:
   validate:
     name: "🔍 Pre-Build Validation"
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 345
     outputs:
       should_build: ${{ steps.check.outputs.should_build }}
       build_hash: ${{ steps.hash.outputs.hash }}
@@ -612,3 +612,228 @@ jobs:
           else
             echo "overall_status=failure" >> $GITHUB_OUTPUT
             echo "status_emoji=❌" >> $GITHUB_OUTPUT
+            echo "status_message=Build pipeline failed" >> $GITHUB_OUTPUT
+          fi
+
+      - name: "Create Notification Summary"
+        run: |
+          cat << 'SUMMARY_EOF'
+          
+          ╔════════════════════════════════════════════════════════════════════════╗
+          ║                           PIPELINE SUMMARY                             ║
+          ╠════════════════════════════════════════════════════════════════════════╣
+          ║                                                                        ║
+          ║  ${{ steps.status.outputs.status_emoji }} OVERALL STATUS: ${{ steps.status.outputs.overall_status }}                                    ║
+          ║  📊 BUILD: ${{ (needs.build.outputs.build_success == 'true' && '✅ SUCCESS') || '❌ FAILED' }}                                           ║
+          ║  📤 UPLOAD: ${{ (needs.upload.result == 'success' && '✅ SUCCESS') || (needs.upload.result == 'skipped' && '⏭️ SKIPPED') || '❌ FAILED' }}                                          ║
+          ║                                                                        ║
+          ║  🏗️  Build Variant: ${{ github.event.inputs.build_variant || 'standard' }}                                      ║
+          ║  📦 ISO Name: ${{ env.ISO_NAME }}.iso                          ║
+          ║  🔢 Build Number: #${{ github.run_number }}                                           ║
+          ║  🕒 Trigger: ${{ github.event_name }}                                            ║
+          ║                                                                        ║
+          ╚════════════════════════════════════════════════════════════════════════╝
+          
+          SUMMARY_EOF
+
+      - name: "Notify Build API"
+        if: always()
+        env:
+          API_URL: ${{ secrets.API_URL }}
+        run: |
+          if [[ -n "$API_URL" ]]; then
+            echo "Sending notification to API..."
+            
+            # Prepare notification payload
+            PAYLOAD=$(cat << API_EOF
+          {
+            "build_number": "${{ github.run_number }}",
+            "status": "${{ steps.status.outputs.overall_status }}",
+            "variant": "${{ github.event.inputs.build_variant || 'standard' }}",
+            "iso_name": "${{ env.ISO_NAME }}.iso",
+            "iso_size": "${{ needs.build.outputs.iso_size }}",
+            "iso_sha256": "${{ needs.build.outputs.iso_sha256 }}",
+            "build_success": "${{ needs.build.outputs.build_success }}",
+            "upload_success": "${{ (needs.upload.result == 'success') && 'true' || 'false' }}",
+            "trigger": "${{ github.event_name }}",
+            "repository": "${{ github.repository }}",
+            "commit_sha": "${{ github.sha }}",
+            "workflow_url": "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          }
+          API_EOF
+            )
+            
+            # Send notification with timeout and retry
+            for i in {1..3}; do
+              if curl -f -s --max-time 30 \
+                -H "Content-Type: application/json" \
+                -H "User-Agent: Cybr-Build-System/1.0" \
+                -X POST \
+                -d "$PAYLOAD" \
+                "$API_URL"; then
+                echo "✅ API notification sent successfully"
+                break
+              elif [[ $i -eq 3 ]]; then
+                echo "⚠️ Failed to notify API after 3 attempts"
+              else
+                echo "⚠️ API notification attempt $i failed, retrying..."
+                sleep 10
+              fi
+            done
+          else
+            echo "ℹ️ No API URL configured, skipping notification"
+          fi
+
+      - name: "Create Job Summary"
+        if: always()
+        run: |
+          cat >> $GITHUB_STEP_SUMMARY << 'SUMMARY_EOF'
+          # ${{ steps.status.outputs.status_emoji }} Cybr NextGen Build Summary
+          
+          ## Pipeline Results
+          
+          | Job | Status | Duration |
+          |-----|--------|----------|
+          | **Validation** | ${{ (needs.validate.result == 'success' && '✅ Success') || '❌ Failed' }} | - |
+          | **Build** | ${{ (needs.build.result == 'success' && '✅ Success') || '❌ Failed' }} | - |
+          | **Upload** | ${{ (needs.upload.result == 'success' && '✅ Success') || (needs.upload.result == 'skipped' && '⏭️ Skipped') || '❌ Failed' }} | - |
+          | **Notify** | ${{ (job.status == 'success' && '✅ Success') || '❌ Failed' }} | - |
+          
+          ## Build Details
+          
+          | Parameter | Value |
+          |-----------|-------|
+          | **Build Number** | `#${{ github.run_number }}` |
+          | **ISO Name** | `${{ env.ISO_NAME }}.iso` |
+          | **Build Variant** | `${{ github.event.inputs.build_variant || 'standard' }}` |
+          | **ISO Size** | `${{ needs.build.outputs.iso_size || 'N/A' }}` bytes |
+          | **SHA256** | `${{ needs.build.outputs.iso_sha256 || 'N/A' }}` |
+          | **Trigger** | `${{ github.event_name }}` |
+          
+          ## Quick Actions
+          
+          ${{ (needs.build.outputs.build_success == 'true' && '- 📥 [Download ISO Artifact](../../actions/runs/${{ github.run_id }}#artifacts)') || '' }}
+          ${{ (needs.upload.result == 'success' && '- 🌐 [Download from SourceForge](https://sourceforge.net/projects/wolfos/files/${{ env.ISO_NAME }}.iso/download)') || '' }}
+          - 📋 [View Full Logs](../../actions/runs/${{ github.run_id }})
+          - 🔄 [Re-run Workflow](../../actions/workflows/build.yml)
+          
+          ---
+          
+          **Message:** ${{ steps.status.outputs.status_message }}
+          
+          *Generated at $(date -u '+%Y-%m-%d %H:%M:%S UTC') by Cybr NextGen Build System*
+          SUMMARY_EOF
+
+      - name: "Final Status Report"
+        if: always()
+        run: |
+          echo ""
+          echo "╔════════════════════════════════════════════════════════════════════════╗"
+          echo "║                        🚀 CYBR NEXTGEN BUILD SYSTEM                   ║"
+          echo "║                             EXECUTION COMPLETE                        ║"
+          echo "╠════════════════════════════════════════════════════════════════════════╣"
+          echo "║                                                                        ║"
+          echo "║  Status: ${{ steps.status.outputs.status_emoji }} ${{ steps.status.outputs.overall_status }}                                                    ║"
+          echo "║  Message: ${{ steps.status.outputs.status_message }}                   "
+          echo "║                                                                        ║"
+          echo "║  Build ID: ${{ github.run_number }}                                                     ║"
+          echo "║  Repository: ${{ github.repository }}                         ║"
+          echo "║  Commit: ${{ github.sha }}              ║"
+          echo "║                                                                        ║"
+          echo "║  Thank you for using Cybr NextGen Build System!                       ║"
+          echo "║                                                                        ║"
+          echo "╚════════════════════════════════════════════════════════════════════════╝"
+          echo ""
+          
+          # Set exit code based on overall status
+          if [[ "${{ steps.status.outputs.overall_status }}" == "failure" ]]; then
+            echo "Pipeline completed with failures"
+            exit 1
+          else
+            echo "Pipeline completed successfully"
+            exit 0
+          fi
+
+# ============================================================================
+#                         SECURITY AND MAINTENANCE
+# ============================================================================
+  security-scan:
+    name: "🔒 Security Scan (Optional)"
+    runs-on: ubuntu-latest
+    needs: build
+    if: |
+      needs.build.outputs.build_success == 'true' && 
+      (github.event_name == 'push' || github.event_name == 'schedule')
+    timeout-minutes: 30
+    continue-on-error: true
+    
+    steps:
+      - name: "Security Scan Banner"
+        run: |
+          cat << 'EOF'
+          
+          ╔══════════════════════════════════════════════════════════════════════╗
+          ║  ███████╗███████╗ ██████╗██╗   ██╗██████╗ ██╗████████╗██╗   ██╗    ║
+          ║  ██╔════╝██╔════╝██╔════╝██║   ██║██╔══██╗██║╚══██╔══╝╚██╗ ██╔╝    ║
+          ║  ███████╗█████╗  ██║     ██║   ██║██████╔╝██║   ██║    ╚████╔╝     ║
+          ║  ╚════██║██╔══╝  ██║     ██║   ██║██╔══██╗██║   ██║     ╚██╔╝      ║
+          ║  ███████║███████╗╚██████╗╚██████╔╝██║  ██║██║   ██║      ██║       ║
+          ║  ╚══════╝╚══════╝ ╚═════╝ ╚═════╝ ╚═╝  ╚═╝╚═╝   ╚═╝      ╚═╝       ║
+          ╚══════════════════════════════════════════════════════════════════════╝
+          
+          EOF
+
+      - name: "Checkout Repository"
+        uses: actions/checkout@v4
+
+      - name: "Run Trivy Security Scan"
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: 'repo'
+          format: 'sarif'
+          output: 'trivy-results.sarif'
+
+      - name: "Upload Security Scan Results"
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: "security-scan-results-${{ github.run_number }}"
+          path: "trivy-results.sarif"
+
+  cleanup:
+    name: "🧹 Cleanup Resources"
+    runs-on: ubuntu-latest
+    needs: [build, upload, notify, security-scan]
+    if: always()
+    timeout-minutes: 10
+    
+    steps:
+      - name: "Cleanup Banner"
+        run: |
+          cat << 'EOF'
+          
+          ╔══════════════════════════════════════════════════════════════════════╗
+          ║   ██████╗██╗     ███████╗ █████╗ ███╗   ██╗██╗   ██╗██████╗         ║
+          ║  ██╔════╝██║     ██╔════╝██╔══██╗████╗  ██║██║   ██║██╔══██╗        ║
+          ║  ██║     ██║     █████╗  ███████║██╔██╗ ██║██║   ██║██████╔╝        ║
+          ║  ██║     ██║     ██╔══╝  ██╔══██║██║╚██╗██║██║   ██║██╔═══╝         ║
+          ║  ╚██████╗███████╗███████╗██║  ██║██║ ╚████║╚██████╔╝██║             ║
+          ║   ╚═════╝╚══════╝╚══════╝╚═╝  ╚═╝╚═╝  ╚═══╝ ╚═════╝ ╚═╝             ║
+          ╚══════════════════════════════════════════════════════════════════════╝
+          
+          EOF
+
+      - name: "Free Up Disk Space"
+        run: |
+          echo "Cleaning up build artifacts and temporary files..."
+          docker system prune -af || true
+          sudo apt-get clean || true
+          sudo rm -rf /tmp/* /var/tmp/* || true
+          
+          echo "Disk usage after cleanup:"
+          df -h
+
+      - name: "Generate Cleanup Report"
+        run: |
+          echo "✅ Resource cleanup completed"
+          echo "📊 Final disk usage: $(df -h / | tail -1 | awk '{print $4}' | tr -d '\n') available"
