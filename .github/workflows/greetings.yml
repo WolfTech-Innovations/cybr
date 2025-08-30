@@ -46,17 +46,14 @@ jobs:
           cd live-build-config
           cat > auto/config << 'EOF'
           #!/bin/bash
-          lb config noauto \
-            --image-name "cybr" \
+          lb config noauto 
             --iso-application "Cybr Security OS" \
             --iso-volume "CYBR" \
             --iso-publisher "WolfTech Innovations" \
             --bootappend-live "boot=live components hostname=cybr username=cybr" \
-            --bootappend-live-failsafe "boot=live components memtest noapic noapm nodma nomce nolapic nomodeset nosmp nosplash vga=normal hostname=cybr username=cybr" \
             --linux-flavours "amd64" \
             --debian-installer false \
             --archive-areas "main contrib non-free non-free-firmware" \
-            --updates true \
             --backports false \
             --security true \
             --apt-indices false \
