@@ -328,21 +328,50 @@ jobs:
           
           chmod +x config/hooks/normal/0010-cybr-branding.hook.chroot
 
-          # Build the ISO
-          echo "Building Cybr ISO..."
-          sudo lb build 2>&1 | tee build.log
           
-          # Copy output
-          if [ -f "*.iso" ]; then
-              cp *.iso /build/output/cybr.iso
-              echo "Build completed successfully!"
-              ls -lh /build/output/
-          else
-              echo "Build failed - no ISO found"
-              exit 1
-          fi
-          EOF
-          
+# Build the ISO
+echo "Building Cybr ISO..."
+sudo lb build 2>&1 | tee build.log
+
+# Check build status
+BUILD_EXIT_CODE=$?
+if [ $BUILD_EXIT_CODE -ne 0 ]; then
+    echo "Live-build failed with exit code: $BUILD_EXIT_CODE"
+    echo "Last 50 lines of build log:"
+    tail -50 build.log
+    exit 1
+fi
+
+# Debug: Show current directory contents
+echo "Current directory contents:"
+pwd
+ls -la
+
+# Look for ISO files with better detection
+echo "Searching for ISO files..."
+find . -name "*.iso" -type f -ls
+
+# Use proper glob expansion to find ISO files
+shopt -s nullglob
+iso_files=(*.iso)
+shopt -u nullglob
+
+if [ ${#iso_files[@]} -gt 0 ]; then
+    ISO_FILE="${iso_files[0]}"
+    echo "Found ISO file: $ISO_FILE"
+    cp "$ISO_FILE" /build/output/cybr.iso
+    echo "Build completed successfully!"
+    echo "Output file info:"
+    ls -lh /build/output/cybr.iso
+    file /build/output/cybr.iso
+else
+    echo "Build failed - no ISO found"
+    echo "Directory contents:"
+    ls -la
+    echo "Checking for any files with 'iso' in name:"
+    find . -name "*iso*" -type f
+    exit 1
+
           chmod +x build-scripts/build-cybr.sh
 
       - name: Build Docker Image and Run Build
@@ -358,17 +387,6 @@ jobs:
             -v $(pwd)/output:/build/output \
             -v /dev:/dev \
             cybr-builder
-
-      - name: Verify Build Output
-        run: |
-          if [ -f "./output/cybr.iso" ]; then
-            echo "Build successful!"
-            ls -lh ./output/cybr.iso
-            file ./output/cybr.iso
-          else
-            echo "Build failed - no ISO found"
-            exit 1
-          fi
 
       - name: Upload to SourceForge
         if: success()
