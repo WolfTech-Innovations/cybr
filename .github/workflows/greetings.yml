@@ -95,7 +95,6 @@ jobs:
           wget
           git
           firefox-esr
-          neofetch
           python3
           python3-pip
           python3-tk
