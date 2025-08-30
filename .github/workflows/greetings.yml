@@ -22,409 +22,403 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Build Cybr ISO in Docker
+      - name: Build and Run Cybr Build Container
         run: |
-          docker run --rm \
-            --privileged \
-            -v ${{ github.workspace }}:/workspace \
-            -w /workspace \
-            debian:bookworm \
-            bash -c "
-              set -e
-              
-              # Update and install dependencies
-              apt-get update
-              apt-get install -y \
-                git curl wget \
-                debootstrap syslinux-utils isolinux xorriso \
-                squashfs-tools mtools rsync sshpass \
-                live-build cpio gzip \
-                dosfstools parted \
-                python3 python3-pip \
-                grub-pc-bin grub-efi-amd64-bin
-              
-              # Clone Kali Live-Build Config
-              git clone https://gitlab.com/kalilinux/build-scripts/live-build-config.git
-              cd live-build-config
-              
-              # Configure build settings
-              cat >> auto/config << 'EOF'
-LB_ISO_IMAGE_NAME=\"cybr\"
-LB_ISO_VOLUME=\"Cybr\"
-LB_BUILD_WITH_CHROOT=\"true\"
-LB_COMPRESSION=\"xz\"
-LB_BOOTAPPEND_LIVE=\"boot=live components hostname=cybr username=cybr quiet splash\"
-LB_BOOTLOADER=\"grub-efi\"
-LB_DEBIAN_INSTALLER=\"false\"
-LB_MEMTEST=\"none\"
-EOF
-              
-              # Create custom package list
-              mkdir -p config/package-lists
-              cat > config/package-lists/cybr.list.chroot << 'EOF'
-firefox-esr
-neofetch
-nano
-curl
-wget
-git
-python3
-python3-pip
-python3-tk
-network-manager
-plasma-desktop
-sddm
-konsole
-dolphin
-kate
-systemsettings
-plasma-nm
-EOF
-              
-              # Create branding hooks directory
-              mkdir -p config/hooks/normal
-              mkdir -p config/hooks/live
-              mkdir -p config/includes.chroot/etc
-              mkdir -p config/includes.chroot/usr/local/bin
-              mkdir -p config/includes.chroot/home/cybr/.config
-              
-              # Create OS branding hook
-              cat > config/hooks/normal/0010-cybr-branding.hook.chroot << 'EOF'
-#!/bin/bash
-set -e
+          # Create Dockerfile for build environment
+          cat > Dockerfile << 'EOF'
+          FROM debian:bookworm
+          
+          # Install all required dependencies
+          RUN apt-get update && apt-get install -y \
+              git curl wget \
+              debootstrap \
+              syslinux-utils \
+              isolinux \
+              xorriso \
+              squashfs-tools \
+              mtools \
+              rsync \
+              sshpass \
+              live-build \
+              sudo \
+              python3 \
+              python3-pip \
+              python3-venv \
+              gawk \
+              coreutils \
+              && rm -rf /var/lib/apt/lists/*
+          
+          WORKDIR /build
+          VOLUME ["/build/output"]
+          
+          # Enable privileged operations in container
+          RUN echo "ALL ALL=(ALL) NOPASSWD: ALL" >> /etc/sudoers
+          
+          COPY build-scripts/ /build/scripts/
+          RUN chmod +x /build/scripts/*.sh
+          
+          CMD ["/build/scripts/build-cybr.sh"]
+          EOF
 
-# Update OS release files
-cat > /etc/os-release << 'OSEOF'
-NAME=\"Cybr\"
-VERSION=\"2.0\"
-ID=cybr
-ID_LIKE=debian
-PRETTY_NAME=\"Cybr 2.0\"
-VERSION_ID=\"2.0\"
-HOME_URL=\"https://github.com/WolfTech-Innovations/\"
-SUPPORT_URL=\"https://github.com/WolfTech-Innovations/cybr\"
-BUG_REPORT_URL=\"https://github.com/WolfTech-Innovations/cybr/issues\"
-OSEOF
+      - name: Create Build Scripts Directory
+        run: mkdir -p build-scripts
 
-# Update issue files
-echo \"Cybr 2.0 \\\\n \\\\l\" > /etc/issue
-echo \"Cybr 2.0\" > /etc/issue.net
-
-# Update hostname
-echo \"cybr\" > /etc/hostname
-
-# Create Cybr credits
-cat > /etc/cybr-credits << 'CREDITS'
-Cybr OS - Based on Kali Linux
-=============================
-
-Special thanks to:
-- The Kali Linux Team for their excellent security distribution
-- Offensive Security for maintaining Kali Linux
-- The Debian Project for the solid foundation
-- WolfTech Innovations for Cybr branding and customization
-
-Visit: https://github.com/WolfTech-Innovations/
-CREDITS
-
-# Remove Plymouth (boot animation)
-systemctl disable plymouth-start.service 2>/dev/null || true
-systemctl disable plymouth-read-write.service 2>/dev/null || true
-systemctl disable plymouth-quit-wait.service 2>/dev/null || true
-systemctl disable plymouth-quit.service 2>/dev/null || true
-
-# Set Firefox homepage
-mkdir -p /etc/firefox/policies
-cat > /etc/firefox/policies/policies.json << 'FFEOF'
-{
-  \"policies\": {
-    \"Homepage\": {
-      \"URL\": \"https://github.com/WolfTech-Innovations/\",
-      \"Locked\": false
-    }
-  }
-}
-FFEOF
-
-# Create neofetch config for cybr branding
-mkdir -p /etc/skel/.config/neofetch
-cat > /etc/skel/.config/neofetch/config.conf << 'NEOEOF'
-print_info() {
-    info title
-    info underline
-
-    info \"OS\" distro
-    info \"Host\" model
-    info \"Kernel\" kernel
-    info \"Uptime\" uptime
-    info \"Packages\" packages
-    info \"Shell\" shell
-    info \"Resolution\" resolution
-    info \"DE\" de
-    info \"WM\" wm
-    info \"WM Theme\" wm_theme
-    info \"Theme\" theme
-    info \"Icons\" icons
-    info \"Terminal\" term
-    info \"Terminal Font\" term_font
-    info \"CPU\" cpu
-    info \"GPU\" gpu
-    info \"Memory\" memory
-
-    info \"GPU Driver\" gpu_driver
-    info \"CPU Usage\" cpu_usage
-    info \"Disk\" disk
-    info \"Battery\" battery
-    info \"Font\" font
-    info \"Song\" song
-    info \"Local IP\" local_ip
-    info \"Public IP\" public_ip
-    info \"Users\" users
-    info \"Locale\" locale
-
-    info cols
-}
-
-ascii_distro=\"arch_small\"
-NEOEOF
-
-# Create default user
-useradd -m -s /bin/bash cybr
-echo \"cybr:cybr\" | chpasswd
-usermod -aG sudo cybr
-
-# Copy neofetch config to cybr user
-cp -r /etc/skel/.config /home/cybr/
-chown -R cybr:cybr /home/cybr/.config
-EOF
-              
-              # Create package store hook (for non-live instances)
-              cat > config/hooks/normal/0020-package-store.hook.chroot << 'EOF'
-#!/bin/bash
-set -e
-
-# Create Python-based package store
-cat > /usr/local/bin/cybr-store << 'STOREEOF'
-#!/usr/bin/env python3
-\"\"\"
-Cybr Package Store - Kali Metapackage Manager
-\"\"\"
-
-import subprocess
-import sys
-import os
-
-KALI_METAPACKAGES = {
-    \"Information Gathering\": [
-        \"kali-tools-information-gathering\",
-        \"nmap\", \"whois\", \"dnsutils\", \"theharvester\", \"dnsenum\"
-    ],
-    \"Vulnerability Analysis\": [
-        \"kali-tools-vulnerability\",
-        \"nessus\", \"openvas\", \"nikto\", \"sqlmap\"
-    ],
-    \"Web Applications\": [
-        \"kali-tools-web\",
-        \"burpsuite\", \"owasp-zap\", \"gobuster\", \"dirb\"
-    ],
-    \"Database Assessment\": [
-        \"kali-tools-database\",
-        \"sqlmap\", \"sqsh\"
-    ],
-    \"Password Attacks\": [
-        \"kali-tools-passwords\",
-        \"john\", \"hashcat\", \"hydra\", \"medusa\"
-    ],
-    \"Wireless Attacks\": [
-        \"kali-tools-wireless\",
-        \"aircrack-ng\", \"reaver\", \"kismet\"
-    ],
-    \"Reverse Engineering\": [
-        \"kali-tools-reverse-engineering\",
-        \"radare2\", \"ghidra\", \"binwalk\"
-    ],
-    \"Exploitation Tools\": [
-        \"kali-tools-exploitation\",
-        \"metasploit-framework\", \"armitage\"
-    ],
-    \"Forensics\": [
-        \"kali-tools-forensics\",
-        \"autopsy\", \"sleuthkit\", \"volatility\"
-    ],
-    \"Reporting Tools\": [
-        \"kali-tools-reporting\",
-        \"cherrytree\", \"cutycapt\"
-    ]
-}
-
-def run_command(cmd):
-    \"\"\"Execute shell command\"\"\"
-    try:
-        result = subprocess.run(cmd, shell=True, capture_output=True, text=True)
-        return result.returncode == 0, result.stdout, result.stderr
-    except Exception as e:
-        return False, \"\", str(e)
-
-def install_packages(packages):
-    \"\"\"Install selected packages\"\"\"
-    package_list = \" \".join(packages)
-    print(f\"Installing: {package_list}\")
-    success, stdout, stderr = run_command(f\"apt-get update && apt-get install -y {package_list}\")
-    if success:
-        print(\"✓ Installation completed successfully!\")
-    else:
-        print(f\"✗ Installation failed: {stderr}\")
-    return success
-
-def main():
-    if os.geteuid() != 0:
-        print(\"Error: This script must be run as root (use sudo)\")
-        sys.exit(1)
-    
-    print(\"\\n=== Cybr Package Store - Kali Tools Installer ===\")
-    print(\"Pick and choose your security tools\\n\")
-    
-    categories = list(KALI_METAPACKAGES.keys())
-    
-    while True:
-        print(\"Available categories:\")
-        for i, category in enumerate(categories, 1):
-            print(f\"{i:2d}. {category}\")
-        print(\" 0. Exit\")
-        
-        try:
-            choice = int(input(\"\\nSelect category (0 to exit): \"))
-            if choice == 0:
-                break
-            elif 1 <= choice <= len(categories):
-                category = categories[choice - 1]
-                packages = KALI_METAPACKAGES[category]
-                
-                print(f\"\\nPackages in {category}:\")
-                for pkg in packages:
-                    print(f\"  - {pkg}\")
-                
-                confirm = input(f\"\\nInstall all packages from {category}? (y/n): \")
-                if confirm.lower() == 'y':
-                    install_packages(packages)
-                
-                input(\"Press Enter to continue...\")
-            else:
-                print(\"Invalid selection!\")
-        except ValueError:
-            print(\"Please enter a valid number!\")
-        except KeyboardInterrupt:
-            print(\"\\nExiting...\")
-            break
-
-if __name__ == \"__main__\":
-    main()
-STOREEOF
-
-chmod +x /usr/local/bin/cybr-store
-
-# Create desktop entry for package store
-cat > /usr/share/applications/cybr-store.desktop << 'DESKTOPEOF'
-[Desktop Entry]
-Version=1.0
-Type=Application
-Name=Cybr Package Store
-Comment=Install Kali security tools
-Exec=konsole -e sudo cybr-store
-Icon=system-software-install
-Terminal=false
-Categories=System;Security;
-DESKTOPEOF
-EOF
-              
-              # Create GRUB customization
-              mkdir -p config/includes.chroot/etc/default
-              cat > config/includes.chroot/etc/default/grub << 'GRUBEOF'
-GRUB_DEFAULT=0
-GRUB_TIMEOUT=5
-GRUB_DISTRIBUTOR=\"Cybr\"
-GRUB_CMDLINE_LINUX_DEFAULT=\"quiet\"
-GRUB_CMDLINE_LINUX=\"\"
-GRUB_TERMINAL_OUTPUT=\"console\"
-GRUB_INIT_TUNE=\"480 440 1\"
-GRUBEOF
-              
-              # Create first boot script for package store
-              cat > config/includes.chroot/etc/init.d/cybr-firstboot << 'BOOTEOF'
-#!/bin/bash
-### BEGIN INIT INFO
-# Provides:          cybr-firstboot
-# Required-Start:    \$local_fs \$network
-# Required-Stop:     \$local_fs
-# Default-Start:     2 3 4 5
-# Default-Stop:      0 1 6
-# Short-Description: Cybr first boot setup
-### END INIT INFO
-
-FIRSTBOOT_FLAG=\"/var/lib/cybr-firstboot-done\"
-
-if [ ! -f \"\$FIRSTBOOT_FLAG\" ]; then
-    # Check if this is not a live environment
-    if ! grep -q \"boot=live\" /proc/cmdline; then
-        # Show welcome message and package store option
-        cat > /tmp/cybr-welcome.sh << 'WELCOMEEOF'
-#!/bin/bash
-zenity --info --title=\"Welcome to Cybr\" --text=\"Welcome to Cybr OS!\\n\\nThis is a customized security-focused distribution based on Kali Linux.\\n\\nYou can install additional security tools using the Cybr Package Store.\\n\\nFind it in your applications menu or run 'sudo cybr-store' in terminal.\" --width=400
-WELCOMEEOF
-        chmod +x /tmp/cybr-welcome.sh
-        su - cybr -c \"/tmp/cybr-welcome.sh\" &
-    fi
-    touch \"\$FIRSTBOOT_FLAG\"
-fi
-BOOTEOF
-              
-              chmod +x config/includes.chroot/etc/init.d/cybr-firstboot
-              
-              # Enable first boot script
-              cat > config/hooks/normal/0030-enable-firstboot.hook.chroot << 'EOF'
-#!/bin/bash
-update-rc.d cybr-firstboot defaults
-EOF
-              
-              # Make all hooks executable
-              chmod +x config/hooks/normal/*.hook.chroot
-              
-              # Build the ISO
-              echo \"Starting Cybr ISO build...\"
-              lb config --verbose
-              lb build --verbose
-              
-              # Move and rename the final ISO
-              if [ -f images/*.iso ]; then
-                mv images/*.iso /workspace/cybr.iso
-                echo \"✓ Cybr ISO built successfully!\"
-                ls -lh /workspace/cybr.iso
-              else
-                echo \"✗ ISO build failed!\"
-                exit 1
-              fi
-            "
-
-      - name: Verify ISO Creation
+      - name: Create Main Build Script
         run: |
-          if [ -f cybr.iso ]; then
-            echo "✓ ISO created successfully"
-            ls -lh cybr.iso
-            echo "ISO_SIZE=$(du -h cybr.iso | cut -f1)" >> $GITHUB_ENV
+          cat > build-scripts/build-cybr.sh << 'EOF'
+          #!/bin/bash
+          set -e
+          
+          echo "Starting Cybr OS build..."
+          
+          # Clone Kali Live-Build Config
+          git clone https://gitlab.com/kalilinux/build-scripts/live-build-config.git
+          cd live-build-config
+          
+          # Configure build settings
+          echo 'LB_ISO_IMAGE_NAME="cybr"' | tee -a auto/config
+          echo 'LB_ISO_VOLUME="Cybr"' | tee -a auto/config
+          echo 'LB_BUILD_WITH_CHROOT="true"' | tee -a auto/config
+          echo 'LB_COMPRESSION="xz"' | tee -a auto/config
+          echo 'LB_BOOTAPPEND_LIVE="boot=live components hostname=cybr username=root quiet splash"' | tee -a auto/config
+          echo 'LB_BOOTLOADER_TIMEOUT="3"' | tee -a auto/config
+          
+          # Create custom package lists
+          mkdir -p config/package-lists
+          
+          # Base packages (no Kali tools included for pick-and-choose approach)
+          cat > config/package-lists/cybr-base.list.chroot << 'PACKAGES'
+          plasma-desktop
+          sddm
+          nano
+          curl
+          wget
+          git
+          firefox-esr
+          neofetch
+          python3
+          python3-pip
+          python3-tk
+          python3-venv
+          PACKAGES
+          
+          # Create branding hook script
+          mkdir -p config/hooks/normal
+          cat > config/hooks/normal/0010-cybr-branding.hook.chroot << 'BRANDING'
+          #!/bin/bash
+          set -e
+          
+          echo "Applying Cybr branding..."
+          
+          # Update OS release files
+          cat > /etc/os-release << 'OSREL'
+          NAME="Cybr"
+          VERSION="1.0"
+          ID=cybr
+          ID_LIKE=debian
+          VERSION_ID="1.0"
+          PRETTY_NAME="Cybr 1.0"
+          VERSION_CODENAME=cybr
+          HOME_URL="https://github.com/WolfTech-Innovations/"
+          SUPPORT_URL="https://github.com/WolfTech-Innovations/"
+          BUG_REPORT_URL="https://github.com/WolfTech-Innovations/"
+          OSREL
+          
+          # Update LSB release
+          cat > /etc/lsb-release << 'LSBREL'
+          DISTRIB_ID=Cybr
+          DISTRIB_RELEASE=1.0
+          DISTRIB_CODENAME=cybr
+          DISTRIB_DESCRIPTION="Cybr 1.0"
+          LSBREL
+          
+          # Create credits file
+          cat > /etc/cybr-credits << 'CREDITS'
+          Cybr OS - A Kali Linux Based Security Distribution
+          
+          Built with love by WolfTech Innovations
+          Based on Kali Linux - Special thanks to the Kali Linux team
+          
+          Kali Linux Credits:
+          - Offensive Security for creating and maintaining Kali Linux
+          - The Debian Project for the solid foundation
+          - All the security tool developers whose work makes this possible
+          
+          Visit: https://github.com/WolfTech-Innovations/
+          Original Kali: https://www.kali.org/
+          CREDITS
+          
+          # Remove Plymouth (boot animation)
+          apt-get remove --purge -y plymouth plymouth-themes || true
+          
+          # Configure Firefox homepage
+          mkdir -p /etc/firefox/policies
+          cat > /etc/firefox/policies/policies.json << 'FFPOLICY'
+          {
+            "policies": {
+              "Homepage": {
+                "URL": "https://github.com/WolfTech-Innovations/"
+              },
+              "NewTabPage": false
+            }
+          }
+          FFPOLICY
+          
+          # Create Python package store script for first boot
+          mkdir -p /usr/local/bin
+          cat > /usr/local/bin/cybr-package-store << 'PKGSTORE'
+          #!/usr/bin/env python3
+          """
+          Cybr Package Store - Kali Meta Package Installer
+          """
+          
+          import tkinter as tk
+          from tkinter import ttk, messagebox
+          import subprocess
+          import threading
+          import os
+          import sys
+          
+          class CybrPackageStore:
+              def __init__(self):
+                  self.root = tk.Tk()
+                  self.root.title("Cybr Package Store")
+                  self.root.geometry("800x600")
+                  
+                  self.packages = {
+                      "Web Application Security": "kali-tools-web",
+                      "Wireless Security": "kali-tools-wireless",
+                      "Information Gathering": "kali-tools-information-gathering",
+                      "Vulnerability Assessment": "kali-tools-vulnerability",
+                      "Forensics": "kali-tools-forensics",
+                      "Password Attacks": "kali-tools-passwords",
+                      "Exploitation Tools": "kali-tools-exploitation",
+                      "Reverse Engineering": "kali-tools-reverse-engineering",
+                      "Hardware Hacking": "kali-tools-hardware",
+                      "Reporting Tools": "kali-tools-reporting",
+                      "Social Engineering": "kali-tools-social-engineering",
+                      "Sniffing & Spoofing": "kali-tools-sniffing-spoofing"
+                  }
+                  
+                  self.create_widgets()
+                  
+              def create_widgets(self):
+                  # Header
+                  header = tk.Label(self.root, text="Cybr Package Store", 
+                                   font=("Arial", 16, "bold"))
+                  header.pack(pady=10)
+                  
+                  subtitle = tk.Label(self.root, 
+                                     text="Select Kali meta-packages to install")
+                  subtitle.pack()
+                  
+                  # Package list with checkboxes
+                  self.frame = ttk.Frame(self.root)
+                  self.frame.pack(fill=tk.BOTH, expand=True, padx=20, pady=20)
+                  
+                  self.vars = {}
+                  for name, package in self.packages.items():
+                      var = tk.BooleanVar()
+                      self.vars[package] = var
+                      cb = ttk.Checkbutton(self.frame, text=name, variable=var)
+                      cb.pack(anchor='w', pady=2)
+                  
+                  # Buttons
+                  button_frame = ttk.Frame(self.root)
+                  button_frame.pack(pady=10)
+                  
+                  install_btn = ttk.Button(button_frame, text="Install Selected", 
+                                         command=self.install_packages)
+                  install_btn.pack(side=tk.LEFT, padx=5)
+                  
+                  quit_btn = ttk.Button(button_frame, text="Close", 
+                                       command=self.root.quit)
+                  quit_btn.pack(side=tk.LEFT, padx=5)
+                  
+              def install_packages(self):
+                  selected = [pkg for pkg, var in self.vars.items() if var.get()]
+                  if not selected:
+                      messagebox.showwarning("Warning", "No packages selected!")
+                      return
+                      
+                  # Install in separate thread to avoid GUI freeze
+                  thread = threading.Thread(target=self.do_install, args=(selected,))
+                  thread.daemon = True
+                  thread.start()
+                  
+              def do_install(self, packages):
+                  try:
+                      cmd = ["pkexec", "apt", "update"]
+                      subprocess.run(cmd, check=True)
+                      
+                      cmd = ["pkexec", "apt", "install", "-y"] + packages
+                      subprocess.run(cmd, check=True)
+                      
+                      messagebox.showinfo("Success", "Packages installed successfully!")
+                  except subprocess.CalledProcessError as e:
+                      messagebox.showerror("Error", f"Installation failed: {e}")
+                      
+              def run(self):
+                  self.root.mainloop()
+          
+          if __name__ == "__main__":
+              app = CybrPackageStore()
+              app.run()
+          PKGSTORE
+          
+          chmod +x /usr/local/bin/cybr-package-store
+          
+          # Create desktop entry for package store
+          mkdir -p /usr/share/applications
+          cat > /usr/share/applications/cybr-package-store.desktop << 'DESKTOP'
+          [Desktop Entry]
+          Version=1.0
+          Type=Application
+          Name=Cybr Package Store
+          Comment=Install Kali security tools
+          Exec=/usr/local/bin/cybr-package-store
+          Icon=package-manager
+          Terminal=false
+          Categories=System;Settings;
+          DESKTOP
+          
+          # Create first boot service (non-live only)
+          cat > /etc/systemd/system/cybr-firstboot.service << 'SERVICE'
+          [Unit]
+          Description=Cybr First Boot Setup
+          After=graphical-session.target
+          Wants=graphical-session.target
+          
+          [Service]
+          Type=oneshot
+          ExecStart=/usr/local/bin/cybr-firstboot-setup
+          RemainAfterExit=yes
+          User=root
+          
+          [Install]
+          WantedBy=multi-user.target
+          SERVICE
+          
+          cat > /usr/local/bin/cybr-firstboot-setup << 'FIRSTBOOT'
+          #!/bin/bash
+          
+          # Check if running live
+          if grep -q "boot=live" /proc/cmdline; then
+              exit 0
+          fi
+          
+          # Check if already run
+          if [ -f /var/lib/cybr-firstboot-done ]; then
+              exit 0
+          fi
+          
+          # Show package store on first boot
+          if [ -n "$DISPLAY" ] && [ -n "$USER" ]; then
+              su - $USER -c "DISPLAY=$DISPLAY /usr/local/bin/cybr-package-store" || true
+          fi
+          
+          # Mark as done
+          touch /var/lib/cybr-firstboot-done
+          FIRSTBOOT
+          
+          chmod +x /usr/local/bin/cybr-firstboot-setup
+          systemctl enable cybr-firstboot.service
+          
+          echo "Cybr branding applied successfully!"
+          BRANDING
+          
+          chmod +x config/hooks/normal/0010-cybr-branding.hook.chroot
+          
+          # Create GRUB customization hook
+          cat > config/hooks/normal/0020-grub-customization.hook.chroot << 'GRUB'
+          #!/bin/bash
+          set -e
+          
+          echo "Customizing GRUB..."
+          
+          # Create custom GRUB config
+          mkdir -p /etc/default/grub.d
+          cat > /etc/default/grub.d/cybr.cfg << 'GRUBCFG'
+          GRUB_DISTRIBUTOR="Cybr"
+          GRUB_DEFAULT=0
+          GRUB_TIMEOUT=5
+          GRUB_CMDLINE_LINUX_DEFAULT="quiet splash"
+          GRUB_INIT_TUNE="480 440 1"
+          GRUBCFG
+          
+          # Custom GRUB theme colors
+          cat > /boot/grub/custom.cfg << 'GRUBTHEME'
+          set color_normal=light-cyan/black
+          set color_highlight=black/light-cyan
+          set menu_color_normal=light-cyan/black
+          set menu_color_highlight=black/light-cyan
+          GRUBTHEME
+          
+          echo "GRUB customization completed!"
+          GRUB
+          
+          chmod +x config/hooks/normal/0020-grub-customization.hook.chroot
+          
+          # Build the ISO
+          echo "Building Cybr ISO..."
+          sudo lb build 2>&1 | tee build.log
+          
+          # Copy output
+          if [ -f "*.iso" ]; then
+              cp *.iso /build/output/cybr.iso
+              echo "Build completed successfully!"
+              ls -lh /build/output/
           else
-            echo "✗ ISO creation failed"
+              echo "Build failed - no ISO found"
+              exit 1
+          fi
+          EOF
+          
+          chmod +x build-scripts/build-cybr.sh
+
+      - name: Build Docker Image and Run Build
+        run: |
+          # Build the Docker image
+          docker build -t cybr-builder .
+          
+          # Create output directory
+          mkdir -p ./output
+          
+          # Run the build in Docker with necessary privileges
+          docker run --privileged --rm \
+            -v $(pwd)/output:/build/output \
+            -v /dev:/dev \
+            cybr-builder
+
+      - name: Verify Build Output
+        run: |
+          if [ -f "./output/cybr.iso" ]; then
+            echo "Build successful!"
+            ls -lh ./output/cybr.iso
+            file ./output/cybr.iso
+          else
+            echo "Build failed - no ISO found"
             exit 1
           fi
 
       - name: Upload to SourceForge
+        if: success()
         env:
           SF_USER: ${{ secrets.SF_USER }}
           SF_PASS: ${{ secrets.SF_PASS }}
           OSVER: 2
         run: |
-          echo "Uploading Cybr ISO (${ISO_SIZE}) to SourceForge..."
-          sshpass -p "$SF_PASS" scp -o StrictHostKeyChecking=no ./cybr.iso "$SF_USER@frs.sourceforge.net:/home/frs/project/wolfos/Cybr-v${OSVER}.iso"
-          echo "✓ Upload completed successfully!"
+          sshpass -p "$SF_PASS" scp -o StrictHostKeyChecking=no \
+            ./output/cybr.iso \
+            "$SF_USER@frs.sourceforge.net:/home/frs/project/wolfos/Cybr-v${OSVER}.iso"
+
+      - name: Upload Build Artifact
+        uses: actions/upload-artifact@v3
+        if: always()
+        with:
+          name: cybr-iso
+          path: ./output/cybr.iso
+          retention-days: 30
 
       - name: Set Build Status
         id: set-status
@@ -440,10 +434,9 @@ EOF
     runs-on: ubuntu-latest
     if: always()
     steps:
-      - name: Notify API
+      - name: Notify Build Status
         run: |
-          STATUS="${{ needs.build-os.outputs.build_success }}"
-          curl --max-time 30 -X POST \
+          BUILD_STATUS="${{ needs.build-os.outputs.build_success }}"
+          curl --max-time 30 -X POST "${{ secrets.API_URL }}" \
             -H "Content-Type: application/json" \
-            -d "{\"build_success\":\"$STATUS\",\"workflow\":\"cybr-iso-build\"}" \
-            "${{ secrets.API_URL }}" || echo "API notification failed"
+            -d "{\"status\":\"$BUILD_STATUS\",\"workflow\":\"cybr-build\"}" || true
