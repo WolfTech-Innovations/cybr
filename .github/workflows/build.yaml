@@ -227,7 +227,7 @@ jobs:
                 --architectures amd64 \
                 --linux-flavours amd64 \
                 --debian-installer false \
-                --installer-distribution bullseye \
+                
                 --bootappend-live 'boot=live components hostname=\$DEFAULT_HOSTNAME username=\$DEFAULT_USER' \
                 --bootloaders 'syslinux' \
                 --compression xz \
