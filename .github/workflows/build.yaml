@@ -193,7 +193,7 @@ jobs:
           mkdir -p /build/live-build
           cd /build/live-build
           
-          # Configure live-build for Debian
+          # Configure live-build for Debian with non-interactive mode
           lb config \
             --distribution bookworm \
             --archive-areas "main contrib non-free non-free-firmware" \
@@ -210,31 +210,113 @@ jobs:
             --compression xz \
             --zsync false
           
+          # Create global APT configuration for non-interactive mode
+          mkdir -p config/apt
+          cat > config/apt/apt.conf << 'APT_CONF_EOF'
+          Dpkg::Options {
+             "--force-confnew";
+             "--force-confmiss";
+             "--force-confdef";
+             "--force-confold";
+          }
+          
+          APT::Get::Assume-Yes "true";
+          APT::Get::Fix-Broken "true";
+          APT::Get::force-yes "true";
+          APT::Get::Remove "true";
+          Dir::Cache::Archives "/var/cache/apt/archives";
+          APT_CONF_EOF
+          
+          # Set global environment variables for the build
+          mkdir -p config/includes.chroot/etc/environment
+          cat >> config/includes.chroot/etc/environment << 'ENV_EOF'
+          DEBIAN_FRONTEND=noninteractive
+          DEBCONF_NONINTERACTIVE_SEEN=true
+          APT_LISTCHANGES_FRONTEND=none
+          ENV_EOF
+          
           # Note: Kali repositories will be configured via hook with proper keyring
           
-          # Add Kali GPG key setup hook
-          mkdir -p config/hooks/live
-          cat > config/hooks/live/0050-kali-keyring.hook.chroot << 'KALI_KEY_HOOK_EOF'
+          # Kali repository setup hook - robust and defensive
+          cat > config/hooks/normal/0050-kali-keyring.hook.chroot << 'KALI_KEY_HOOK_EOF'
           #!/bin/bash
           set -e
           
-          echo "Setting up Kali Linux keyring..."
+          echo "Setting up Kali Linux repositories..."
           
-          # Download and install the official Kali keyring
-          wget -q -O /tmp/kali-archive-keyring.gpg https://archive.kali.org/archive-keyring.gpg
+          # Ensure non-interactive mode
+          export DEBIAN_FRONTEND=noninteractive
+          export DEBCONF_NONINTERACTIVE_SEEN=true
           
-          # Install the keyring to the proper location
-          cp /tmp/kali-archive-keyring.gpg /usr/share/keyrings/kali-archive-keyring.gpg
+          # Update package lists first
+          apt-get update
           
-          # Update the sources list to use the signed-by option
-          echo "deb [signed-by=/usr/share/keyrings/kali-archive-keyring.gpg] http://http.kali.org/kali kali-rolling main contrib non-free non-free-firmware" > /etc/apt/sources.list.d/kali.list
+          # Install required packages for keyring management (with error handling)
+          apt-get install -y --no-install-recommends wget gnupg2 ca-certificates curl || {
+            echo "Warning: Some packages failed to install, continuing..."
+          }
           
-          # Clean up
-          rm -f /tmp/kali-archive-keyring.gpg
+          # Method 1: Try to get the key via keyserver (most reliable)
+          if gpg --keyserver hkp://keyserver.ubuntu.com:80 --recv-keys 44C6513A8E4FB3D30875F758ED444FF07D8D0BF6 2>/dev/null; then
+            gpg --armor --export 44C6513A8E4FB3D30875F758ED444FF07D8D0BF6 | apt-key add -
+            echo "Kali GPG key added via keyserver"
+          else
+            # Method 2: Fallback - try direct download
+            if wget -q -O - https://archive.kali.org/archive-key.asc | apt-key add - 2>/dev/null; then
+              echo "Kali GPG key added via direct download"
+            else
+              echo "Warning: Could not add Kali GPG key, repositories will be unsigned"
+              echo "Users can manually add the key later if needed"
+            fi
+          fi
           
-          echo "Kali keyring setup completed"
+          # Add Kali repositories with error handling
+          cat > /etc/apt/sources.list.d/kali.list << 'KALI_SOURCES_EOF'
+          # Kali Linux Repository (tools available for manual installation)
+          # deb http://http.kali.org/kali kali-rolling main contrib non-free non-free-firmware
+          # Uncomment the above line to enable Kali repositories
+          # Then run: apt update && apt install <kali-tool-name>
+          KALI_SOURCES_EOF
+          
+          # Create instructions file for users
+          cat > /home/cybr/Desktop/KALI_TOOLS_README.txt << 'KALI_README_EOF'
+          Kali Linux Tools Installation
+          ==============================
+          
+          Cybr NextGen includes access to Kali Linux security tools, but they are not pre-installed
+          to keep the system lightweight and stable.
+          
+          To enable Kali repositories:
+          1. Edit /etc/apt/sources.list.d/kali.list as root
+          2. Uncomment the repository line
+          3. Run: sudo apt update
+          4. Install tools: sudo apt install <tool-name>
+          
+          Popular Kali tools you might want to install:
+          - nmap (network scanner)
+          - wireshark (network analyzer)  
+          - metasploit-framework (penetration testing)
+          - aircrack-ng (wireless security)
+          - john (password cracker)
+          - hashcat (password recovery)
+          - sqlmap (SQL injection)
+          - burpsuite (web security)
+          - nikto (web scanner)
+          - dirb (web directory scanner)
+          
+          Example:
+          sudo apt update
+          sudo apt install nmap wireshark
+          
+          Note: Some tools may require additional configuration or have dependencies.
+          Always review tool documentation before use.
+          KALI_README_EOF
+          
+          chown cybr:cybr /home/cybr/Desktop/KALI_TOOLS_README.txt 2>/dev/null || true
+          
+          echo "Kali repositories configured (disabled by default for stability)"
           KALI_KEY_HOOK_EOF
-          chmod +x config/hooks/live/0050-kali-keyring.hook.chroot
+          chmod +x config/hooks/normal/0050-kali-keyring.hook.chroot
           
           # Create package lists based on variant
           mkdir -p config/package-lists
@@ -321,14 +403,85 @@ jobs:
           # Create hooks for customization
           mkdir -p config/hooks/normal
           
-          # Cybr branding hook
+          # Pre-configuration hook to prevent dpkg conflicts
+          cat > config/hooks/normal/0010-prevent-conflicts.hook.chroot << 'PRECONFIG_EOF'
+          #!/bin/bash
+          set -e
+          
+          echo "Configuring system for non-interactive package management..."
+          
+          # Set environment variables
+          export DEBIAN_FRONTEND=noninteractive
+          export DEBCONF_NONINTERACTIVE_SEEN=true
+          export APT_LISTCHANGES_FRONTEND=none
+          export NEEDRESTART_MODE=a
+          export NEEDRESTART_SUSPEND=1
+          
+          # Configure debconf for non-interactive mode
+          echo 'debconf debconf/frontend select Noninteractive' | debconf-set-selections
+          echo 'debconf debconf/priority select critical' | debconf-set-selections
+          
+          # Configure dpkg to handle configuration file conflicts automatically
+          cat > /etc/apt/apt.conf.d/99local << 'DPKG_CONF_EOF'
+          Dpkg::Options {
+             "--force-confnew";
+             "--force-confmiss";
+             "--force-confdef";
+             "--force-confold";
+          }
+          
+          APT::Get::Assume-Yes "true";
+          APT::Get::Fix-Broken "true";
+          APT::Get::AllowUnauthenticated "false";
+          APT::Install-Recommends "false";
+          APT::Install-Suggests "false";
+          APT::Get::Show-Upgraded "true";
+          Dpkg::Use-Pty "0";
+          DPKG_CONF_EOF
+          
+          # Create debconf selections to avoid interactive prompts
+          cat > /tmp/debconf-selections << 'DEBCONF_EOF'
+          # Prevent grub from asking about installation
+          grub-pc grub-pc/install_devices_disks_changed multiselect
+          grub-pc grub-pc/install_devices multiselect
+          
+          # Prevent keyboard configuration prompts
+          keyboard-configuration keyboard-configuration/layout select
+          keyboard-configuration keyboard-configuration/layoutcode string us
+          
+          # Prevent tzdata prompts
+          tzdata tzdata/Areas select Etc
+          tzdata tzdata/Zones/Etc select UTC
+          
+          # Prevent postfix prompts
+          postfix postfix/main_mailer_type select No configuration
+          
+          # Base-files configuration to prevent /etc/issue conflicts
+          base-files base-files/use_local_etc_issue boolean true
+          DEBCONF_EOF
+          
+          debconf-set-selections < /tmp/debconf-selections
+          rm -f /tmp/debconf-selections
+          
+          echo "Non-interactive configuration completed"
+          PRECONFIG_EOF
+          chmod +x config/hooks/normal/0010-prevent-conflicts.hook.chroot
+          
+          # Cybr branding hook with dpkg conflict handling
           cat > config/hooks/normal/0100-cybr-branding.hook.chroot << 'BRAND_EOF'
           #!/bin/bash
           set -e
           
           echo "Applying Cybr NextGen branding..."
           
-          # Update OS identification
+          # Configure dpkg to handle conffile conflicts automatically
+          export DEBIAN_FRONTEND=noninteractive
+          export DEBCONF_NONINTERACTIVE_SEEN=true
+          
+          # Set dpkg options to avoid interactive prompts
+          echo 'DPkg::options { "--force-confdef"; "--force-confold"; }' > /etc/apt/apt.conf.d/local
+          
+          # Update OS identification files BEFORE any package updates
           cat > /etc/os-release << 'OS_EOF'
           PRETTY_NAME="Cybr NextGen"
           NAME="Cybr NextGen"
@@ -342,7 +495,10 @@ jobs:
           BUG_REPORT_URL="https://bugs.cybr-nextgen.org/"
           OS_EOF
           
-          # Update issue files
+          # Create backup and update issue files
+          cp /etc/issue /etc/issue.backup 2>/dev/null || true
+          cp /etc/issue.net /etc/issue.net.backup 2>/dev/null || true
+          
           cat > /etc/issue << 'ISSUE_EOF'
           Cybr NextGen Security OS \n \l
           
@@ -351,6 +507,10 @@ jobs:
           cat > /etc/issue.net << 'ISSUE_NET_EOF'
           Cybr NextGen Security OS
           ISSUE_NET_EOF
+          
+          # Mark these files as locally modified to prevent dpkg conflicts
+          dpkg-divert --local --rename --add /etc/issue
+          dpkg-divert --local --rename --add /etc/issue.net
           
           # Create version info
           cat > /etc/cybr-version << 'VERSION_EOF'
@@ -414,11 +574,80 @@ jobs:
           ExecStart=-/sbin/agetty --autologin cybr --noclear %I $TERM
           AUTOLOGIN_EOF
           
-          echo "User setup completed"
+          # Desktop launcher for Calamares (if desktop variant)
+          if [[ "$BUILD_VARIANT" != "minimal" ]]; then
+            mkdir -p /home/cybr/Desktop
+            cat > /home/cybr/Desktop/calamares.desktop << 'LAUNCHER_EOF'
+          [Desktop Entry]
+          Type=Application
+          Version=1.0
+          Name=Install Cybr NextGen
+          Comment=Install the system to your computer
+          Icon=drive-harddisk
+          Exec=pkexec calamares
+          Terminal=false
+          StartupNotify=true
+          Categories=System;
+          X-KDE-SubstituteUID=true
+          LAUNCHER_EOF
+          
+          chmod +x /home/cybr/Desktop/calamares.desktop
+          chown cybr:cybr /home/cybr/Desktop/calamares.desktop
+          fi
+          
+          echo "User and installer setup completed"
           USER_EOF
           chmod +x config/hooks/normal/0300-user-setup.hook.chroot
           
-          # Calamares configuration
+          # Network configuration hook
+          cat > config/hooks/normal/0500-network.hook.chroot << 'NETWORK_EOF'
+          #!/bin/bash
+          set -e
+          
+          echo "Configuring network settings..."
+          
+          # Enable NetworkManager
+          systemctl enable NetworkManager
+          systemctl enable systemd-resolved
+          
+          # Configure basic firewall
+          ufw --force enable
+          ufw default deny incoming
+          ufw default allow outgoing
+          
+          echo "Network configuration completed"
+          NETWORK_EOF
+          chmod +x config/hooks/normal/0500-network.hook.chroot
+          
+          # Final system cleanup hook
+          cat > config/hooks/normal/9999-cleanup.hook.chroot << 'CLEANUP_EOF'
+          #!/bin/bash
+          set -e
+          
+          echo "Performing final system cleanup..."
+          
+          # Clean package cache
+          apt-get autoremove --purge -y
+          apt-get autoclean
+          apt-get clean
+          
+          # Clear logs and temporary files
+          find /var/log -type f -exec truncate -s 0 {} \;
+          rm -rf /tmp/* /var/tmp/*
+          rm -rf /var/cache/apt/archives/*.deb
+          
+          # Clear bash history
+          rm -f /root/.bash_history
+          rm -f /home/*/.bash_history
+          
+          # Remove SSH host keys (will be regenerated on first boot)
+          rm -f /etc/ssh/ssh_host_*
+          
+          echo "System cleanup completed"
+          CLEANUP_EOF
+          chmod +x config/hooks/normal/9999-cleanup.hook.chroot
+          
+          # Calamares configuration for installer
           if [[ "$BUILD_VARIANT" != "minimal" ]]; then
             cat > config/hooks/normal/0400-calamares.hook.chroot << 'CALAMARES_EOF'
           #!/bin/bash
@@ -426,8 +655,14 @@ jobs:
           
           echo "Configuring Calamares installer..."
           
-          # Create basic Calamares configuration
+          # Ensure Calamares is installed
+          apt-get update
+          apt-get install -y calamares
+          
+          # Create Calamares configuration directory
           mkdir -p /etc/calamares
+          
+          # Main settings configuration
           cat > /etc/calamares/settings.conf << 'CAL_SETTINGS_EOF'
           modules-search: [ local ]
           
@@ -453,12 +688,8 @@ jobs:
             - locale
             - keyboard
             - localecfg
-            - luksbootkeyfile
-            - luksopenswaphookcfg
-            - initcpiocfg
-            - initcpio
-            - removeuser
             - users
+            - removeuser
             - displaymanager
             - networkcfg
             - hwclock
@@ -469,7 +700,6 @@ jobs:
             - finished
           
           branding: cybr
-          
           prompt-install: false
           dont-chroot: false
           oem-setup: false
@@ -479,23 +709,23 @@ jobs:
           quit-at-end: false
           CAL_SETTINGS_EOF
           
-          # Create branding directory
+          # Create branding configuration
           mkdir -p /etc/calamares/branding/cybr
           cat > /etc/calamares/branding/cybr/branding.desc << 'BRAND_DESC_EOF'
           componentName:  cybr
           
           strings:
-              productName:         Cybr NextGen
-              shortProductName:    Cybr
-              version:             1.0
-              shortVersion:        1.0
-              versionedName:       Cybr NextGen 1.0
-              shortVersionedName:  Cybr 1.0
-              bootloaderEntryName: Cybr
-              productUrl:          https://cybr-nextgen.org/
-              supportUrl:          https://support.cybr-nextgen.org/
-              knownIssuesUrl:      https://bugs.cybr-nextgen.org/
-              releaseNotesUrl:     https://cybr-nextgen.org/releases/
+              productName:         "Cybr NextGen"
+              shortProductName:    "Cybr"
+              version:             "1.0"
+              shortVersion:        "1.0"
+              versionedName:       "Cybr NextGen 1.0"
+              shortVersionedName:  "Cybr 1.0"
+              bootloaderEntryName: "Cybr NextGen"
+              productUrl:          "https://cybr-nextgen.org/"
+              supportUrl:          "https://support.cybr-nextgen.org/"
+              knownIssuesUrl:      "https://bugs.cybr-nextgen.org/"
+              releaseNotesUrl:     "https://cybr-nextgen.org/releases/"
           
           images:
               productLogo:         "logo.png"
@@ -509,22 +739,115 @@ jobs:
              sidebarTextCurrent:   "#292929"
           BRAND_DESC_EOF
           
+          # Configure display manager module
+          cat > /etc/calamares/modules/displaymanager.conf << 'DM_CONF_EOF'
+          displaymanagers:
+            - sddm
+            - gdm
+            - lightdm
+          
+          basicSetup: false
+          sysconfigSetup: false
+          SDDM_CONFIG_FILE: "/etc/sddm.conf"
+          DM_CONF_EOF
+          
+          # Configure unpackfs module
+          cat > /etc/calamares/modules/unpackfs_rootfs.conf << 'UNPACK_EOF'
+          unpack:
+              -   source: "/run/live/medium/live/filesystem.squashfs"
+                  sourcefs: "squashfs"
+                  destination: ""
+          UNPACK_EOF
+          
           echo "Calamares configured successfully"
           CALAMARES_EOF
           chmod +x config/hooks/normal/0400-calamares.hook.chroot
           fi
           
-          # Build the ISO
-          echo "Building live system..."
-          lb build 2>&1 | tee build.log
+          # Build the ISO with proper error handling
+          echo "════════════════════════════════════════"
+          echo "        EXECUTING LIVE-BUILD           "
+          echo "════════════════════════════════════════"
           
-          # Find and rename the ISO
-          if [[ -f *.iso ]]; then
-            mv *.iso "/build/${ISO_NAME}.iso"
-            echo "ISO build completed: /build/${ISO_NAME}.iso"
-            ls -lh "/build/${ISO_NAME}.iso"
+          # Start the build process with timeout protection
+          if timeout 7200 lb build 2>&1 | tee build.log; then
+            echo "Live-build completed successfully"
           else
-            echo "ERROR: No ISO file generated"
+            BUILD_EXIT_CODE=$?
+            echo "Live-build failed with exit code: $BUILD_EXIT_CODE"
+            
+            # Show the last 50 lines of the build log for debugging
+            echo "Last 50 lines of build log:"
+            tail -n 50 build.log || echo "Could not read build log"
+            
+            # Check for common build failures
+            if grep -q "No space left on device" build.log; then
+              echo "ERROR: Build failed due to insufficient disk space"
+            elif grep -q "Package .* has no installation candidate" build.log; then
+              echo "ERROR: Build failed due to missing packages"
+            elif grep -q "404\|Connection refused" build.log; then
+              echo "ERROR: Build failed due to network/repository issues"
+            fi
+            
+            exit 1
+          fi
+          
+          # Find the generated ISO file
+          ISO_PATH=""
+          if [ -f *.iso ]; then
+            ISO_PATH=$(ls -1 *.iso | head -1)
+          elif [ -f live-image-*.iso ]; then
+            ISO_PATH=$(ls -1 live-image-*.iso | head -1)
+          elif [ -f binary.iso ]; then
+            ISO_PATH="binary.iso"
+          fi
+          
+          if [[ -n "$ISO_PATH" && -f "$ISO_PATH" ]]; then
+            echo "Moving ISO from $ISO_PATH to /build/${ISO_NAME}.iso"
+            mv "$ISO_PATH" "/build/${ISO_NAME}.iso"
+            
+            # Verify the ISO file
+            ISO_SIZE=$(stat -c%s "/build/${ISO_NAME}.iso")
+            ISO_SIZE_MB=$((ISO_SIZE / 1024 / 1024))
+            
+            echo "════════════════════════════════════════"
+            echo "          BUILD COMPLETED               "
+            echo "════════════════════════════════════════"
+            echo "ISO File: ${ISO_NAME}.iso"
+            echo "Size: ${ISO_SIZE_MB} MB (${ISO_SIZE} bytes)"
+            echo "Location: /build/${ISO_NAME}.iso"
+            
+            # Generate build summary
+            cat > /build/BUILD_SUMMARY.txt << BUILD_SUMMARY_EOF
+          Cybr NextGen Build Summary
+          ==========================
+          Build Date: $(date -u)
+          Build Variant: $BUILD_VARIANT
+          Build Version: $BUILD_VERSION
+          ISO Name: ${ISO_NAME}.iso
+          ISO Size: ${ISO_SIZE_MB} MB
+          ISO Location: /build/${ISO_NAME}.iso
+          
+          Features Included:
+          - Base: Debian Bookworm
+          - Desktop: KDE Plasma + SDDM
+          - Installer: Calamares
+          - Security: Kali Linux repositories available
+          - Network: NetworkManager + UFW firewall
+          - Custom branding: Cybr NextGen theme
+          
+          Build completed successfully!
+          BUILD_SUMMARY_EOF
+            
+            ls -lah "/build/${ISO_NAME}.iso"
+            echo "Build summary saved to /build/BUILD_SUMMARY.txt"
+            
+          else
+            echo "ERROR: ISO file not found after build completion"
+            echo "Looking for ISO files in current directory:"
+            find . -name "*.iso" -type f -ls || echo "No ISO files found"
+            echo "Directory contents:"
+            ls -la
             exit 1
           fi
           BUILD_EOF
