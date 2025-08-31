@@ -309,15 +309,7 @@ jobs:
               # Create hooks directory
               mkdir -p config/hooks/normal
               
-              # Download archwrapper with validation
-              echo 'Downloading archwrapper...'
-              if ! wget -q --timeout=30 https://raw.githubusercontent.com/WolfTech-Innovations/cybr/master/scripts/archwrapper.bash -O config/hooks/normal/0020-archwrapper.hook.chroot; then
-                echo 'Warning: Failed to download archwrapper, creating placeholder'
-                echo '#!/bin/bash' > config/hooks/normal/0020-archwrapper.hook.chroot
-                echo 'echo \"Archwrapper placeholder\"' >> config/hooks/normal/0020-archwrapper.hook.chroot
-              fi
-              chmod 755 config/hooks/normal/0020-archwrapper.hook.chroot
-              
+             
               # Create branding hook
               cat > config/hooks/normal/0030-cybr-branding.hook.chroot << 'BRAND_EOF'
           #!/bin/bash
