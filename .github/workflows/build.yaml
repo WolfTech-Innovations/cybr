@@ -71,7 +71,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
-          
+
       - name: "Generate Build Hash"
         id: hash
         run: |
@@ -107,7 +107,7 @@ jobs:
       build_success: ${{ steps.build-status.outputs.success }}
       iso_size: ${{ steps.iso-info.outputs.size }}
       iso_sha256: ${{ steps.iso-info.outputs.sha256 }}
-    
+
     steps:
       - name: "Build Progress Banner"
         run: |
@@ -143,36 +143,23 @@ jobs:
             network=host
             image=moby/buildkit:buildx-stable-1
 
-      - name: "Cache Docker Layers"
-        uses: actions/cache@v4
-        with:
-          path: /tmp/.buildx-cache
-          key: ${{ runner.os }}-buildx-${{ needs.validate.outputs.build_hash }}
-          restore-keys: |
-            ${{ runner.os }}-buildx-
-
-      - name: "Create Optimized Dockerfile"
+      - name: "Create Debian Build Environment"
         run: |
           cat > Dockerfile << 'DOCKERFILE_EOF'
-          # Multi-stage build for optimization
-          FROM kalilinux/kali-rolling AS base
+          FROM debian:bookworm
           
-          # Install dependencies in a single layer with cleanup
+          # Install build dependencies
           RUN apt-get update && \
               DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+                  debootstrap live-build xorriso squashfs-tools \
                   git curl wget ca-certificates gnupg2 \
-                  debootstrap syslinux-utils isolinux xorriso \
-                  squashfs-tools mtools rsync sshpass live-build \
-                  nano sed gzip xz-utils bzip2 \
+                  syslinux-utils isolinux mtools rsync \
+                  dosfstools parted gdisk \
               && apt-get clean \
               && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
           
           WORKDIR /build
-          
-          # Copy build scripts
           COPY scripts/ ./scripts/
-          
-          # Set proper permissions
           RUN find ./scripts -name "*.sh" -o -name "*.bash" | xargs chmod +x
           
           ENV DEBIAN_FRONTEND=noninteractive
@@ -182,199 +169,379 @@ jobs:
 
       - name: "Build Docker Image"
         run: |
-          echo "Building optimized Docker image..."
-          docker buildx build \
-            --cache-from=type=gha \
-            --cache-to=type=gha,mode=max \
-            --load \
-            -t cybr-builder:${{ needs.validate.outputs.build_hash }} \
-            .
+          echo "Building Debian build environment..."
+          docker build -t cybr-debian-builder:${{ needs.validate.outputs.build_hash }} .
 
-      - name: "Create Build Scripts Directory"
-        run: mkdir -p scripts
-
-      - name: "Generate Build Configuration"
+      - name: "Create Build Scripts"
         run: |
-          cat > scripts/build-config.sh << 'CONFIG_EOF'
+          mkdir -p scripts config
+          
+          # Main build script
+          cat > scripts/build-debian-iso.sh << 'BUILD_EOF'
           #!/bin/bash
           set -euo pipefail
           
-          # Build configuration
-          export BUILD_VARIANT="${{ github.event.inputs.build_variant || 'standard' }}"
-          export ISO_NAME="${{ env.ISO_NAME }}"
-          export BUILD_VERSION="${{ env.BUILD_VERSION }}"
-          export BUILD_DATE="$(date -u '+%Y-%m-%d %H:%M:%S UTC')"
-          export BUILDER="GitHub Actions"
+          BUILD_VARIANT="${BUILD_VARIANT:-standard}"
+          BUILD_VERSION="${BUILD_VERSION:-1}"
+          ISO_NAME="${ISO_NAME:-cybr-nextgen}"
           
-          echo "Build Configuration:"
-          echo "  Variant: $BUILD_VARIANT"
-          echo "  Version: $BUILD_VERSION"
-          echo "  ISO Name: $ISO_NAME"
-          echo "  Build Date: $BUILD_DATE"
-          CONFIG_EOF
-          chmod +x scripts/build-config.sh
-
-      - name: "Generate Package Lists"
-        run: |
+          echo "Starting Debian-based Cybr build..."
+          echo "Variant: $BUILD_VARIANT"
+          echo "Version: $BUILD_VERSION"
+          
+          # Setup live-build configuration
+          mkdir -p /build/live-build
+          cd /build/live-build
+          
+          # Configure live-build for Debian
+          lb config \
+            --distribution bookworm \
+            --archive-areas "main contrib non-free non-free-firmware" \
+            --architectures amd64 \
+            --linux-flavours amd64 \
+            --bootappend-live "boot=live components username=cybr hostname=cybr-nextgen quiet splash" \
+            --iso-application "Cybr NextGen Security OS" \
+            --iso-publisher "WolfTech Innovations" \
+            --iso-volume "CybrNextGen" \
+            --binary-images iso-hybrid \
+            --memtest none \
+            --win32-loader false \
+            --checksums sha256 \
+            --compression xz \
+            --zsync false
+          
+          # Note: Kali repositories will be configured via hook with proper keyring
+          
+          # Add Kali GPG key setup hook
+          mkdir -p config/hooks/live
+          cat > config/hooks/live/0050-kali-keyring.hook.chroot << 'KALI_KEY_HOOK_EOF'
+          #!/bin/bash
+          set -e
+          
+          echo "Setting up Kali Linux keyring..."
+          
+          # Download and install the official Kali keyring
+          wget -q -O /tmp/kali-archive-keyring.gpg https://archive.kali.org/archive-keyring.gpg
+          
+          # Install the keyring to the proper location
+          cp /tmp/kali-archive-keyring.gpg /usr/share/keyrings/kali-archive-keyring.gpg
+          
+          # Update the sources list to use the signed-by option
+          echo "deb [signed-by=/usr/share/keyrings/kali-archive-keyring.gpg] http://http.kali.org/kali kali-rolling main contrib non-free non-free-firmware" > /etc/apt/sources.list.d/kali.list
+          
+          # Clean up
+          rm -f /tmp/kali-archive-keyring.gpg
+          
+          echo "Kali keyring setup completed"
+          KALI_KEY_HOOK_EOF
+          chmod +x config/hooks/live/0050-kali-keyring.hook.chroot
+          
           # Create package lists based on variant
           mkdir -p config/package-lists
           
-          # Base packages for all variants
-          cat > config/package-lists/base.list.chroot << 'PKG_EOF'
-          # System essentials
-          sudo nano curl wget git
-          openssh-client openssh-server
-          iptables ufw fail2ban
-          clamav clamav-freshclam
-          htop tree file
+          # Base system packages
+          cat > config/package-lists/base.list.chroot << 'BASE_EOF'
+          # Base system
+          live-task-standard
+          sudo
+          openssh-client
+          openssh-server
+          curl
+          wget
+          git
+          nano
+          htop
+          tree
+          file
           
           # Network tools
-          nmap netcat-traditional
-          dnsutils whois
-          tcpdump wireshark-common
-          PKG_EOF
+          net-tools
+          iputils-ping
+          dnsutils
+          whois
+          nmap
+          netcat-traditional
           
-          # Additional packages for standard/full builds
-          if [[ "${{ github.event.inputs.build_variant || 'standard' }}" != "minimal" ]]; then
-            cat > config/package-lists/security.list.chroot << 'SEC_PKG_EOF'
-          # Security tools
-       
-          SEC_PKG_EOF
-          fi
+          # Basic security
+          ufw
+          fail2ban
+          clamav
+          clamav-freshclam
+          BASE_EOF
           
-          # Desktop environment for full build
-          if [[ "${{ github.event.inputs.build_variant || 'standard' }}" == "full" ]]; then
-            cat > config/package-lists/desktop.list.chroot << 'DESK_PKG_EOF'
-          # Desktop environment
-          ubuntu-budgie-desktop
+          # Desktop environment for standard/full builds
+          if [[ "$BUILD_VARIANT" != "minimal" ]]; then
+            cat > config/package-lists/desktop.list.chroot << 'DESKTOP_EOF'
+          # KDE Plasma Desktop
+          kde-plasma-desktop
+          plasma-workspace
+          plasma-nm
+          kde-config-sddm
+          
+          # Display Manager
           sddm
+          
+          # Calamares Installer
+          calamares
+          calamares-settings-debian
+          
+          # Essential KDE applications
+          dolphin
+          konsole
+          kate
           firefox-esr
-          code-oss
-          DESK_PKG_EOF
+          
+          # System utilities
+          partitionmanager
+          kde-spectacle
+          ark
+          DESKTOP_EOF
           fi
+          
+          # Additional packages for full build
+          if [[ "$BUILD_VARIANT" == "full" ]]; then
+            cat > config/package-lists/full.list.chroot << 'FULL_EOF'
+          # Development tools
+          code
+          git-gui
+          
+          # Media
+          vlc
+          gimp
+          
+          # Office
+          libreoffice
+          
+          # Network analysis (from Kali repos)
+          wireshark
+          tcpdump
+          FULL_EOF
+          fi
+          
+          # Create hooks for customization
+          mkdir -p config/hooks/normal
+          
+          # Cybr branding hook
+          cat > config/hooks/normal/0100-cybr-branding.hook.chroot << 'BRAND_EOF'
+          #!/bin/bash
+          set -e
+          
+          echo "Applying Cybr NextGen branding..."
+          
+          # Update OS identification
+          cat > /etc/os-release << 'OS_EOF'
+          PRETTY_NAME="Cybr NextGen"
+          NAME="Cybr NextGen"
+          VERSION_ID="1.0"
+          VERSION="1.0 (NextGen)"
+          VERSION_CODENAME=nextgen
+          ID=cybr
+          ID_LIKE=debian
+          HOME_URL="https://cybr-nextgen.org/"
+          SUPPORT_URL="https://support.cybr-nextgen.org/"
+          BUG_REPORT_URL="https://bugs.cybr-nextgen.org/"
+          OS_EOF
+          
+          # Update issue files
+          cat > /etc/issue << 'ISSUE_EOF'
+          Cybr NextGen Security OS \n \l
+          
+          ISSUE_EOF
+          
+          cat > /etc/issue.net << 'ISSUE_NET_EOF'
+          Cybr NextGen Security OS
+          ISSUE_NET_EOF
+          
+          # Create version info
+          cat > /etc/cybr-version << 'VERSION_EOF'
+          Cybr NextGen Security OS
+          Version: $BUILD_VERSION
+          Build Date: $(date -u '+%Y-%m-%d %H:%M:%S UTC')
+          Builder: GitHub Actions
+          Variant: $BUILD_VARIANT
+          VERSION_EOF
+          
+          echo "Branding applied successfully"
+          BRAND_EOF
+          chmod +x config/hooks/normal/0100-cybr-branding.hook.chroot
+          
+          # SDDM configuration hook
+          cat > config/hooks/normal/0200-sddm-config.hook.chroot << 'SDDM_EOF'
+          #!/bin/bash
+          set -e
+          
+          echo "Configuring SDDM..."
+          
+          # Enable SDDM service
+          systemctl enable sddm
+          
+          # Configure SDDM theme
+          mkdir -p /etc/sddm.conf.d
+          cat > /etc/sddm.conf.d/cybr.conf << 'SDDM_CONF_EOF'
+          [Theme]
+          Current=breeze
+          
+          [Users]
+          MaximumUid=60513
+          MinimumUid=500
+          
+          [Autologin]
+          Relogin=false
+          Session=
+          User=
+          SDDM_CONF_EOF
+          
+          echo "SDDM configured successfully"
+          SDDM_EOF
+          chmod +x config/hooks/normal/0200-sddm-config.hook.chroot
+          
+          # User setup hook
+          cat > config/hooks/normal/0300-user-setup.hook.chroot << 'USER_EOF'
+          #!/bin/bash
+          set -e
+          
+          echo "Setting up default user..."
+          
+          # Create cybr user
+          useradd -m -s /bin/bash -G sudo cybr
+          echo "cybr:cybr" | chpasswd
+          
+          # Configure automatic login for live session
+          mkdir -p /etc/systemd/system/getty@tty1.service.d
+          cat > /etc/systemd/system/getty@tty1.service.d/autologin.conf << 'AUTOLOGIN_EOF'
+          [Service]
+          ExecStart=
+          ExecStart=-/sbin/agetty --autologin cybr --noclear %I $TERM
+          AUTOLOGIN_EOF
+          
+          echo "User setup completed"
+          USER_EOF
+          chmod +x config/hooks/normal/0300-user-setup.hook.chroot
+          
+          # Calamares configuration
+          if [[ "$BUILD_VARIANT" != "minimal" ]]; then
+            cat > config/hooks/normal/0400-calamares.hook.chroot << 'CALAMARES_EOF'
+          #!/bin/bash
+          set -e
+          
+          echo "Configuring Calamares installer..."
+          
+          # Create basic Calamares configuration
+          mkdir -p /etc/calamares
+          cat > /etc/calamares/settings.conf << 'CAL_SETTINGS_EOF'
+          modules-search: [ local ]
+          
+          instances:
+          - id:       rootfs
+            module:   unpackfs
+            config:   unpackfs_rootfs.conf
+          
+          sequence:
+          - show:
+            - welcome
+            - locale
+            - keyboard
+            - partition
+            - users
+            - summary
+          - exec:
+            - partition
+            - mount
+            - unpackfs@rootfs
+            - machineid
+            - fstab
+            - locale
+            - keyboard
+            - localecfg
+            - luksbootkeyfile
+            - luksopenswaphookcfg
+            - initcpiocfg
+            - initcpio
+            - removeuser
+            - users
+            - displaymanager
+            - networkcfg
+            - hwclock
+            - services-systemd
+            - bootloader
+            - umount
+          - show:
+            - finished
+          
+          branding: cybr
+          
+          prompt-install: false
+          dont-chroot: false
+          oem-setup: false
+          disable-cancel: false
+          disable-cancel-during-exec: false
+          hide-back-and-next-during-exec: false
+          quit-at-end: false
+          CAL_SETTINGS_EOF
+          
+          # Create branding directory
+          mkdir -p /etc/calamares/branding/cybr
+          cat > /etc/calamares/branding/cybr/branding.desc << 'BRAND_DESC_EOF'
+          componentName:  cybr
+          
+          strings:
+              productName:         Cybr NextGen
+              shortProductName:    Cybr
+              version:             1.0
+              shortVersion:        1.0
+              versionedName:       Cybr NextGen 1.0
+              shortVersionedName:  Cybr 1.0
+              bootloaderEntryName: Cybr
+              productUrl:          https://cybr-nextgen.org/
+              supportUrl:          https://support.cybr-nextgen.org/
+              knownIssuesUrl:      https://bugs.cybr-nextgen.org/
+              releaseNotesUrl:     https://cybr-nextgen.org/releases/
+          
+          images:
+              productLogo:         "logo.png"
+              productIcon:         "logo.png"
+              productWelcome:      "welcome.png"
+          
+          style:
+             sidebarBackground:    "#1d99f3"
+             sidebarText:          "#ffffff"
+             sidebarTextSelect:    "#4d4d4d"
+             sidebarTextCurrent:   "#292929"
+          BRAND_DESC_EOF
+          
+          echo "Calamares configured successfully"
+          CALAMARES_EOF
+          chmod +x config/hooks/normal/0400-calamares.hook.chroot
+          fi
+          
+          # Build the ISO
+          echo "Building live system..."
+          lb build 2>&1 | tee build.log
+          
+          # Find and rename the ISO
+          if [[ -f *.iso ]]; then
+            mv *.iso "/build/${ISO_NAME}.iso"
+            echo "ISO build completed: /build/${ISO_NAME}.iso"
+            ls -lh "/build/${ISO_NAME}.iso"
+          else
+            echo "ERROR: No ISO file generated"
+            exit 1
+          fi
+          BUILD_EOF
+          chmod +x scripts/build-debian-iso.sh
 
       - name: "Execute ISO Build"
-        id: build-iso
         run: |
-          echo "Starting ISO build process..."
+          echo "Starting Debian-based ISO build process..."
           
           docker run --rm \
             --privileged \
-            --tmpfs /tmp:exec \
             -v $PWD:/build \
             -e BUILD_VARIANT="${{ github.event.inputs.build_variant || 'standard' }}" \
             -e BUILD_VERSION="${{ env.BUILD_VERSION }}" \
             -e ISO_NAME="${{ env.ISO_NAME }}" \
-            cybr-builder:${{ needs.validate.outputs.build_hash }} \
-            bash -c "
-              set -euo pipefail
-              
-              echo '════════════════════════════════════════'
-              echo '           STARTING BUILD PROCESS       '
-              echo '════════════════════════════════════════'
-              
-              # Source build configuration
-              source ./scripts/build-config.sh
-              
-              # Clone live-build-config with retry logic
-              for i in {1..3}; do
-                if git clone --depth=1 https://gitlab.com/kalilinux/build-scripts/live-build-config.git; then
-                  break
-                elif [[ \$i -eq 3 ]]; then
-                  echo 'Failed to clone after 3 attempts'
-                  exit 1
-                else
-                  echo 'Clone failed, retrying in 10 seconds...'
-                  sleep 10
-                fi
-              done
-              
-              cd live-build-config
-              
-              # Configure live-build
-              cat >> auto/config << CONFIG_EOF
-          LB_ISO_IMAGE_NAME=\"\$ISO_NAME\"
-          LB_ISO_VOLUME=\"Cybr-NextGen\"
-          LB_BUILD_WITH_CHROOT=\"true\"
-          LB_COMPRESSION=\"xz\"
-          LB_COMPRESSION_OPTIONS=\"-Xbcj x86\"
-          LB_BOOTAPPEND_LIVE=\"boot=live components hostname=cybr username=root quiet\"
-          LB_ISO_PUBLISHER=\"WolfTech Innovations\"
-          LB_ISO_APPLICATION=\"Cybr NextGen Security OS\"
-          CONFIG_EOF
-              
-              # Copy package lists
-              cp -r /build/config/package-lists config/ 2>/dev/null || true
-              
-              # Create hooks directory
-              mkdir -p config/hooks/normal
-              
-             
-              # Create branding hook
-              cat > config/hooks/normal/0030-cybr-branding.hook.chroot << 'BRAND_EOF'
-          #!/bin/bash
-          set -e
-          
-          echo 'Applying Cybr branding...'
-          
-          # Update OS identification
-          sed -i 's/Kali GNU\/Linux/Cybr NextGen/g' /etc/os-release || true
-          sed -i 's/kali-rolling/cybr-rolling/g' /etc/os-release || true
-          sed -i 's/Kali/Cybr/g' /etc/issue /etc/issue.net || true
-          
-          # Create version info
-          cat > /etc/cybr-version << VERSION_EOF
-          Cybr NextGen Security OS
-          Version: \$BUILD_VERSION
-          Build Date: \$BUILD_DATE
-          Builder: \$BUILDER
-          Variant: \$BUILD_VARIANT
-          VERSION_EOF
-          
-          # Remove plymouth boot splash if present
-          if dpkg -l | grep -q plymouth; then
-            apt-get purge -y plymouth* || true
-            update-initramfs -u || true
-          fi
-          
-          # Configure grub
-          sed -i '/GRUB_CMDLINE_LINUX_DEFAULT/c\\GRUB_CMDLINE_LINUX_DEFAULT=\"quiet\"' /etc/default/grub || true
-          
-          # Cleanup
-          apt-get autoremove -y || true
-          apt-get autoclean || true
-          
-          echo 'Cybr branding completed successfully'
-          BRAND_EOF
-              chmod 755 config/hooks/normal/0030-cybr-branding.hook.chroot
-              
-              # Start the build
-              echo '════════════════════════════════════════'
-              echo '        EXECUTING LIVE-BUILD           '
-              echo '════════════════════════════════════════'
-              
-              timeout 7200 bash ./build.sh --variant \$BUILD_VARIANT --verbose || {
-                echo 'Build failed or timed out after 2 hours'
-                exit 1
-              }
-              
-              # Find and move the built ISO
-              ISO_PATH=\$(find images/ -name '*.iso' -type f | head -1)
-              if [[ -n \"\$ISO_PATH\" && -f \"\$ISO_PATH\" ]]; then
-                echo \"Moving ISO from \$ISO_PATH to /build/\$ISO_NAME.iso\"
-                mv \"\$ISO_PATH\" \"/build/\$ISO_NAME.iso\"
-                
-                echo '════════════════════════════════════════'
-                echo '          BUILD COMPLETED               '
-                echo '════════════════════════════════════════'
-                
-                ls -lh \"/build/\$ISO_NAME.iso\"
-              else
-                echo 'ERROR: ISO file not found after build'
-                ls -la images/ || true
-                exit 1
-              fi
-            "
+            cybr-debian-builder:${{ needs.validate.outputs.build_hash }} \
+            ./scripts/build-debian-iso.sh
 
       - name: "Validate ISO Build"
         id: iso-info
@@ -422,51 +589,7 @@ jobs:
           name: "${{ env.ISO_NAME }}"
           path: "${{ env.ISO_NAME }}.iso"
           retention-days: 7
-          compression-level: 0  # ISO is already compressed
-
-      - name: "Create Build Report"
-        if: always()
-        run: |
-          cat > build-report.md << 'REPORT_EOF'
-          # 🚀 Cybr NextGen Build Report
-          
-          ## Build Information
-          
-          | Parameter | Value |
-          |-----------|-------|
-          | **Build Number** | `${{ github.run_number }}` |
-          | **Build Hash** | `${{ needs.validate.outputs.build_hash }}` |
-          | **Variant** | `${{ github.event.inputs.build_variant || 'standard' }}` |
-          | **Trigger** | `${{ github.event_name }}` |
-          | **Status** | ${{ (steps.build-status.outputs.success == 'true' && '✅ Success') || '❌ Failed' }} |
-          
-          ## ISO Details
-          
-          | Property | Value |
-          |----------|-------|
-          | **Filename** | `${{ env.ISO_NAME }}.iso` |
-          | **Size** | `${{ steps.iso-info.outputs.size || 'N/A' }} bytes` |
-          | **SHA256** | `${{ steps.iso-info.outputs.sha256 || 'N/A' }}` |
-          
-          ## Build Configuration
-          
-          ```bash
-          BUILD_VARIANT=${{ github.event.inputs.build_variant || 'standard' }}
-          FORCE_FAIL=${{ github.event.inputs.force_fail || 'false' }}
-          SKIP_UPLOAD=${{ github.event.inputs.skip_upload || 'false' }}
-          BUILD_VERSION=${{ env.BUILD_VERSION }}
-          ```
-          
-          ---
-          *Generated by Cybr NextGen Build System*
-          REPORT_EOF
-
-      - name: "Upload Build Report"
-        uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: "build-report-${{ github.run_number }}"
-          path: "build-report.md"
+          compression-level: 0
 
   # ============================================================================
   #                              UPLOAD JOB
@@ -480,36 +603,12 @@ jobs:
       github.event.inputs.skip_upload != 'true' &&
       (github.event_name == 'workflow_dispatch' || github.ref == 'refs/heads/main')
     timeout-minutes: 30
-    
-    steps:
-      - name: "Upload Progress Banner"
-        run: |
-          cat << 'EOF'
-          
-          ╔══════════════════════════════════════════════════════════════════════╗
-          ║  ██╗   ██╗██████╗ ██╗      ██████╗  █████╗ ██████╗     ██╗███╗   ██╗ ║
-          ║  ██║   ██║██╔══██╗██║     ██╔═══██╗██╔══██╗██╔══██╗   ██╔╝████╗  ██║ ║
-          ║  ██║   ██║██████╔╝██║     ██║   ██║███████║██║  ██║  ██╔╝ ██╔██╗ ██║ ║
-          ║  ██║   ██║██╔═══╝ ██║     ██║   ██║██╔══██║██║  ██║ ██╔╝  ██║╚██╗██║ ║
-          ║  ╚██████╔╝██║     ███████╗╚██████╔╝██║  ██║██████╔╝██╔╝   ██║ ╚████║ ║
-          ║   ╚═════╝ ╚═╝     ╚══════╝ ╚═════╝ ╚═╝  ╚═╝╚═════╝ ╚═╝    ╚═╝  ╚═══╝ ║
-          ╚══════════════════════════════════════════════════════════════════════╝
-          
-          EOF
 
+    steps:
       - name: "Download ISO Artifact"
         uses: actions/download-artifact@v4
         with:
           name: "${{ env.ISO_NAME }}"
-
-      - name: "Verify ISO Download"
-        run: |
-          if [[ ! -f "${{ env.ISO_NAME }}.iso" ]]; then
-            echo "❌ ISO file not found after download"
-            exit 1
-          fi
-          
-          echo "✅ ISO file verified: $(ls -lh ${{ env.ISO_NAME }}.iso)"
 
       - name: "Install Upload Dependencies"
         run: |
@@ -527,11 +626,10 @@ jobs:
           fi
           
           ISO_FILE="${{ env.ISO_NAME }}.iso"
-          REMOTE_PATH="/home/frs/project/wolfos/$ISO_FILE"
+          REMOTE_PATH="/home/frs/project/cybr-nextgen/$ISO_FILE"
           
           echo "Uploading $ISO_FILE to SourceForge..."
           
-          # Upload with retry logic
           for i in {1..3}; do
             if timeout 1800 sshpass -p "$SF_PASS" \
               rsync -avP --progress \
@@ -548,9 +646,6 @@ jobs:
               sleep 30
             fi
           done
-          
-          echo "🎉 ISO successfully uploaded to SourceForge!"
-          echo "Download URL: https://sourceforge.net/projects/wolfos/files/$ISO_FILE/download"
 
   # ============================================================================
   #                            NOTIFICATION JOB
@@ -561,27 +656,11 @@ jobs:
     needs: [validate, build, upload]
     if: always()
     timeout-minutes: 5
-    
-    steps:
-      - name: "Notification Banner"
-        run: |
-          cat << 'EOF'
-          
-          ╔══════════════════════════════════════════════════════════════════════╗
-          ║  ███╗   ██╗ ██████╗ ████████╗██╗███████╗██╗   ██╗██╗███╗   ██╗ ██████╗║
-          ║  ████╗  ██║██╔═══██╗╚══██╔══╝██║██╔════╝╚██╗ ██╔╝██║████╗  ██║██╔════╝║
-          ║  ██╔██╗ ██║██║   ██║   ██║   ██║█████╗   ╚████╔╝ ██║██╔██╗ ██║██║  ███╗║
-          ║  ██║╚██╗██║██║   ██║   ██║   ██║██╔══╝    ╚██╔╝  ██║██║╚██╗██║██║   ██║║
-          ║  ██║ ╚████║╚██████╔╝   ██║   ██║██║        ██║   ██║██║ ╚████║╚██████╔╝║
-          ║  ╚═╝  ╚═══╝ ╚═════╝    ╚═╝   ╚═╝╚═╝        ╚═╝   ╚═╝╚═╝  ╚═══╝ ╚═════╝ ║
-          ╚══════════════════════════════════════════════════════════════════════╝
-          
-          EOF
 
+    steps:
       - name: "Determine Overall Status"
         id: status
         run: |
-          # Determine the overall pipeline status
           BUILD_STATUS="${{ needs.build.outputs.build_success }}"
           UPLOAD_STATUS="${{ needs.upload.result }}"
           
@@ -601,75 +680,6 @@ jobs:
             echo "status_message=Build pipeline failed" >> $GITHUB_OUTPUT
           fi
 
-      - name: "Create Notification Summary"
-        run: |
-          cat << 'SUMMARY_EOF'
-          
-          ╔════════════════════════════════════════════════════════════════════════╗
-          ║                           PIPELINE SUMMARY                             ║
-          ╠════════════════════════════════════════════════════════════════════════╣
-          ║                                                                        ║
-          ║  ${{ steps.status.outputs.status_emoji }} OVERALL STATUS: ${{ steps.status.outputs.overall_status }}                                    ║
-          ║  📊 BUILD: ${{ (needs.build.outputs.build_success == 'true' && '✅ SUCCESS') || '❌ FAILED' }}                                           ║
-          ║  📤 UPLOAD: ${{ (needs.upload.result == 'success' && '✅ SUCCESS') || (needs.upload.result == 'skipped' && '⏭️ SKIPPED') || '❌ FAILED' }}                                          ║
-          ║                                                                        ║
-          ║  🏗️  Build Variant: ${{ github.event.inputs.build_variant || 'standard' }}                                      ║
-          ║  📦 ISO Name: ${{ env.ISO_NAME }}.iso                          ║
-          ║  🔢 Build Number: #${{ github.run_number }}                                           ║
-          ║  🕒 Trigger: ${{ github.event_name }}                                            ║
-          ║                                                                        ║
-          ╚════════════════════════════════════════════════════════════════════════╝
-          
-          SUMMARY_EOF
-
-      - name: "Notify Build API"
-        if: always()
-        env:
-          API_URL: ${{ secrets.API_URL }}
-        run: |
-          if [[ -n "$API_URL" ]]; then
-            echo "Sending notification to API..."
-            
-            # Prepare notification payload
-            PAYLOAD=$(cat << API_EOF
-          {
-            "build_number": "${{ github.run_number }}",
-            "status": "${{ steps.status.outputs.overall_status }}",
-            "variant": "${{ github.event.inputs.build_variant || 'standard' }}",
-            "iso_name": "${{ env.ISO_NAME }}.iso",
-            "iso_size": "${{ needs.build.outputs.iso_size }}",
-            "iso_sha256": "${{ needs.build.outputs.iso_sha256 }}",
-            "build_success": "${{ needs.build.outputs.build_success }}",
-            "upload_success": "${{ (needs.upload.result == 'success') && 'true' || 'false' }}",
-            "trigger": "${{ github.event_name }}",
-            "repository": "${{ github.repository }}",
-            "commit_sha": "${{ github.sha }}",
-            "workflow_url": "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
-          }
-          API_EOF
-            )
-            
-            # Send notification with timeout and retry
-            for i in {1..3}; do
-              if curl -f -s --max-time 30 \
-                -H "Content-Type: application/json" \
-                -H "User-Agent: Cybr-Build-System/1.0" \
-                -X POST \
-                -d "$PAYLOAD" \
-                "$API_URL"; then
-                echo "✅ API notification sent successfully"
-                break
-              elif [[ $i -eq 3 ]]; then
-                echo "⚠️ Failed to notify API after 3 attempts"
-              else
-                echo "⚠️ API notification attempt $i failed, retrying..."
-                sleep 10
-              fi
-            done
-          else
-            echo "ℹ️ No API URL configured, skipping notification"
-          fi
-
       - name: "Create Job Summary"
         if: always()
         run: |
@@ -678,12 +688,11 @@ jobs:
           
           ## Pipeline Results
           
-          | Job | Status | Duration |
-          |-----|--------|----------|
-          | **Validation** | ${{ (needs.validate.result == 'success' && '✅ Success') || '❌ Failed' }} | - |
-          | **Build** | ${{ (needs.build.result == 'success' && '✅ Success') || '❌ Failed' }} | - |
-          | **Upload** | ${{ (needs.upload.result == 'success' && '✅ Success') || (needs.upload.result == 'skipped' && '⏭️ Skipped') || '❌ Failed' }} | - |
-          | **Notify** | ${{ (job.status == 'success' && '✅ Success') || '❌ Failed' }} | - |
+          | Job | Status |
+          |-----|--------|
+          | **Validation** | ${{ (needs.validate.result == 'success' && '✅ Success') || '❌ Failed' }} |
+          | **Build** | ${{ (needs.build.result == 'success' && '✅ Success') || '❌ Failed' }} |
+          | **Upload** | ${{ (needs.upload.result == 'success' && '✅ Success') || (needs.upload.result == 'skipped' && '⏭️ Skipped') || '❌ Failed' }} |
           
           ## Build Details
           
@@ -694,20 +703,16 @@ jobs:
           | **Build Variant** | `${{ github.event.inputs.build_variant || 'standard' }}` |
           | **ISO Size** | `${{ needs.build.outputs.iso_size || 'N/A' }}` bytes |
           | **SHA256** | `${{ needs.build.outputs.iso_sha256 || 'N/A' }}` |
-          | **Trigger** | `${{ github.event_name }}` |
           
-          ## Quick Actions
+          ## Features
           
-          ${{ (needs.build.outputs.build_success == 'true' && '- 📥 [Download ISO Artifact](../../actions/runs/${{ github.run_id }}#artifacts)') || '' }}
-          ${{ (needs.upload.result == 'success' && '- 🌐 [Download from SourceForge](https://sourceforge.net/projects/wolfos/files/${{ env.ISO_NAME }}.iso/download)') || '' }}
-          - 📋 [View Full Logs](../../actions/runs/${{ github.run_id }})
-          - 🔄 [Re-run Workflow](../../actions/workflows/build.yml)
-          
-          ---
+          - 🐧 **Base**: Debian Bookworm
+          - 🖥️ **Desktop**: KDE Plasma with SDDM
+          - 📦 **Installer**: Calamares
+          - 🔧 **Repositories**: Kali Linux tools available
+          - 🎨 **Branding**: Custom Cybr NextGen theme
           
           **Message:** ${{ steps.status.outputs.status_message }}
-          
-          *Generated at $(date -u '+%Y-%m-%d %H:%M:%S UTC') by Cybr NextGen Build System*
           SUMMARY_EOF
 
       - name: "Final Status Report"
@@ -726,12 +731,11 @@ jobs:
           echo "║  Repository: ${{ github.repository }}                         ║"
           echo "║  Commit: ${{ github.sha }}              ║"
           echo "║                                                                        ║"
-          echo "║  Thank you for using Cybr NextGen Build System!                       ║"
+          echo "║  Debian + KDE Plasma + Calamares + Kali Repos = Success!              ║"
           echo "║                                                                        ║"
           echo "╚════════════════════════════════════════════════════════════════════════╝"
           echo ""
           
-          # Set exit code based on overall status
           if [[ "${{ steps.status.outputs.overall_status }}" == "failure" ]]; then
             echo "Pipeline completed with failures"
             exit 1
@@ -744,7 +748,7 @@ jobs:
 #                         SECURITY AND MAINTENANCE
 # ============================================================================
   security-scan:
-    name: "🔒 Security Scan (Optional)"
+    name: "🔒 Security Scan"
     runs-on: ubuntu-latest
     needs: build
     if: |
@@ -752,23 +756,8 @@ jobs:
       (github.event_name == 'push' || github.event_name == 'schedule')
     timeout-minutes: 30
     continue-on-error: true
-    
-    steps:
-      - name: "Security Scan Banner"
-        run: |
-          cat << 'EOF'
-          
-          ╔══════════════════════════════════════════════════════════════════════╗
-          ║  ███████╗███████╗ ██████╗██╗   ██╗██████╗ ██╗████████╗██╗   ██╗    ║
-          ║  ██╔════╝██╔════╝██╔════╝██║   ██║██╔══██╗██║╚══██╔══╝╚██╗ ██╔╝    ║
-          ║  ███████╗█████╗  ██║     ██║   ██║██████╔╝██║   ██║    ╚████╔╝     ║
-          ║  ╚════██║██╔══╝  ██║     ██║   ██║██╔══██╗██║   ██║     ╚██╔╝      ║
-          ║  ███████║███████╗╚██████╗╚██████╔╝██║  ██║██║   ██║      ██║       ║
-          ║  ╚══════╝╚══════╝ ╚═════╝ ╚═════╝ ╚═╝  ╚═╝╚═╝   ╚═╝      ╚═╝       ║
-          ╚══════════════════════════════════════════════════════════════════════╝
-          
-          EOF
 
+    steps:
       - name: "Checkout Repository"
         uses: actions/checkout@v4
 
@@ -779,47 +768,23 @@ jobs:
           format: 'sarif'
           output: 'trivy-results.sarif'
 
-      - name: "Upload Security Scan Results"
+      - name: "Upload Security Results"
         uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: "security-scan-results-${{ github.run_number }}"
+          name: "security-scan-${{ github.run_number }}"
           path: "trivy-results.sarif"
 
   cleanup:
-    name: "🧹 Cleanup Resources"
+    name: "🧹 Cleanup"
     runs-on: ubuntu-latest
     needs: [build, upload, notify, security-scan]
     if: always()
     timeout-minutes: 10
-    
-    steps:
-      - name: "Cleanup Banner"
-        run: |
-          cat << 'EOF'
-          
-          ╔══════════════════════════════════════════════════════════════════════╗
-          ║   ██████╗██╗     ███████╗ █████╗ ███╗   ██╗██╗   ██╗██████╗         ║
-          ║  ██╔════╝██║     ██╔════╝██╔══██╗████╗  ██║██║   ██║██╔══██╗        ║
-          ║  ██║     ██║     █████╗  ███████║██╔██╗ ██║██║   ██║██████╔╝        ║
-          ║  ██║     ██║     ██╔══╝  ██╔══██║██║╚██╗██║██║   ██║██╔═══╝         ║
-          ║  ╚██████╗███████╗███████╗██║  ██║██║ ╚████║╚██████╔╝██║             ║
-          ║   ╚═════╝╚══════╝╚══════╝╚═╝  ╚═╝╚═╝  ╚═══╝ ╚═════╝ ╚═╝             ║
-          ╚══════════════════════════════════════════════════════════════════════╝
-          
-          EOF
 
-      - name: "Free Up Disk Space"
+    steps:
+      - name: "Free Resources"
         run: |
-          echo "Cleaning up build artifacts and temporary files..."
           docker system prune -af || true
           sudo apt-get clean || true
-          sudo rm -rf /tmp/* /var/tmp/* || true
-          
-          echo "Disk usage after cleanup:"
           df -h
-
-      - name: "Generate Cleanup Report"
-        run: |
-          echo "✅ Resource cleanup completed"
-          echo "📊 Final disk usage: $(df -h / | tail -1 | awk '{print $4}' | tr -d '\n') available"
