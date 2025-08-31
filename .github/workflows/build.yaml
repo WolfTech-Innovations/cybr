@@ -146,7 +146,7 @@ jobs:
           # System essentials
           sudo nano vim curl wget git
           openssh-client
-          network-manager network-manager-gnome
+          network-manager
           
           # Security (minimal as requested)
           ufw gufw
@@ -200,26 +200,7 @@ jobs:
           # Calamares installer
           calamares
           calamares-settings-debian
-          PKG_EOF
-
-      - name: "Build Custom Bootloader"
-        run: |
-          mkdir -p bootloader
-          
-          # NOTE: This assumes ATOBoot/atoboot.asm exists in the repository
-          if [ -f "ATOBoot/atoboot.asm" ]; then
-            echo "Building custom ATOBoot bootloader..."
-            cd ATOBoot
-            nasm -f bin atoboot.asm -o atoboot.bin
-            cd ..
-            cp ATOBoot/atoboot.bin bootloader/
-            echo "Custom bootloader built successfully"
-          else
-            echo "WARNING: ATOBoot/atoboot.asm not found, creating placeholder"
-            echo "You need to add the ATOBoot source code to build the custom bootloader"
-            # Create a simple placeholder bootloader
-            echo -e '\x00\x00' > bootloader/atoboot.bin
-          fi
+          PKG_EOF    
 
       - name: "Execute ISO Build"
         run: |
@@ -247,8 +228,8 @@ jobs:
                 --linux-flavours amd64 \
                 --debian-installer false \
                 --installer-distribution bullseye \
-                --bootappend-live 'boot=live components hostname=\$DEFAULT_HOSTNAME username=\$DEFAULT_USER quiet splash' \
-                --bootloaders 'syslinux,grub-efi' \
+                --bootappend-live 'boot=live components hostname=\$DEFAULT_HOSTNAME username=\$DEFAULT_USER' \
+                --bootloaders 'syslinux' \
                 --compression xz \
                 --zsync false \
                 --iso-application '\$DISTRO_NAME' \
@@ -430,22 +411,6 @@ jobs:
           echo 'Minimal security setup completed'
           SEC_EOF
               chmod 755 config/hooks/normal/0030-security-minimal.hook.chroot
-              
-              # Integrate custom bootloader if available
-              if [ -f /build/bootloader/atoboot.bin ]; then
-                echo 'Integrating custom ATOBoot bootloader...'
-                mkdir -p config/bootloaders/atoboot
-                cp /build/bootloader/atoboot.bin config/bootloaders/atoboot/
-                
-                cat > config/bootloaders/atoboot/boot.sh << BOOT_EOF
-          #!/bin/bash
-          # Custom bootloader integration
-          echo 'Installing ATOBoot custom bootloader...'
-          # Note: This requires proper MBR integration
-          # The actual bootloader installation would happen here
-          BOOT_EOF
-                chmod 755 config/bootloaders/atoboot/boot.sh
-              fi
               
               echo 'Starting live-build process...'
               timeout 7200 lb build || {
