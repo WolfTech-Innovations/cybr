@@ -238,13 +238,7 @@ jobs:
           if [[ "${{ github.event.inputs.build_variant || 'standard' }}" != "minimal" ]]; then
             cat > config/package-lists/security.list.chroot << 'SEC_PKG_EOF'
           # Security tools
-          hydra john hashcat
-          sqlmap gobuster dirb
-          steghide binwalk
-          exiftool radare2
-          rkhunter lynis
-          suricata psad
-          tripwire
+       
           SEC_PKG_EOF
           fi
           
@@ -252,7 +246,7 @@ jobs:
           if [[ "${{ github.event.inputs.build_variant || 'standard' }}" == "full" ]]; then
             cat > config/package-lists/desktop.list.chroot << 'DESK_PKG_EOF'
           # Desktop environment
-          plasma-desktop
+          ubuntu-budgie-desktop
           sddm
           firefox-esr
           code-oss
