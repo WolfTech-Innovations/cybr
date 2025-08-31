@@ -3,10 +3,15 @@ name: "Cybr NextGen Build System"
 on:
   workflow_dispatch:
     inputs:
+      force_fail:
+        description: "Force build failure for testing"
+        required: false
+        default: "false"
+        type: boolean
       build_variant:
         description: "Build variant"
         required: false
-        default: "full"
+        default: "standard"
         type: choice
         options: ["minimal", "standard", "full"]
       skip_upload:
@@ -18,22 +23,50 @@ on:
     branches: [main, develop]
     paths: ['scripts/**', 'config/**', '.github/workflows/build.yml']
   schedule:
-    - cron: '0 2 * * 0'
+    - cron: '0 2 * * 0' # Weekly builds on Sunday 2AM UTC
 
 env:
   DOCKER_BUILDKIT: 1
+  BUILDX_CACHE_TO: type=gha,mode=max
+  BUILDX_CACHE_FROM: type=gha
   BUILD_VERSION: ${{ github.run_number }}
   ISO_NAME: "cybr-nextgen-v${{ github.run_number }}"
 
 jobs:
+  # ============================================================================
+  #                           PRE-BUILD VALIDATION
+  # ============================================================================
   validate:
-    name: "Pre-Build Validation"
+    name: "🔍 Pre-Build Validation"
     runs-on: ubuntu-latest
     timeout-minutes: 10
     outputs:
       should_build: ${{ steps.check.outputs.should_build }}
       build_hash: ${{ steps.hash.outputs.hash }}
     steps:
+      - name: "ASCII Art Banner"
+        run: |
+          cat << 'EOF'
+          
+          ╔═══════════════════════════════════════════════════════════════════════╗
+          ║                                                                       ║
+          ║    ▄████▄▓██   ██▓ ▄▄▄▄    ██▀███      ▄▄▄▄    █    ██  ██▓ ██▓   ▄▄▄▄   ║
+          ║   ▒██▀ ▀█ ▒██  ██▒▓█████▄ ▓██ ▒ ██▒   ▓█████▄  ██  ▓██▒▓██▒▓██▒  ▓█████▄ ║
+          ║   ▒▓█    ▄ ▒██ ██░▒██▒ ▄██▓██ ░▄█ ▒   ▒██▒ ▄██▓██  ▒██░▒██▒▒██░  ▒██▒ ▄██║
+          ║   ▒▓▓▄ ▄██▒░ ▐██▓░▒██░█▀  ▒██▀▀█▄     ▒██░█▀  ▓▓█  ░██░░██░▒██░  ▒██░█▀  ║
+          ║   ▒ ▓███▀ ░░ ██▒▓░░▓█  ▀█▓░██▓ ▒██▒   ░▓█  ▀█▓▒▒█████▓ ░██░░██████▒█  ▀█▓║
+          ║   ░ ░▒ ▒  ░ ██▒▒▒ ░▒▓███▀▒░ ▒▓ ░▒▓░   ░▒▓███▀▒░▒▓▒ ▒ ▒ ░▓  ░ ▒░▓  ░▒▓███▀▒║
+          ║     ░  ▒  ▓██ ░▒░ ▒░▒   ░   ░▒ ░ ▒░   ▒░▒   ░ ░░▒░ ░ ░  ▒ ░░ ░ ▒  ░▒   ░ ║
+          ║   ░       ▒ ▒ ░░   ░    ░   ░░   ░     ░    ░  ░░░ ░ ░  ▒ ░  ░ ░   ░    ░ ║
+          ║   ░ ░     ░ ░      ░         ░         ░         ░      ░      ░  ░      ║
+          ║   ░       ░ ░           ░                   ░                        ░    ║
+          ║                                                                       ║
+          ║                    NEXT-GENERATION SECURITY OS BUILDER               ║
+          ║                                                                       ║
+          ╚═══════════════════════════════════════════════════════════════════════╝
+          
+          EOF
+          
       - name: "Checkout Repository"
         uses: actions/checkout@v4
         with:
@@ -50,22 +83,47 @@ jobs:
         id: check
         run: |
           echo "should_build=true" >> $GITHUB_OUTPUT
-          echo "Build Variant: ${{ github.event.inputs.build_variant || 'standard' }}"
-          echo "Build Number: ${{ github.run_number }}"
-          echo "Trigger: ${{ github.event_name }}"
+          
+          echo "┌─────────────────────────────────────────┐"
+          echo "│           VALIDATION REPORT             │"
+          echo "├─────────────────────────────────────────┤"
+          echo "│ Build Variant: ${{ github.event.inputs.build_variant || 'standard' }}"
+          echo "│ Force Fail:    ${{ github.event.inputs.force_fail || 'false' }}"
+          echo "│ Skip Upload:   ${{ github.event.inputs.skip_upload || 'false' }}"
+          echo "│ Build Number:  ${{ github.run_number }}"
+          echo "│ Trigger:       ${{ github.event_name }}"
+          echo "└─────────────────────────────────────────┘"
 
+  # ============================================================================
+  #                              MAIN BUILD JOB
+  # ============================================================================
   build:
-    name: "Build Cybr OS"
+    name: "🏗️ Build Cybr OS"
     runs-on: ubuntu-latest
     needs: validate
     if: needs.validate.outputs.should_build == 'true'
-    timeout-minutes: 180
+    timeout-minutes: 340
     outputs:
       build_success: ${{ steps.build-status.outputs.success }}
       iso_size: ${{ steps.iso-info.outputs.size }}
       iso_sha256: ${{ steps.iso-info.outputs.sha256 }}
     
     steps:
+      - name: "Build Progress Banner"
+        run: |
+          cat << 'EOF'
+          
+          ╔══════════════════════════════════════════════════════════════════════╗
+          ║  ██████╗ ██╗   ██╗██╗██╗     ██████╗     ███████╗████████╗ █████╗   ║
+          ║  ██╔══██╗██║   ██║██║██║     ██╔══██╗    ██╔════╝╚══██╔══╝██╔══██╗  ║
+          ║  ██████╔╝██║   ██║██║██║     ██║  ██║    ███████╗   ██║   ███████║  ║
+          ║  ██╔══██╗██║   ██║██║██║     ██║  ██║    ╚════██║   ██║   ██╔══██║  ║
+          ║  ██████╔╝╚██████╔╝██║███████╗██████╔╝    ███████║   ██║   ██║  ██║  ║
+          ║  ╚═════╝  ╚═════╝ ╚═╝╚══════╝╚═════╝     ╚══════╝   ╚═╝   ╚═╝  ╚═╝  ║
+          ╚══════════════════════════════════════════════════════════════════════╝
+          
+          EOF
+
       - name: "Maximize Build Space"
         run: |
           echo "Freeing up disk space..."
@@ -78,23 +136,43 @@ jobs:
         with:
           fetch-depth: 1
 
-      - name: "Create Build Environment"
+      - name: "Setup Docker Buildx"
+        uses: docker/setup-buildx-action@v3
+        with:
+          driver-opts: |
+            network=host
+            image=moby/buildkit:buildx-stable-1
+
+      - name: "Cache Docker Layers"
+        uses: actions/cache@v4
+        with:
+          path: /tmp/.buildx-cache
+          key: ${{ runner.os }}-buildx-${{ needs.validate.outputs.build_hash }}
+          restore-keys: |
+            ${{ runner.os }}-buildx-
+
+      - name: "Create Optimized Dockerfile"
         run: |
           cat > Dockerfile << 'DOCKERFILE_EOF'
-          FROM debian:bullseye-slim AS base
+          # Multi-stage build for optimization
+          FROM kalilinux/kali-rolling AS base
           
+          # Install dependencies in a single layer with cleanup
           RUN apt-get update && \
               DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
                   git curl wget ca-certificates gnupg2 \
                   debootstrap syslinux-utils isolinux xorriso \
-                  mtools rsync live-build \
+                  squashfs-tools mtools rsync sshpass live-build \
                   nano sed gzip xz-utils bzip2 \
-                  nasm gcc make \
               && apt-get clean \
               && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
           
           WORKDIR /build
+          
+          # Copy build scripts
           COPY scripts/ ./scripts/
+          
+          # Set proper permissions
           RUN find ./scripts -name "*.sh" -o -name "*.bash" | xargs chmod +x
           
           ENV DEBIAN_FRONTEND=noninteractive
@@ -102,331 +180,212 @@ jobs:
           ENV LC_ALL=C.UTF-8
           DOCKERFILE_EOF
 
+      - name: "Build Docker Image"
+        run: |
+          echo "Building optimized Docker image..."
+          docker buildx build \
+            --cache-from=type=gha \
+            --cache-to=type=gha,mode=max \
+            --load \
+            -t cybr-builder:${{ needs.validate.outputs.build_hash }} \
+            .
+
       - name: "Create Build Scripts Directory"
         run: mkdir -p scripts
 
-      - name: "Generate User-Friendly Configuration"
+      - name: "Generate Build Configuration"
         run: |
-          cat > scripts/cybr-config.sh << 'CONFIG_EOF'
+          cat > scripts/build-config.sh << 'CONFIG_EOF'
           #!/bin/bash
           set -euo pipefail
           
-          # User-friendly OS configuration
-          export DISTRO_NAME="Cybr NextGen"
-          export DISTRO_VERSION="${{ env.BUILD_VERSION }}"
-          export DISTRO_CODENAME="FriendlyWolf"
-          export DEFAULT_USER="cybr"
-          export DEFAULT_HOSTNAME="cybr-system"
-          
-          # Desktop environment for maximum user-friendliness
-          export DESKTOP_ENV="plasma"
-          export DISPLAY_MANAGER="sddm"
-          
-          # Build settings
+          # Build configuration
           export BUILD_VARIANT="${{ github.event.inputs.build_variant || 'standard' }}"
           export ISO_NAME="${{ env.ISO_NAME }}"
-          export USE_CALAMARES="true"
-          export USE_CUSTOM_BOOTLOADER="true"
+          export BUILD_VERSION="${{ env.BUILD_VERSION }}"
+          export BUILD_DATE="$(date -u '+%Y-%m-%d %H:%M:%S UTC')"
+          export BUILDER="GitHub Actions"
           
-          echo "Cybr NextGen Configuration:"
-          echo "  Name: $DISTRO_NAME"
-          echo "  Version: $DISTRO_VERSION"
-          echo "  Codename: $DISTRO_CODENAME"
-          echo "  Desktop: $DESKTOP_ENV"
-          echo "  Installer: Calamares"
+          echo "Build Configuration:"
+          echo "  Variant: $BUILD_VARIANT"
+          echo "  Version: $BUILD_VERSION"
+          echo "  ISO Name: $ISO_NAME"
+          echo "  Build Date: $BUILD_DATE"
           CONFIG_EOF
-          chmod +x scripts/cybr-config.sh
+          chmod +x scripts/build-config.sh
 
-      - name: "Create Package Lists"
+      - name: "Generate Package Lists"
         run: |
+          # Create package lists based on variant
           mkdir -p config/package-lists
           
-          # Base user-friendly packages
+          # Base packages for all variants
           cat > config/package-lists/base.list.chroot << 'PKG_EOF'
           # System essentials
-          sudo nano vim curl wget git
-          openssh-client
-          network-manager
+          sudo nano curl wget git
+          openssh-client openssh-server
+          iptables ufw fail2ban
+          clamav clamav-freshclam
+          htop tree file
           
-          # Security (minimal as requested)
-          ufw gufw
-          clamav clamav-daemon clamav-freshclam
-          
-          # User-friendly utilities
-          htop neofetch tree
-          firefox-esr thunderbird
-          libreoffice
-          vlc gimp
-          file-roller
-          synaptic gdebi
-          
-          # Hardware support
-          firmware-linux firmware-linux-nonfree
-          firmware-misc-nonfree
-          
-          # Multimedia codecs
-          gstreamer1.0-plugins-base
-          gstreamer1.0-plugins-good
-          gstreamer1.0-plugins-bad
-          gstreamer1.0-plugins-ugly
-          gstreamer1.0-libav
+          # Network tools
+          nmap netcat-traditional
+          dnsutils whois
+          tcpdump wireshark-common
           PKG_EOF
           
+          # Additional packages for standard/full builds
+          if [[ "${{ github.event.inputs.build_variant || 'standard' }}" != "minimal" ]]; then
+            cat > config/package-lists/security.list.chroot << 'SEC_PKG_EOF'
+          # Security tools
+          hydra john hashcat
+          sqlmap gobuster dirb
+          steghide binwalk
+          exiftool radare2
+          rkhunter lynis
+          suricata psad
+          tripwire
+          SEC_PKG_EOF
+          fi
+          
+          # Desktop environment for full build
+          if [[ "${{ github.event.inputs.build_variant || 'standard' }}" == "full" ]]; then
+            cat > config/package-lists/desktop.list.chroot << 'DESK_PKG_EOF'
           # Desktop environment
-          cat > config/package-lists/desktop.list.chroot << 'DESK_PKG_EOF'
-          # KDE Plasma (most user-friendly)
           plasma-desktop
-          plasma-workspace
-          plasma-nm
-          kde-spectacle
-          dolphin
-          konsole
-          kate
-          ark
-          okular
-          gwenview
-          
-          # Display manager
-          sddm sddm-theme-breeze
-          
-          # Additional user-friendly tools
-          discover
-          systemsettings
-          kde-config-gtk-style
-          PKG_EOF
-          
-          # Calamares installer
-          cat > config/package-lists/installer.list.chroot << 'INST_PKG_EOF'
-          # Calamares installer
-          calamares
-          calamares-settings-debian
-          PKG_EOF    
+          sddm
+          firefox-esr
+          code-oss
+          DESK_PKG_EOF
+          fi
 
       - name: "Execute ISO Build"
+        id: build-iso
         run: |
-          docker build -t cybr-builder:${{ needs.validate.outputs.build_hash }} .
+          echo "Starting ISO build process..."
           
           docker run --rm \
             --privileged \
             --tmpfs /tmp:exec \
             -v $PWD:/build \
             -e BUILD_VARIANT="${{ github.event.inputs.build_variant || 'standard' }}" \
+            -e BUILD_VERSION="${{ env.BUILD_VERSION }}" \
+            -e ISO_NAME="${{ env.ISO_NAME }}" \
             cybr-builder:${{ needs.validate.outputs.build_hash }} \
             bash -c "
               set -euo pipefail
               
-              source ./scripts/cybr-config.sh
+              echo '════════════════════════════════════════'
+              echo '           STARTING BUILD PROCESS       '
+              echo '════════════════════════════════════════'
               
-              # Create live-build configuration
-              mkdir -p cybr-build
-              cd cybr-build
+              # Source build configuration
+              source ./scripts/build-config.sh
               
-              lb config \
-                --distribution bullseye \
-                --archive-areas 'main contrib non-free' \
-                --architectures amd64 \
-                --linux-flavours amd64 \
-                --debian-installer false \
-                
-                --bootappend-live 'boot=live components hostname=\$DEFAULT_HOSTNAME username=\$DEFAULT_USER' \
-                --bootloaders 'syslinux' \
-                --compression xz \
-                --zsync false \
-                --iso-application '\$DISTRO_NAME' \
-                --iso-publisher 'WolfTech Innovations' \
-                --iso-volume '\$DISTRO_NAME \$DISTRO_VERSION' \
-                --image-name '\$ISO_NAME'
+              # Clone live-build-config with retry logic
+              for i in {1..3}; do
+                if git clone --depth=1 https://gitlab.com/kalilinux/build-scripts/live-build-config.git; then
+                  break
+                elif [[ \$i -eq 3 ]]; then
+                  echo 'Failed to clone after 3 attempts'
+                  exit 1
+                else
+                  echo 'Clone failed, retrying in 10 seconds...'
+                  sleep 10
+                fi
+              done
+              
+              cd live-build-config
+              
+              # Configure live-build
+              cat >> auto/config << CONFIG_EOF
+          LB_ISO_IMAGE_NAME=\"\$ISO_NAME\"
+          LB_ISO_VOLUME=\"Cybr-NextGen\"
+          LB_BUILD_WITH_CHROOT=\"true\"
+          LB_COMPRESSION=\"xz\"
+          LB_COMPRESSION_OPTIONS=\"-Xbcj x86\"
+          LB_BOOTAPPEND_LIVE=\"boot=live components hostname=cybr username=root quiet\"
+          LB_ISO_PUBLISHER=\"WolfTech Innovations\"
+          LB_ISO_APPLICATION=\"Cybr NextGen Security OS\"
+          CONFIG_EOF
               
               # Copy package lists
-              cp -r /build/config/package-lists config/ || true
+              cp -r /build/config/package-lists config/ 2>/dev/null || true
               
-              # Create branding and user-friendly hooks
+              # Create hooks directory
               mkdir -p config/hooks/normal
               
-              cat > config/hooks/normal/0010-cybr-branding.hook.chroot << 'BRAND_EOF'
+              # Download archwrapper with validation
+              echo 'Downloading archwrapper...'
+              if ! wget -q --timeout=30 https://raw.githubusercontent.com/WolfTech-Innovations/cybr/master/scripts/archwrapper.bash -O config/hooks/normal/0020-archwrapper.hook.chroot; then
+                echo 'Warning: Failed to download archwrapper, creating placeholder'
+                echo '#!/bin/bash' > config/hooks/normal/0020-archwrapper.hook.chroot
+                echo 'echo \"Archwrapper placeholder\"' >> config/hooks/normal/0020-archwrapper.hook.chroot
+              fi
+              chmod 755 config/hooks/normal/0020-archwrapper.hook.chroot
+              
+              # Create branding hook
+              cat > config/hooks/normal/0030-cybr-branding.hook.chroot << 'BRAND_EOF'
           #!/bin/bash
           set -e
           
-          echo 'Setting up Cybr NextGen branding...'
+          echo 'Applying Cybr branding...'
           
-          # Update system identification
-          cat > /etc/os-release << OS_EOF
-          PRETTY_NAME=\"Cybr NextGen (Friendly Wolf)\"
-          NAME=\"Cybr NextGen\"
-          VERSION_ID=\"\$DISTRO_VERSION\"
-          VERSION=\"\$DISTRO_VERSION (Friendly Wolf)\"
-          VERSION_CODENAME=\"friendlywolf\"
-          ID=cybr
-          ID_LIKE=debian
-          HOME_URL=\"https://wolfos.pages.dev"
-
-          OS_EOF
+          # Update OS identification
+          sed -i 's/Kali GNU\/Linux/Cybr NextGen/g' /etc/os-release || true
+          sed -i 's/kali-rolling/cybr-rolling/g' /etc/os-release || true
+          sed -i 's/Kali/Cybr/g' /etc/issue /etc/issue.net || true
           
-          # Create friendly welcome message
-          cat > /etc/motd << MOTD_EOF
+          # Create version info
+          cat > /etc/cybr-version << VERSION_EOF
+          Cybr NextGen Security OS
+          Version: \$BUILD_VERSION
+          Build Date: \$BUILD_DATE
+          Builder: \$BUILDER
+          Variant: \$BUILD_VARIANT
+          VERSION_EOF
           
-          Welcome to Cybr NextGen - The Most User-Friendly Security OS!
+          # Remove plymouth boot splash if present
+          if dpkg -l | grep -q plymouth; then
+            apt-get purge -y plymouth* || true
+            update-initramfs -u || true
+          fi
           
-          This system is designed to be so easy that anyone can use it.
+          # Configure grub
+          sed -i '/GRUB_CMDLINE_LINUX_DEFAULT/c\\GRUB_CMDLINE_LINUX_DEFAULT=\"quiet\"' /etc/default/grub || true
           
-          Getting Started:
-          - Open the application menu to find all your programs
-          - The system comes with essential security tools pre-installed
-          - Use the System Settings to customize your experience
-          - Check the desktop for quick-start guides
+          # Cleanup
+          apt-get autoremove -y || true
+          apt-get autoclean || true
           
-          Need help? Check out our documentation or community forums.
-          
-          MOTD_EOF
-          
-          echo 'Cybr NextGen branding applied successfully'
+          echo 'Cybr branding completed successfully'
           BRAND_EOF
-              chmod 755 config/hooks/normal/0010-cybr-branding.hook.chroot
+              chmod 755 config/hooks/normal/0030-cybr-branding.hook.chroot
               
-              cat > config/hooks/normal/0020-user-friendly-setup.hook.chroot << 'FRIENDLY_EOF'
-          #!/bin/bash
-          set -e
-          
-          echo 'Setting up user-friendly environment...'
-          
-          # Configure automatic login for live session
-          mkdir -p /etc/sddm.conf.d
-          cat > /etc/sddm.conf.d/autologin.conf << SDDM_EOF
-          [Autologin]
-          User=\$DEFAULT_USER
-          Session=plasma.desktop
-          SDDM_EOF
-          
-          # Create desktop shortcuts for common tasks
-          mkdir -p /home/\$DEFAULT_USER/Desktop
-          
-          cat > /home/\$DEFAULT_USER/Desktop/Install-System.desktop << INSTALL_EOF
-          [Desktop Entry]
-          Version=1.0
-          Type=Application
-          Name=Install Cybr NextGen
-          Comment=Install this system to your computer
-          Exec=calamares
-          Icon=system-software-install
-          Terminal=false
-          Categories=System;
-          INSTALL_EOF
-          
-          cat > /home/\$DEFAULT_USER/Desktop/Welcome-Guide.desktop << GUIDE_EOF
-          [Desktop Entry]
-          Version=1.0
-          Type=Application
-          Name=Welcome Guide
-          Comment=Learn how to use your new system
-          Exec=firefox /usr/share/doc/cybr-welcome/index.html
-          Icon=help-contents
-          Terminal=false
-          Categories=Documentation;
-          GUIDE_EOF
-          
-          # Set proper ownership
-          chown -R \$DEFAULT_USER:\$DEFAULT_USER /home/\$DEFAULT_USER/Desktop
-          chmod +x /home/\$DEFAULT_USER/Desktop/*.desktop
-          
-          # Configure Calamares for user-friendly installation
-          mkdir -p /etc/calamares
-          cat > /etc/calamares/settings.conf << CALAMARES_EOF
-          modules-search: [ local ]
-          instances:
-          - id: before
-            module: shellprocess
-            config: shellprocess_before.conf
-          - id: after
-            module: shellprocess
-            config: shellprocess_after.conf
-          
-          sequence:
-          - show:
-            - welcome
-            - locale
-            - keyboard
-            - partition
-            - users
-            - summary
-          - exec:
-            - partition
-            - mount
-            - unpackfs
-            - sources-media
-            - shellprocess@before
-            - users
-            - displaymanager
-            - networkcfg
-            - hwclock
-            - services-systemd
-            - shellprocess@after
-            - umount
-          - show:
-            - finished
-          
-          branding: cybr
-          prompt-install: false
-          dont-chroot: false
-          disable-cancel: false
-          disable-cancel-during-exec: false
-          hide-back-and-next-during-exec: false
-          quit-at-end: false
-          CALAMARES_EOF
-          
-          echo 'User-friendly setup completed'
-          FRIENDLY_EOF
-              chmod 755 config/hooks/normal/0020-user-friendly-setup.hook.chroot
+              # Start the build
+              echo '════════════════════════════════════════'
+              echo '        EXECUTING LIVE-BUILD           '
+              echo '════════════════════════════════════════'
               
-              cat > config/hooks/normal/0030-security-minimal.hook.chroot << 'SEC_EOF'
-          #!/bin/bash
-          set -e
-          
-          echo 'Setting up minimal security tools...'
-          
-          # Configure firewall (user-friendly)
-          ufw --force enable
-          ufw default deny incoming
-          ufw default allow outgoing
-          
-          # Configure ClamAV
-          freshclam || true
-          systemctl enable clamav-freshclam || true
-          
-          # Create security dashboard desktop shortcut
-          cat > /home/\$DEFAULT_USER/Desktop/Security-Center.desktop << SEC_DESK_EOF
-          [Desktop Entry]
-          Version=1.0
-          Type=Application
-          Name=Security Center
-          Comment=Manage your system security
-          Exec=gufw
-          Icon=security-high
-          Terminal=false
-          Categories=System;Security;
-          SEC_DESK_EOF
-          
-          chown \$DEFAULT_USER:\$DEFAULT_USER /home/\$DEFAULT_USER/Desktop/Security-Center.desktop
-          chmod +x /home/\$DEFAULT_USER/Desktop/Security-Center.desktop
-          
-          echo 'Minimal security setup completed'
-          SEC_EOF
-              chmod 755 config/hooks/normal/0030-security-minimal.hook.chroot
-              
-              echo 'Starting live-build process...'
-              timeout 7200 lb build || {
-                echo 'Build failed or timed out'
-                ls -la || true
+              timeout 7200 bash ./build.sh --variant \$BUILD_VARIANT --verbose || {
+                echo 'Build failed or timed out after 2 hours'
                 exit 1
               }
               
-              # Find and copy the ISO
-              ISO_PATH=\$(find . -name '*.iso' -type f | head -1)
+              # Find and move the built ISO
+              ISO_PATH=\$(find images/ -name '*.iso' -type f | head -1)
               if [[ -n \"\$ISO_PATH\" && -f \"\$ISO_PATH\" ]]; then
-                cp \"\$ISO_PATH\" \"/build/\$ISO_NAME.iso\"
-                echo 'ISO build completed successfully'
+                echo \"Moving ISO from \$ISO_PATH to /build/\$ISO_NAME.iso\"
+                mv \"\$ISO_PATH\" \"/build/\$ISO_NAME.iso\"
+                
+                echo '════════════════════════════════════════'
+                echo '          BUILD COMPLETED               '
+                echo '════════════════════════════════════════'
+                
                 ls -lh \"/build/\$ISO_NAME.iso\"
               else
-                echo 'ERROR: ISO file not found'
+                echo 'ERROR: ISO file not found after build'
+                ls -la images/ || true
                 exit 1
               fi
             "
@@ -441,6 +400,7 @@ jobs:
             exit 1
           fi
           
+          # Get ISO information
           SIZE=$(stat -c%s "$ISO_FILE")
           SIZE_MB=$(( SIZE / 1024 / 1024 ))
           SHA256=$(sha256sum "$ISO_FILE" | cut -d' ' -f1)
@@ -448,16 +408,26 @@ jobs:
           echo "size=$SIZE" >> $GITHUB_OUTPUT
           echo "sha256=$SHA256" >> $GITHUB_OUTPUT
           
-          echo "ISO Build Summary:"
-          echo "  File: $ISO_FILE"
-          echo "  Size: ${SIZE_MB} MB"
-          echo "  SHA256: $SHA256"
+          echo "┌─────────────────────────────────────────┐"
+          echo "│            ISO BUILD SUMMARY            │"
+          echo "├─────────────────────────────────────────┤"
+          echo "│ File:      $ISO_FILE"
+          echo "│ Size:      ${SIZE_MB} MB (${SIZE} bytes)"
+          echo "│ SHA256:    $SHA256"
+          echo "│ Status:    ✅ Build Successful"
+          echo "└─────────────────────────────────────────┘"
 
       - name: "Set Build Status"
         id: build-status
         run: |
-          echo "success=true" >> $GITHUB_OUTPUT
-          echo "Build completed successfully"
+          if [[ "${{ github.event.inputs.force_fail }}" == "true" ]]; then
+            echo "success=false" >> $GITHUB_OUTPUT
+            echo "⚠️ Build artificially failed due to force_fail=true"
+            exit 1
+          else
+            echo "success=true" >> $GITHUB_OUTPUT
+            echo "✅ Build completed successfully"
+          fi
 
       - name: "Upload ISO Artifact"
         uses: actions/upload-artifact@v4
@@ -466,10 +436,57 @@ jobs:
           name: "${{ env.ISO_NAME }}"
           path: "${{ env.ISO_NAME }}.iso"
           retention-days: 7
-          compression-level: 0
+          compression-level: 0  # ISO is already compressed
 
+      - name: "Create Build Report"
+        if: always()
+        run: |
+          cat > build-report.md << 'REPORT_EOF'
+          # 🚀 Cybr NextGen Build Report
+          
+          ## Build Information
+          
+          | Parameter | Value |
+          |-----------|-------|
+          | **Build Number** | `${{ github.run_number }}` |
+          | **Build Hash** | `${{ needs.validate.outputs.build_hash }}` |
+          | **Variant** | `${{ github.event.inputs.build_variant || 'standard' }}` |
+          | **Trigger** | `${{ github.event_name }}` |
+          | **Status** | ${{ (steps.build-status.outputs.success == 'true' && '✅ Success') || '❌ Failed' }} |
+          
+          ## ISO Details
+          
+          | Property | Value |
+          |----------|-------|
+          | **Filename** | `${{ env.ISO_NAME }}.iso` |
+          | **Size** | `${{ steps.iso-info.outputs.size || 'N/A' }} bytes` |
+          | **SHA256** | `${{ steps.iso-info.outputs.sha256 || 'N/A' }}` |
+          
+          ## Build Configuration
+          
+          ```bash
+          BUILD_VARIANT=${{ github.event.inputs.build_variant || 'standard' }}
+          FORCE_FAIL=${{ github.event.inputs.force_fail || 'false' }}
+          SKIP_UPLOAD=${{ github.event.inputs.skip_upload || 'false' }}
+          BUILD_VERSION=${{ env.BUILD_VERSION }}
+          ```
+          
+          ---
+          *Generated by Cybr NextGen Build System*
+          REPORT_EOF
+
+      - name: "Upload Build Report"
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: "build-report-${{ github.run_number }}"
+          path: "build-report.md"
+
+  # ============================================================================
+  #                              UPLOAD JOB
+  # ============================================================================
   upload:
-    name: "Upload to SourceForge"
+    name: "📤 Upload to SourceForge"
     runs-on: ubuntu-latest
     needs: [validate, build]
     if: |
@@ -479,10 +496,34 @@ jobs:
     timeout-minutes: 30
     
     steps:
+      - name: "Upload Progress Banner"
+        run: |
+          cat << 'EOF'
+          
+          ╔══════════════════════════════════════════════════════════════════════╗
+          ║  ██╗   ██╗██████╗ ██╗      ██████╗  █████╗ ██████╗     ██╗███╗   ██╗ ║
+          ║  ██║   ██║██╔══██╗██║     ██╔═══██╗██╔══██╗██╔══██╗   ██╔╝████╗  ██║ ║
+          ║  ██║   ██║██████╔╝██║     ██║   ██║███████║██║  ██║  ██╔╝ ██╔██╗ ██║ ║
+          ║  ██║   ██║██╔═══╝ ██║     ██║   ██║██╔══██║██║  ██║ ██╔╝  ██║╚██╗██║ ║
+          ║  ╚██████╔╝██║     ███████╗╚██████╔╝██║  ██║██████╔╝██╔╝   ██║ ╚████║ ║
+          ║   ╚═════╝ ╚═╝     ╚══════╝ ╚═════╝ ╚═╝  ╚═╝╚═════╝ ╚═╝    ╚═╝  ╚═══╝ ║
+          ╚══════════════════════════════════════════════════════════════════════╝
+          
+          EOF
+
       - name: "Download ISO Artifact"
         uses: actions/download-artifact@v4
         with:
           name: "${{ env.ISO_NAME }}"
+
+      - name: "Verify ISO Download"
+        run: |
+          if [[ ! -f "${{ env.ISO_NAME }}.iso" ]]; then
+            echo "❌ ISO file not found after download"
+            exit 1
+          fi
+          
+          echo "✅ ISO file verified: $(ls -lh ${{ env.ISO_NAME }}.iso)"
 
       - name: "Install Upload Dependencies"
         run: |
@@ -495,92 +536,304 @@ jobs:
           SF_PASS: ${{ secrets.SF_PASS }}
         run: |
           if [[ -z "$SF_USER" || -z "$SF_PASS" ]]; then
-            echo "SourceForge credentials not configured"
+            echo "❌ SourceForge credentials not configured"
             exit 1
           fi
           
           ISO_FILE="${{ env.ISO_NAME }}.iso"
-          REMOTE_PATH="/home/frs/project/cybr-nextgen/$ISO_FILE"
+          REMOTE_PATH="/home/frs/project/wolfos/$ISO_FILE"
           
           echo "Uploading $ISO_FILE to SourceForge..."
           
+          # Upload with retry logic
           for i in {1..3}; do
             if timeout 1800 sshpass -p "$SF_PASS" \
               rsync -avP --progress \
               -e "ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null" \
               "./$ISO_FILE" \
               "$SF_USER@frs.sourceforge.net:$REMOTE_PATH"; then
-              echo "Upload completed successfully"
+              echo "✅ Upload completed successfully"
               break
             elif [[ $i -eq 3 ]]; then
-              echo "Upload failed after 3 attempts"
+              echo "❌ Upload failed after 3 attempts"
               exit 1
             else
-              echo "Upload attempt $i failed, retrying..."
+              echo "⚠️ Upload attempt $i failed, retrying..."
               sleep 30
             fi
           done
           
-          echo "ISO successfully uploaded to SourceForge!"
+          echo "🎉 ISO successfully uploaded to SourceForge!"
+          echo "Download URL: https://sourceforge.net/projects/wolfos/files/$ISO_FILE/download"
 
+  # ============================================================================
+  #                            NOTIFICATION JOB
+  # ============================================================================
   notify:
-    name: "Send Notifications"
+    name: "🔔 Send Notifications"
     runs-on: ubuntu-latest
     needs: [validate, build, upload]
     if: always()
     timeout-minutes: 5
     
     steps:
-      - name: "Create Summary"
+      - name: "Notification Banner"
+        run: |
+          cat << 'EOF'
+          
+          ╔══════════════════════════════════════════════════════════════════════╗
+          ║  ███╗   ██╗ ██████╗ ████████╗██╗███████╗██╗   ██╗██╗███╗   ██╗ ██████╗║
+          ║  ████╗  ██║██╔═══██╗╚══██╔══╝██║██╔════╝╚██╗ ██╔╝██║████╗  ██║██╔════╝║
+          ║  ██╔██╗ ██║██║   ██║   ██║   ██║█████╗   ╚████╔╝ ██║██╔██╗ ██║██║  ███╗║
+          ║  ██║╚██╗██║██║   ██║   ██║   ██║██╔══╝    ╚██╔╝  ██║██║╚██╗██║██║   ██║║
+          ║  ██║ ╚████║╚██████╔╝   ██║   ██║██║        ██║   ██║██║ ╚████║╚██████╔╝║
+          ║  ╚═╝  ╚═══╝ ╚═════╝    ╚═╝   ╚═╝╚═╝        ╚═╝   ╚═╝╚═╝  ╚═══╝ ╚═════╝ ║
+          ╚══════════════════════════════════════════════════════════════════════╝
+          
+          EOF
+
+      - name: "Determine Overall Status"
+        id: status
+        run: |
+          # Determine the overall pipeline status
+          BUILD_STATUS="${{ needs.build.outputs.build_success }}"
+          UPLOAD_STATUS="${{ needs.upload.result }}"
+          
+          if [[ "$BUILD_STATUS" == "true" ]]; then
+            if [[ "$UPLOAD_STATUS" == "success" || "$UPLOAD_STATUS" == "skipped" ]]; then
+              echo "overall_status=success" >> $GITHUB_OUTPUT
+              echo "status_emoji=🎉" >> $GITHUB_OUTPUT
+              echo "status_message=Build and upload completed successfully!" >> $GITHUB_OUTPUT
+            else
+              echo "overall_status=partial" >> $GITHUB_OUTPUT
+              echo "status_emoji=⚠️" >> $GITHUB_OUTPUT
+              echo "status_message=Build succeeded but upload failed" >> $GITHUB_OUTPUT
+            fi
+          else
+            echo "overall_status=failure" >> $GITHUB_OUTPUT
+            echo "status_emoji=❌" >> $GITHUB_OUTPUT
+            echo "status_message=Build pipeline failed" >> $GITHUB_OUTPUT
+          fi
+
+      - name: "Create Notification Summary"
+        run: |
+          cat << 'SUMMARY_EOF'
+          
+          ╔════════════════════════════════════════════════════════════════════════╗
+          ║                           PIPELINE SUMMARY                             ║
+          ╠════════════════════════════════════════════════════════════════════════╣
+          ║                                                                        ║
+          ║  ${{ steps.status.outputs.status_emoji }} OVERALL STATUS: ${{ steps.status.outputs.overall_status }}                                    ║
+          ║  📊 BUILD: ${{ (needs.build.outputs.build_success == 'true' && '✅ SUCCESS') || '❌ FAILED' }}                                           ║
+          ║  📤 UPLOAD: ${{ (needs.upload.result == 'success' && '✅ SUCCESS') || (needs.upload.result == 'skipped' && '⏭️ SKIPPED') || '❌ FAILED' }}                                          ║
+          ║                                                                        ║
+          ║  🏗️  Build Variant: ${{ github.event.inputs.build_variant || 'standard' }}                                      ║
+          ║  📦 ISO Name: ${{ env.ISO_NAME }}.iso                          ║
+          ║  🔢 Build Number: #${{ github.run_number }}                                           ║
+          ║  🕒 Trigger: ${{ github.event_name }}                                            ║
+          ║                                                                        ║
+          ╚════════════════════════════════════════════════════════════════════════╝
+          
+          SUMMARY_EOF
+
+      - name: "Notify Build API"
+        if: always()
+        env:
+          API_URL: ${{ secrets.API_URL }}
+        run: |
+          if [[ -n "$API_URL" ]]; then
+            echo "Sending notification to API..."
+            
+            # Prepare notification payload
+            PAYLOAD=$(cat << API_EOF
+          {
+            "build_number": "${{ github.run_number }}",
+            "status": "${{ steps.status.outputs.overall_status }}",
+            "variant": "${{ github.event.inputs.build_variant || 'standard' }}",
+            "iso_name": "${{ env.ISO_NAME }}.iso",
+            "iso_size": "${{ needs.build.outputs.iso_size }}",
+            "iso_sha256": "${{ needs.build.outputs.iso_sha256 }}",
+            "build_success": "${{ needs.build.outputs.build_success }}",
+            "upload_success": "${{ (needs.upload.result == 'success') && 'true' || 'false' }}",
+            "trigger": "${{ github.event_name }}",
+            "repository": "${{ github.repository }}",
+            "commit_sha": "${{ github.sha }}",
+            "workflow_url": "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          }
+          API_EOF
+            )
+            
+            # Send notification with timeout and retry
+            for i in {1..3}; do
+              if curl -f -s --max-time 30 \
+                -H "Content-Type: application/json" \
+                -H "User-Agent: Cybr-Build-System/1.0" \
+                -X POST \
+                -d "$PAYLOAD" \
+                "$API_URL"; then
+                echo "✅ API notification sent successfully"
+                break
+              elif [[ $i -eq 3 ]]; then
+                echo "⚠️ Failed to notify API after 3 attempts"
+              else
+                echo "⚠️ API notification attempt $i failed, retrying..."
+                sleep 10
+              fi
+            done
+          else
+            echo "ℹ️ No API URL configured, skipping notification"
+          fi
+
+      - name: "Create Job Summary"
+        if: always()
         run: |
           cat >> $GITHUB_STEP_SUMMARY << 'SUMMARY_EOF'
-          # Cybr NextGen Build Summary
+          # ${{ steps.status.outputs.status_emoji }} Cybr NextGen Build Summary
           
-          ## Build Results
+          ## Pipeline Results
           
-          | Component | Status |
-          |-----------|--------|
-          | **Build** | ${{ (needs.build.outputs.build_success == 'true' && 'Success') || 'Failed' }} |
-          | **Upload** | ${{ (needs.upload.result == 'success' && 'Success') || (needs.upload.result == 'skipped' && 'Skipped') || 'Failed' }} |
+          | Job | Status | Duration |
+          |-----|--------|----------|
+          | **Validation** | ${{ (needs.validate.result == 'success' && '✅ Success') || '❌ Failed' }} | - |
+          | **Build** | ${{ (needs.build.result == 'success' && '✅ Success') || '❌ Failed' }} | - |
+          | **Upload** | ${{ (needs.upload.result == 'success' && '✅ Success') || (needs.upload.result == 'skipped' && '⏭️ Skipped') || '❌ Failed' }} | - |
+          | **Notify** | ${{ (job.status == 'success' && '✅ Success') || '❌ Failed' }} | - |
           
-          ## ISO Details
+          ## Build Details
           
-          | Property | Value |
-          |----------|-------|
-          | **Filename** | `${{ env.ISO_NAME }}.iso` |
-          | **Size** | `${{ needs.build.outputs.iso_size || 'N/A' }} bytes` |
+          | Parameter | Value |
+          |-----------|-------|
+          | **Build Number** | `#${{ github.run_number }}` |
+          | **ISO Name** | `${{ env.ISO_NAME }}.iso` |
+          | **Build Variant** | `${{ github.event.inputs.build_variant || 'standard' }}` |
+          | **ISO Size** | `${{ needs.build.outputs.iso_size || 'N/A' }}` bytes |
           | **SHA256** | `${{ needs.build.outputs.iso_sha256 || 'N/A' }}` |
-          | **Variant** | `${{ github.event.inputs.build_variant || 'standard' }}` |
+          | **Trigger** | `${{ github.event_name }}` |
           
-          ## User-Friendly Features
+          ## Quick Actions
           
-          - KDE Plasma desktop environment (most intuitive)
-          - Calamares installer for easy installation
-          - Pre-configured security tools (firewall + antivirus)
-          - Desktop shortcuts for common tasks
-          - Automatic hardware detection
-          - Multimedia codecs included
-          - Welcome guide for new users
-          
-          ${{ (needs.build.outputs.build_success == 'true' && '- [Download ISO Artifact](../../actions/runs/${{ github.run_id }}#artifacts)') || '' }}
+          ${{ (needs.build.outputs.build_success == 'true' && '- 📥 [Download ISO Artifact](../../actions/runs/${{ github.run_id }}#artifacts)') || '' }}
+          ${{ (needs.upload.result == 'success' && '- 🌐 [Download from SourceForge](https://sourceforge.net/projects/wolfos/files/${{ env.ISO_NAME }}.iso/download)') || '' }}
+          - 📋 [View Full Logs](../../actions/runs/${{ github.run_id }})
+          - 🔄 [Re-run Workflow](../../actions/workflows/build.yml)
           
           ---
           
-          *Built with Cybr NextGen Build System - Designed for maximum user-friendliness*
+          **Message:** ${{ steps.status.outputs.status_message }}
+          
+          *Generated at $(date -u '+%Y-%m-%d %H:%M:%S UTC') by Cybr NextGen Build System*
           SUMMARY_EOF
 
-  cleanup:
-    name: "Cleanup Resources"
+      - name: "Final Status Report"
+        if: always()
+        run: |
+          echo ""
+          echo "╔════════════════════════════════════════════════════════════════════════╗"
+          echo "║                        🚀 CYBR NEXTGEN BUILD SYSTEM                   ║"
+          echo "║                             EXECUTION COMPLETE                        ║"
+          echo "╠════════════════════════════════════════════════════════════════════════╣"
+          echo "║                                                                        ║"
+          echo "║  Status: ${{ steps.status.outputs.status_emoji }} ${{ steps.status.outputs.overall_status }}                                                    ║"
+          echo "║  Message: ${{ steps.status.outputs.status_message }}                   "
+          echo "║                                                                        ║"
+          echo "║  Build ID: ${{ github.run_number }}                                                     ║"
+          echo "║  Repository: ${{ github.repository }}                         ║"
+          echo "║  Commit: ${{ github.sha }}              ║"
+          echo "║                                                                        ║"
+          echo "║  Thank you for using Cybr NextGen Build System!                       ║"
+          echo "║                                                                        ║"
+          echo "╚════════════════════════════════════════════════════════════════════════╝"
+          echo ""
+          
+          # Set exit code based on overall status
+          if [[ "${{ steps.status.outputs.overall_status }}" == "failure" ]]; then
+            echo "Pipeline completed with failures"
+            exit 1
+          else
+            echo "Pipeline completed successfully"
+            exit 0
+          fi
+
+# ============================================================================
+#                         SECURITY AND MAINTENANCE
+# ============================================================================
+  security-scan:
+    name: "🔒 Security Scan (Optional)"
     runs-on: ubuntu-latest
-    needs: [build, upload, notify]
-    if: always()
-    timeout-minutes: 5
+    needs: build
+    if: |
+      needs.build.outputs.build_success == 'true' && 
+      (github.event_name == 'push' || github.event_name == 'schedule')
+    timeout-minutes: 30
+    continue-on-error: true
     
     steps:
-      - name: "Free Up Resources"
+      - name: "Security Scan Banner"
         run: |
-          echo "Cleaning up build artifacts..."
+          cat << 'EOF'
+          
+          ╔══════════════════════════════════════════════════════════════════════╗
+          ║  ███████╗███████╗ ██████╗██╗   ██╗██████╗ ██╗████████╗██╗   ██╗    ║
+          ║  ██╔════╝██╔════╝██╔════╝██║   ██║██╔══██╗██║╚══██╔══╝╚██╗ ██╔╝    ║
+          ║  ███████╗█████╗  ██║     ██║   ██║██████╔╝██║   ██║    ╚████╔╝     ║
+          ║  ╚════██║██╔══╝  ██║     ██║   ██║██╔══██╗██║   ██║     ╚██╔╝      ║
+          ║  ███████║███████╗╚██████╗╚██████╔╝██║  ██║██║   ██║      ██║       ║
+          ║  ╚══════╝╚══════╝ ╚═════╝ ╚═════╝ ╚═╝  ╚═╝╚═╝   ╚═╝      ╚═╝       ║
+          ╚══════════════════════════════════════════════════════════════════════╝
+          
+          EOF
+
+      - name: "Checkout Repository"
+        uses: actions/checkout@v4
+
+      - name: "Run Trivy Security Scan"
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: 'repo'
+          format: 'sarif'
+          output: 'trivy-results.sarif'
+
+      - name: "Upload Security Scan Results"
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: "security-scan-results-${{ github.run_number }}"
+          path: "trivy-results.sarif"
+
+  cleanup:
+    name: "🧹 Cleanup Resources"
+    runs-on: ubuntu-latest
+    needs: [build, upload, notify, security-scan]
+    if: always()
+    timeout-minutes: 10
+    
+    steps:
+      - name: "Cleanup Banner"
+        run: |
+          cat << 'EOF'
+          
+          ╔══════════════════════════════════════════════════════════════════════╗
+          ║   ██████╗██╗     ███████╗ █████╗ ███╗   ██╗██╗   ██╗██████╗         ║
+          ║  ██╔════╝██║     ██╔════╝██╔══██╗████╗  ██║██║   ██║██╔══██╗        ║
+          ║  ██║     ██║     █████╗  ███████║██╔██╗ ██║██║   ██║██████╔╝        ║
+          ║  ██║     ██║     ██╔══╝  ██╔══██║██║╚██╗██║██║   ██║██╔═══╝         ║
+          ║  ╚██████╗███████╗███████╗██║  ██║██║ ╚████║╚██████╔╝██║             ║
+          ║   ╚═════╝╚══════╝╚══════╝╚═╝  ╚═╝╚═╝  ╚═══╝ ╚═════╝ ╚═╝             ║
+          ╚══════════════════════════════════════════════════════════════════════╝
+          
+          EOF
+
+      - name: "Free Up Disk Space"
+        run: |
+          echo "Cleaning up build artifacts and temporary files..."
           docker system prune -af || true
           sudo apt-get clean || true
-          echo "Cleanup completed"
+          sudo rm -rf /tmp/* /var/tmp/* || true
+          
+          echo "Disk usage after cleanup:"
           df -h
+
+      - name: "Generate Cleanup Report"
+        run: |
+          echo "✅ Resource cleanup completed"
+          echo "📊 Final disk usage: $(df -h / | tail -1 | awk '{print $4}' | tr -d '\n') available"
