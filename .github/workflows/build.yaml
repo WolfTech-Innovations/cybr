@@ -6,7 +6,7 @@ on:
       build_variant:
         description: "Build variant"
         required: false
-        default: "standard"
+        default: "full"
         type: choice
         options: ["minimal", "standard", "full"]
       skip_upload:
