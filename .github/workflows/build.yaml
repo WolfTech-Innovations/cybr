@@ -230,6 +230,7 @@ jobs:
           # Set global environment variables for the build
           mkdir -p config/includes.chroot/etc
           cat > config/includes.chroot/etc/environment << 'ENV_EOF'
+          PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/games:/usr/local/games"
           DEBIAN_FRONTEND=noninteractive
           DEBCONF_NONINTERACTIVE_SEEN=true
           APT_LISTCHANGES_FRONTEND=none
