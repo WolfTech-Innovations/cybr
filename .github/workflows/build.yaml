@@ -238,13 +238,7 @@ jobs:
           if [[ "${{ github.event.inputs.build_variant || 'standard' }}" != "minimal" ]]; then
             cat > config/package-lists/security.list.chroot << 'SEC_PKG_EOF'
           # Security tools
-          hydra john hashcat
-          sqlmap gobuster dirb
-          steghide binwalk
-          exiftool radare2
-          rkhunter lynis
-          suricata psad
-          tripwire
+          clamav
           SEC_PKG_EOF
           fi
           
@@ -304,7 +298,7 @@ jobs:
           LB_BUILD_WITH_CHROOT=\"true\"
           LB_COMPRESSION=\"xz\"
           LB_COMPRESSION_OPTIONS=\"-Xbcj x86\"
-          LB_BOOTAPPEND_LIVE=\"boot=live components hostname=cybr username=root quiet\"
+          LB_BOOTAPPEND_LIVE=\"boot=live components hostname=cybr username=root \"
           LB_ISO_PUBLISHER=\"WolfTech Innovations\"
           LB_ISO_APPLICATION=\"Cybr NextGen Security OS\"
           CONFIG_EOF
