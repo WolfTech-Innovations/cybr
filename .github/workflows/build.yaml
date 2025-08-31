@@ -228,8 +228,8 @@ jobs:
           APT_CONF_EOF
           
           # Set global environment variables for the build
-          mkdir -p config/includes.chroot/etc/environment
-          cat >> config/includes.chroot/etc/environment << 'ENV_EOF'
+          mkdir -p config/includes.chroot/etc
+          cat > config/includes.chroot/etc/environment << 'ENV_EOF'
           DEBIAN_FRONTEND=noninteractive
           DEBCONF_NONINTERACTIVE_SEEN=true
           APT_LISTCHANGES_FRONTEND=none
