@@ -231,6 +231,7 @@ jobs:
           APT::Get::Allow-Unauthenticated "false";
           APT::Get::Remove "true";
           Dir::Cache::Archives "/var/cache/apt/archives";
+          APT::Get::Allow-Downgrades
           APT_CONF_EOF
           
           # Set global environment variables for the build
