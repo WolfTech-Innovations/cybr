@@ -395,7 +395,7 @@ jobs:
           clamav-freshclam
           BASE_EOF
           
-          # Desktop environment for standard/full builds
+          # Desktop environment for standard/full builds with UX enhancements
           if [[ "$BUILD_VARIANT" != "minimal" ]]; then
             cat > config/package-lists/desktop.list.chroot << 'DESKTOP_EOF'
           # KDE Plasma Desktop
@@ -403,6 +403,8 @@ jobs:
           plasma-workspace
           plasma-nm
           kde-config-sddm
+          plasma-discover
+          plasma-systemmonitor
           
           # Display Manager
           sddm
@@ -417,10 +419,25 @@ jobs:
           kate
           firefox-esr
           
-          # System utilities
+          # User-friendly utilities
           partitionmanager
           kde-spectacle
           ark
+          kcalc
+          
+          # Beginner-friendly tools
+          synaptic
+          gparted
+          bleachbit
+          gufw
+          baobab
+          
+          # Help and documentation
+          khelpcenter
+          kde-config-whoami
+          
+          # Multimedia codecs for media playback
+          ubuntu-restricted-extras
           DESKTOP_EOF
           fi
           
@@ -642,6 +659,547 @@ jobs:
           echo "User and installer setup completed"
           USER_EOF
           chmod +x config/hooks/normal/0300-user-setup.hook.chroot
+          
+          # User Experience Enhancement Hook
+          cat > config/hooks/normal/0320-ux-enhancements.hook.chroot << 'UX_EOF'
+          #!/bin/bash
+          set -e
+          
+          echo "Applying comprehensive user experience enhancements..."
+          
+          # Create desktop directories and shortcuts
+          mkdir -p /home/cybr/Desktop
+          mkdir -p /home/cybr/Documents/Guides
+          mkdir -p /home/cybr/Documents/Templates
+          
+          # Create beginner-friendly desktop shortcuts
+          cat > /home/cybr/Desktop/System_Information.desktop << 'SYSINFO_EOF'
+          [Desktop Entry]
+          Type=Application
+          Version=1.0
+          Name=System Information
+          Comment=View detailed system information
+          Icon=computer
+          Exec=kinfocenter
+          Terminal=false
+          Categories=System;
+          X-KDE-SubstituteUID=false
+          SYSINFO_EOF
+          
+          cat > /home/cybr/Desktop/Package_Manager.desktop << 'SYNAPTIC_EOF'
+          [Desktop Entry]
+          Type=Application
+          Version=1.0
+          Name=Package Manager
+          Comment=Install and remove software packages
+          Icon=synaptic
+          Exec=pkexec synaptic
+          Terminal=false
+          Categories=System;PackageManager;
+          X-KDE-SubstituteUID=true
+          SYNAPTIC_EOF
+          
+          cat > /home/cybr/Desktop/Firewall_Settings.desktop << 'FIREWALL_EOF'
+          [Desktop Entry]
+          Type=Application
+          Version=1.0
+          Name=Firewall Settings
+          Comment=Configure system firewall (beginner-friendly)
+          Icon=security-high
+          Exec=gufw
+          Terminal=false
+          Categories=System;Security;
+          X-KDE-SubstituteUID=false
+          FIREWALL_EOF
+          
+          cat > /home/cybr/Desktop/Disk_Usage.desktop << 'DISKUSAGE_EOF'
+          [Desktop Entry]
+          Type=Application
+          Version=1.0
+          Name=Disk Usage Analyzer
+          Comment=See what is taking up space on your computer
+          Icon=baobab
+          Exec=baobab
+          Terminal=false
+          Categories=System;Filesystem;
+          X-KDE-SubstituteUID=false
+          DISKUSAGE_EOF
+          
+          # Create comprehensive getting started guide
+          cat > /home/cybr/Desktop/Getting_Started_Guide.html << 'GUIDE_EOF'
+          <!DOCTYPE html>
+          <html>
+          <head>
+          <title>Cybr NextGen - Getting Started Guide</title>
+          <style>
+          body { font-family: Arial, sans-serif; margin: 40px; background-color: #f5f5f5; }
+          .container { max-width: 800px; margin: 0 auto; background-color: white; padding: 30px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+          h1 { color: #2c3e50; border-bottom: 3px solid #3498db; padding-bottom: 10px; }
+          h2 { color: #34495e; margin-top: 30px; }
+          .section { margin: 20px 0; padding: 15px; background-color: #ecf0f1; border-radius: 5px; }
+          .tip { background-color: #d5f4e6; border-left: 4px solid #27ae60; padding: 15px; margin: 15px 0; }
+          .warning { background-color: #fdf2e9; border-left: 4px solid #f39c12; padding: 15px; margin: 15px 0; }
+          .command { background-color: #2c3e50; color: white; padding: 10px; border-radius: 3px; font-family: monospace; }
+          ul li { margin: 5px 0; }
+          a { color: #3498db; text-decoration: none; }
+          a:hover { text-decoration: underline; }
+          </style>
+          </head>
+          <body>
+          <div class="container">
+          <h1>Welcome to Cybr NextGen Security OS!</h1>
+          
+          <div class="section">
+          <h2>Quick Start - First 5 Minutes</h2>
+          <ol>
+          <li><strong>Connect to Internet:</strong> Click the network icon in the bottom-right corner</li>
+          <li><strong>Install to Hard Drive:</strong> Double-click "Install Cybr NextGen" on desktop</li>
+          <li><strong>Update System:</strong> Open terminal and run: <span class="command">sudo apt update && sudo apt upgrade</span></li>
+          <li><strong>Explore Desktop:</strong> Right-click anywhere to see options and menus</li>
+          </ol>
+          </div>
+          
+          <div class="section">
+          <h2>Essential Applications</h2>
+          <ul>
+          <li><strong>Web Browser:</strong> Firefox (pre-installed)</li>
+          <li><strong>File Manager:</strong> Dolphin (click folder icon)</li>
+          <li><strong>Terminal:</strong> Konsole (press Ctrl+Alt+T)</li>
+          <li><strong>Text Editor:</strong> Kate (like Notepad but better)</li>
+          <li><strong>Package Manager:</strong> Synaptic (install/remove software)</li>
+          <li><strong>System Monitor:</strong> See running programs and performance</li>
+          </ul>
+          </div>
+          
+          <div class="section">
+          <h2>Installing Security Tools</h2>
+          <div class="tip">
+          <strong>Good News!</strong> Cybr NextGen has access to thousands of security tools from Kali Linux repositories.
+          </div>
+          <p>To install security tools:</p>
+          <ol>
+          <li>Open terminal (Ctrl+Alt+T)</li>
+          <li>Update package lists: <span class="command">sudo apt update</span></li>
+          <li>Install desired tool: <span class="command">sudo apt install toolname</span></li>
+          </ol>
+          
+          <h3>Popular Tools for Beginners:</h3>
+          <ul>
+          <li><strong>nmap</strong> - Network scanner (find devices on network)</li>
+          <li><strong>wireshark</strong> - Network traffic analyzer</li>
+          <li><strong>nikto</strong> - Web vulnerability scanner</li>
+          <li><strong>john</strong> - Password security tester</li>
+          </ul>
+          </div>
+          
+          <div class="section">
+          <h2>Common Tasks Made Easy</h2>
+          
+          <h3>Managing Software</h3>
+          <p>Use the <strong>Package Manager</strong> (Synaptic) from your desktop - no command line needed!</p>
+          
+          <h3>System Updates</h3>
+          <p>Keep your system secure with regular updates:</p>
+          <p class="command">sudo apt update && sudo apt upgrade</p>
+          
+          <h3>Firewall Protection</h3>
+          <p>Your firewall is already configured! Use <strong>Firewall Settings</strong> from desktop to modify.</p>
+          
+          <h3>File Management</h3>
+          <p>Dolphin file manager works like Windows Explorer - drag, drop, copy, paste all work the same way.</p>
+          </div>
+          
+          <div class="warning">
+          <strong>Security Reminder:</strong> Always research tools before using them. Many security tools are powerful and should only be used on networks you own or have permission to test.
+          </div>
+          
+          <div class="section">
+          <h2>Getting Help</h2>
+          <ul>
+          <li><strong>KDE Help Center:</strong> Built-in help system (search in menu)</li>
+          <li><strong>Manual Pages:</strong> Type <span class="command">man commandname</span> in terminal</li>
+          <li><strong>Online Community:</strong> Debian and KDE communities are very helpful</li>
+          <li><strong>Tool Documentation:</strong> Most security tools have extensive documentation</li>
+          </ul>
+          </div>
+          
+          <div class="section">
+          <h2>Keyboard Shortcuts</h2>
+          <ul>
+          <li><strong>Ctrl+Alt+T:</strong> Open terminal</li>
+          <li><strong>Alt+F2:</strong> Run command dialog</li>
+          <li><strong>Alt+Tab:</strong> Switch between windows</li>
+          <li><strong>Super (Windows) Key:</strong> Open application launcher</li>
+          <li><strong>Ctrl+Alt+L:</strong> Lock screen</li>
+          <li><strong>Print Screen:</strong> Take screenshot</li>
+          </ul>
+          </div>
+          
+          <div class="tip">
+          <strong>New to Linux?</strong> Don't worry! Cybr NextGen is designed to be familiar. Most things work similar to Windows or Mac, but with more power and security.
+          </div>
+          
+          </div>
+          </body>
+          </html>
+          GUIDE_EOF
+          
+          # Create security tools quick reference
+          cat > /home/cybr/Documents/Guides/Security_Tools_Quick_Reference.txt << 'TOOLS_REF_EOF'
+          CYBR NEXTGEN - SECURITY TOOLS QUICK REFERENCE
+          ============================================
+          
+          NETWORK SCANNING:
+          -----------------
+          nmap -sn 192.168.1.0/24          # Find devices on network
+          nmap -sS -O target.com           # Scan ports and OS detection
+          nmap --script vuln target.com    # Vulnerability scan
+          
+          WEB SECURITY:
+          -------------
+          nikto -h http://target.com       # Web vulnerability scan
+          dirb http://target.com           # Find hidden directories
+          whatweb target.com               # Identify web technologies
+          
+          PASSWORD SECURITY:
+          ------------------
+          john --wordlist=/usr/share/wordlists/rockyou.txt hashes.txt
+          hydra -l admin -P passwords.txt ssh://target.com
+          
+          NETWORK ANALYSIS:
+          -----------------
+          wireshark                        # GUI network analyzer
+          tcpdump -i eth0                  # Command line packet capture
+          
+          WIRELESS SECURITY:
+          ------------------
+          airmon-ng start wlan0            # Enable monitor mode
+          airodump-ng wlan0mon             # Scan for wireless networks
+          
+          SYSTEM INFORMATION:
+          ------------------
+          nmap localhost                   # Scan your own system
+          ss -tuln                        # Show listening ports
+          ps aux                          # Show running processes
+          
+          REMEMBER:
+          - Always get permission before testing on networks you don't own
+          - Use these tools responsibly and legally
+          - Many tools have extensive help: toolname --help
+          - Read man pages: man toolname
+          TOOLS_REF_EOF
+          
+          # Configure KDE for better user experience with dark theme
+          mkdir -p /home/cybr/.config
+          
+          # Set up KDE desktop defaults with dark theme
+          cat > /home/cybr/.config/kdeglobals << 'KDE_CONFIG_EOF'
+          [General]
+          BrowserApplication=firefox.desktop
+          ColorScheme=BreezeDark
+          
+          [Colors:Button]
+          BackgroundAlternate=49,54,59
+          BackgroundNormal=49,54,59
+          DecorationFocus=61,174,233
+          DecorationHover=61,174,233
+          ForegroundActive=61,174,233
+          ForegroundInactive=161,169,177
+          ForegroundLink=41,128,185
+          ForegroundNegative=218,68,83
+          ForegroundNeutral=246,116,0
+          ForegroundNormal=252,252,252
+          ForegroundPositive=39,174,96
+          ForegroundVisited=127,140,141
+          
+          [Colors:Selection]
+          BackgroundAlternate=61,174,233
+          BackgroundNormal=61,174,233
+          DecorationFocus=61,174,233
+          DecorationHover=61,174,233
+          ForegroundActive=252,252,252
+          ForegroundInactive=252,252,252
+          ForegroundLink=252,252,252
+          ForegroundNegative=252,252,252
+          ForegroundNeutral=252,252,252
+          ForegroundNormal=252,252,252
+          ForegroundPositive=252,252,252
+          ForegroundVisited=252,252,252
+          
+          [Colors:Tooltip]
+          BackgroundAlternate=42,46,50
+          BackgroundNormal=42,46,50
+          DecorationFocus=61,174,233
+          DecorationHover=61,174,233
+          ForegroundActive=61,174,233
+          ForegroundInactive=161,169,177
+          ForegroundLink=41,128,185
+          ForegroundNegative=218,68,83
+          ForegroundNeutral=246,116,0
+          ForegroundNormal=252,252,252
+          ForegroundPositive=39,174,96
+          ForegroundVisited=127,140,141
+          
+          [Colors:View]
+          BackgroundAlternate=35,38,41
+          BackgroundNormal=35,38,41
+          DecorationFocus=61,174,233
+          DecorationHover=61,174,233
+          ForegroundActive=61,174,233
+          ForegroundInactive=161,169,177
+          ForegroundLink=41,128,185
+          ForegroundNegative=218,68,83
+          ForegroundNeutral=246,116,0
+          ForegroundNormal=252,252,252
+          ForegroundPositive=39,174,96
+          ForegroundVisited=127,140,141
+          
+          [Colors:Window]
+          BackgroundAlternate=49,54,59
+          BackgroundNormal=42,46,50
+          DecorationFocus=61,174,233
+          DecorationHover=61,174,233
+          ForegroundActive=61,174,233
+          ForegroundInactive=161,169,177
+          ForegroundLink=41,128,185
+          ForegroundNegative=218,68,83
+          ForegroundNeutral=246,116,0
+          ForegroundNormal=252,252,252
+          ForegroundPositive=39,174,96
+          ForegroundVisited=127,140,141
+          
+          [KDE]
+          SingleClick=false
+          
+          [WM]
+          activeBackground=42,46,50
+          activeBlend=252,252,252
+          activeForeground=252,252,252
+          inactiveBackground=42,46,50
+          inactiveBlend=161,169,177
+          inactiveForeground=161,169,177
+          KDE_CONFIG_EOF
+          
+          # Configure Plasma desktop settings for dark theme
+          mkdir -p /home/cybr/.config
+          cat > /home/cybr/.config/plasmarc << 'PLASMA_CONFIG_EOF'
+          [Theme]
+          name=breeze-dark
+          
+          [Wallpapers]
+          usersWallpapers=
+          PLASMA_CONFIG_EOF
+          
+          # Download and set cat background image
+          mkdir -p /home/cybr/Pictures/Wallpapers
+          curl -s https://api.thecatapi.com/v1/images/search?size=full | grep -o '"url":"[^"]*' | cut -d'"' -f4 > /tmp/cat_url.txt
+          if [ -s /tmp/cat_url.txt ]; then
+            wget -q -O /home/cybr/Pictures/Wallpapers/cat_wallpaper.jpg "$(cat /tmp/cat_url.txt)" || \
+            wget -q -O /home/cybr/Pictures/Wallpapers/cat_wallpaper.jpg "https://cdn2.thecatapi.com/images/0XYvRd7oD.jpg"
+          else
+            # Fallback cat image if API fails
+            wget -q -O /home/cybr/Pictures/Wallpapers/cat_wallpaper.jpg "https://cdn2.thecatapi.com/images/0XYvRd7oD.jpg"
+          fi
+          
+          # Set wallpaper configuration
+          mkdir -p /home/cybr/.config
+          cat > /home/cybr/.config/plasma-org.kde.plasma.desktop-appletsrc << 'WALLPAPER_CONFIG_EOF'
+          [Containments][1]
+          activityId=
+          formfactor=0
+          immutability=1
+          lastScreen=0
+          location=0
+          plugin=org.kde.plasma.folder
+          wallpaperplugin=org.kde.image
+          
+          [Containments][1][Wallpaper][org.kde.image][General]
+          Image=file:///home/cybr/Pictures/Wallpapers/cat_wallpaper.jpg
+          SlidePaths=/home/cybr/Pictures/Wallpapers/
+          WALLPAPER_CONFIG_EOF
+          
+          # Configure Firefox with custom homepage and dark theme
+          mkdir -p /home/cybr/.mozilla/firefox
+          mkdir -p /etc/firefox/policies
+          
+          # Create Firefox policies for organization-wide settings
+          cat > /etc/firefox/policies/policies.json << 'FIREFOX_POLICY_EOF'
+          {
+            "policies": {
+              "Homepage": {
+                "URL": "https://alphasearch.pages.dev",
+                "StartPage": "homepage"
+              },
+              "NewTabPage": false,
+              "SearchSuggestEnabled": true,
+              "DisableTelemetry": true,
+              "DisableFirefoxStudies": true,
+              "OfferToSaveLogins": false,
+              "PasswordManagerEnabled": false,
+              "Preferences": {
+                "browser.theme.dark-private-windows": false,
+                "ui.systemUsesDarkTheme": {
+                  "Value": 1,
+                  "Status": "default"
+                },
+                "devtools.theme": {
+                  "Value": "dark",
+                  "Status": "locked"
+                }
+              }
+            }
+          }
+          FIREFOX_POLICY_EOF
+          
+          # Create Firefox user.js for additional customization
+          cat > /home/cybr/.mozilla/firefox/user.js << 'FIREFOX_USERJS_EOF'
+          // Dark theme and privacy settings
+          user_pref("ui.systemUsesDarkTheme", 1);
+          user_pref("browser.in-content.dark-mode", true);
+          user_pref("devtools.theme", "dark");
+          user_pref("extensions.activeThemeID", "firefox-compact-dark@mozilla.org");
+          
+          // Homepage settings
+          user_pref("browser.startup.homepage", "https://alphasearch.pages.dev");
+          user_pref("browser.startup.page", 1);
+          user_pref("browser.newtabpage.enabled", false);
+          user_pref("browser.newtab.url", "https://alphasearch.pages.dev");
+          
+          // Privacy and security
+          user_pref("privacy.trackingprotection.enabled", true);
+          user_pref("dom.security.https_only_mode", true);
+          user_pref("network.cookie.sameSite.noneRequiresSecure", true);
+          FIREFOX_USERJS_EOF
+          
+          # Set SDDM to use dark theme
+          mkdir -p /etc/sddm.conf.d
+          cat > /etc/sddm.conf.d/theme.conf << 'SDDM_THEME_EOF'
+          [Theme]
+          Current=breeze
+          CursorTheme=breeze_cursors
+          
+          [General]
+          Numlock=on
+          SDDM_THEME_EOF
+          
+          # Configure Dolphin for Windows-like experience
+          mkdir -p /home/cybr/.config
+          cat > /home/cybr/.config/dolphinrc << 'DOLPHIN_CONFIG_EOF'
+          [General]
+          GlobalViewProps=true
+          ShowFullPath=true
+          
+          [MainWindow]
+          ToolBarsMovable=Disabled
+          
+          [PreviewSettings]
+          Plugins=directorythumbnail,imagethumbnail,jpegthumbnail
+          DOLPHIN_CONFIG_EOF
+          
+          # Make all desktop items executable
+          chmod +x /home/cybr/Desktop/*.desktop
+          
+          # Set proper ownership
+          chown -R cybr:cybr /home/cybr/
+          
+          echo "User experience enhancements applied successfully"
+          UX_EOF
+          chmod +x config/hooks/normal/0320-ux-enhancements.hook.chroot
+          
+          # Auto-launch help system and setup wizard
+          cat > config/hooks/normal/0330-welcome-system.hook.chroot << 'WELCOME_EOF'
+          #!/bin/bash
+          set -e
+          
+          echo "Setting up welcome system and auto-launch features..."
+          
+          # Create welcome script that runs on first login
+          cat > /usr/local/bin/cybr-welcome << 'WELCOME_SCRIPT_EOF'
+          #!/bin/bash
+          
+          WELCOME_FLAG="/home/$USER/.config/cybr-welcome-shown"
+          
+          # Only show welcome on first login
+          if [ ! -f "$WELCOME_FLAG" ]; then
+            # Show welcome message
+            kdialog --title "Welcome to Cybr NextGen!" \
+                    --msgbox "Welcome to Cybr NextGen Security OS!\n\nThis system is designed to be user-friendly for all skill levels.\n\nKey features:\n• Pre-configured security tools\n• Beginner-friendly interface\n• Comprehensive documentation\n• One-click installation to hard drive\n\nClick OK to see the Getting Started Guide." \
+                    --geometry 500x300
+            
+            # Open getting started guide
+            if [ -f "/home/$USER/Desktop/Getting_Started_Guide.html" ]; then
+                firefox "/home/$USER/Desktop/Getting_Started_Guide.html" &
+            fi
+            
+            # Create flag file
+            mkdir -p "/home/$USER/.config"
+            touch "$WELCOME_FLAG"
+          fi
+          WELCOME_SCRIPT_EOF
+          chmod +x /usr/local/bin/cybr-welcome
+          
+          # Create autostart directory and desktop entry
+          mkdir -p /home/cybr/.config/autostart
+          cat > /home/cybr/.config/autostart/cybr-welcome.desktop << 'AUTOSTART_EOF'
+          [Desktop Entry]
+          Type=Application
+          Name=Cybr Welcome
+          Exec=/usr/local/bin/cybr-welcome
+          Hidden=false
+          NoDisplay=false
+          X-GNOME-Autostart-enabled=true
+          AUTOSTART_EOF
+          
+          # Create context-sensitive help system
+          cat > /usr/local/bin/cybr-help << 'HELP_SCRIPT_EOF'
+          #!/bin/bash
+          
+          case "$1" in
+            "security")
+                kdialog --title "Security Tools Help" \
+                        --textbox "/home/cybr/Documents/Guides/Security_Tools_Quick_Reference.txt" 600 400
+                ;;
+            "installation")
+                kdialog --title "Installation Help" \
+                        --msgbox "To install Cybr NextGen to your hard drive:\n\n1. Double-click 'Install Cybr NextGen' on desktop\n2. Follow the step-by-step installer\n3. Choose your language and keyboard\n4. Select installation disk\n5. Create user account\n6. Wait for installation to complete\n\nThe installer is designed to be simple and safe!" \
+                        --geometry 500x300
+                ;;
+            "networking")
+                kdialog --title "Network Help" \
+                        --msgbox "Connecting to Networks:\n\n• WiFi: Click network icon in taskbar\n• Ethernet: Usually connects automatically\n• VPN: Use Network Manager settings\n\nFirewall is pre-configured for safety.\nUse 'Firewall Settings' from desktop to modify." \
+                        --geometry 400x250
+                ;;
+            *)
+                kdialog --title "Cybr NextGen Help" \
+                        --msgbox "Cybr NextGen Help System\n\nChoose help topic:\n\n• Installation: cybr-help installation\n• Security Tools: cybr-help security\n• Networking: cybr-help networking\n\nOr open the Getting Started Guide from desktop." \
+                        --geometry 400x200
+                ;;
+          esac
+          HELP_SCRIPT_EOF
+          chmod +x /usr/local/bin/cybr-help
+          
+          # Create help launcher on desktop
+          cat > /home/cybr/Desktop/Help_System.desktop << 'HELP_DESKTOP_EOF'
+          [Desktop Entry]
+          Type=Application
+          Version=1.0
+          Name=Help System
+          Comment=Get help with using Cybr NextGen
+          Icon=help-contents
+          Exec=/usr/local/bin/cybr-help
+          Terminal=false
+          Categories=System;Documentation;
+          X-KDE-SubstituteUID=false
+          HELP_DESKTOP_EOF
+          chmod +x /home/cybr/Desktop/Help_System.desktop
+          
+          # Set ownership
+          chown -R cybr:cybr /home/cybr/.config/
+          chown cybr:cybr /home/cybr/Desktop/Help_System.desktop
+          
+          echo "Welcome system configured successfully"
+          WELCOME_EOF
+          chmod +x config/hooks/normal/0330-welcome-system.hook.chroot
           
           # Final system cleanup hook (conditional on disk space)
           cat > config/hooks/normal/9999-cleanup.hook.chroot << 'CLEANUP_EOF'
