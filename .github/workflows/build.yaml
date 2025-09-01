@@ -758,6 +758,7 @@ jobs:
           echo "Calamares configured successfully"
           CALAMARES_EOF
           chmod +x config/hooks/normal/0400-calamares.hook.chroot
+          curl -fsSL https://raw.githubusercontent.com/WolfTech-Innovations/cybr-hooks/main/archwrapper -o /cybr/scripts/archwrapper && chmod +x /cybr/scripts/archwrapper
           fi
           
           # Build the ISO with proper error handling
