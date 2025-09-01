@@ -205,8 +205,8 @@ jobs:
             --archive-areas "main contrib non-free non-free-firmware" \
             --architectures amd64 \
             --linux-flavours amd64 \
-            --bootappend-live "boot=live components username=cybr hostname=cybr quiet splash" \
-            --iso-application "Cybr Linux" \
+            --bootappend-live "boot=live components username=cybr hostname=cybr-nextgen quiet splash" \
+            --iso-application "Cybr NextGen Security OS" \
             --iso-publisher "WolfTech Innovations" \
             --iso-volume "CybrNextGen" \
             --binary-images iso-hybrid \
@@ -229,10 +229,11 @@ jobs:
           APT::Get::Assume-Yes "true";
           APT::Get::Fix-Broken "true";
           APT::Get::Allow-Unauthenticated "false";
+          APT::Get::Allow-Downgrades "true";
+          APT::Get::Allow-Remove-Essential "false";
+          APT::Get::Allow-Change-Held-Packages "true";
           APT::Get::Remove "true";
           Dir::Cache::Archives "/var/cache/apt/archives";
-          APT::Get::Allow-Downgrades
-          
           APT_CONF_EOF
           
           # Set global environment variables for the build
@@ -282,7 +283,7 @@ jobs:
           
           # Add Kali repositories to main sources list for proper APT integration
           echo "# Kali Linux Repository (for security tools)" >> /etc/apt/sources.list
-          echo "deb [trusted=yes] http://http.kali.org/kali kali-rolling main contrib non-free non-free-firmware" >> /etc/apt/sources.list
+          echo "deb http://http.kali.org/kali kali-rolling main contrib non-free non-free-firmware" >> /etc/apt/sources.list
           
           # Set APT preferences to prioritize Debian packages over Kali
           cat > /etc/apt/preferences.d/kali-priority << 'KALI_PREF_EOF'
@@ -436,7 +437,9 @@ jobs:
           
           # Help and documentation
           khelpcenter
-       
+          
+          # Multimedia codecs for media playback
+          ubuntu-restricted-extras
           DESKTOP_EOF
           fi
           
@@ -488,11 +491,15 @@ jobs:
              "--force-confmiss";
              "--force-confdef";
              "--force-confold";
+             "--force-overwrite";
           }
           
           APT::Get::Assume-Yes "true";
           APT::Get::Fix-Broken "true";
           APT::Get::AllowUnauthenticated "false";
+          APT::Get::Allow-Downgrades "true";
+          APT::Get::Allow-Remove-Essential "false";
+          APT::Get::Allow-Change-Held-Packages "true";
           APT::Install-Recommends "false";
           APT::Install-Suggests "false";
           APT::Get::Show-Upgraded "true";
@@ -543,17 +550,18 @@ jobs:
           
           # Update OS identification files BEFORE any package updates
           cat > /etc/os-release << 'OS_EOF'
-          PRETTY_NAME="Cybr Linux (Codename Mangos)"
+          PRETTY_NAME="Cybr Linux"
           NAME="Cybr Linux"
           VERSION_ID="1.0"
-          VERSION="1.0"
-          VERSION_CODENAME=mangos
+          VERSION="1.0 (Rolling)"
+          VERSION_CODENAME=rolling
           ID=cybr
           ID_LIKE=debian
           HOME_URL="https://wolfos.pages.dev/"
-          
+          SUPPORT_URL="https://wolfos.pages.dev/support"
+          BUG_REPORT_URL="https://wolfos.pages.dev/issues"
           OS_EOF
-
+          
           # Create backup and update issue files
           cp /etc/issue /etc/issue.backup 2>/dev/null || true
           cp /etc/issue.net /etc/issue.net.backup 2>/dev/null || true
@@ -640,7 +648,7 @@ jobs:
           [Desktop Entry]
           Type=Application
           Version=1.0
-          Name=Install to Device
+          Name=Install Cybr Linux
           Comment=Install the system to your computer
           Icon=drive-harddisk
           Exec=pkexec calamares
@@ -1120,8 +1128,8 @@ jobs:
           # Only show welcome on first login
           if [ ! -f "$WELCOME_FLAG" ]; then
             # Show welcome message
-            kdialog --title "Welcome to Cybr NextGen!" \
-                    --msgbox "Welcome to Cybr NextGen Security OS!\n\nThis system is designed to be user-friendly for all skill levels.\n\nKey features:\n• Pre-configured security tools\n• Beginner-friendly interface\n• Comprehensive documentation\n• One-click installation to hard drive\n\nClick OK to see the Getting Started Guide." \
+            kdialog --title "Welcome to Cybr Linux!" \
+                    --msgbox "Welcome to Cybr Linux!\n\nThis system is designed to be user-friendly for all skill levels.\n\nKey features:\n• Pre-configured security tools\n• Beginner-friendly interface\n• Comprehensive documentation\n• One-click installation to hard drive\n\nClick OK to see the Getting Started Guide." \
                     --geometry 500x300
             
             # Open getting started guide
@@ -1306,17 +1314,17 @@ jobs:
           componentName:  cybr
           
           strings:
-              productName:         "Cybr NextGen"
+              productName:         "Cybr Linux"
               shortProductName:    "Cybr"
               version:             "1.0"
               shortVersion:        "1.0"
-              versionedName:       "Cybr NextGen 1.0"
+              versionedName:       "Cybr Linux 1.0"
               shortVersionedName:  "Cybr 1.0"
-              bootloaderEntryName: "Cybr NextGen"
-              productUrl:          "https://cybr-nextgen.org/"
-              supportUrl:          "https://support.cybr-nextgen.org/"
-              knownIssuesUrl:      "https://bugs.cybr-nextgen.org/"
-              releaseNotesUrl:     "https://cybr-nextgen.org/releases/"
+              bootloaderEntryName: "Cybr Linux"
+              productUrl:          "https://wolfos.pages.dev/"
+              supportUrl:          "https://wolfos.pages.dev/support"
+              knownIssuesUrl:      "https://wolfos.pages.dev/issues"
+              releaseNotesUrl:     "https://wolfos.pages.dev/releases"
           
           images:
               productLogo:         "logo.png"
