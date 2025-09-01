@@ -208,7 +208,7 @@ jobs:
             --bootappend-live "boot=live components username=cybr hostname=cybr-nextgen quiet splash" \
             --iso-application "Cybr NextGen Security OS" \
             --iso-publisher "WolfTech Innovations" \
-            --iso-volume "Cybr" \
+            --iso-volume "CybrNextGen" \
             --binary-images iso-hybrid \
             --memtest none \
             --win32-loader false \
@@ -280,7 +280,7 @@ jobs:
           
           # Add Kali repositories to main sources list for proper APT integration
           echo "# Kali Linux Repository (for security tools)" >> /etc/apt/sources.list
-          echo "deb http://http.kali.org/kali kali-rolling main contrib non-free non-free-firmware" >> /etc/apt/sources.list
+          echo "deb [trusted=yes] http://http.kali.org/kali kali-rolling main contrib non-free non-free-firmware" >> /etc/apt/sources.list
           
           # Set APT preferences to prioritize Debian packages over Kali
           cat > /etc/apt/preferences.d/kali-priority << 'KALI_PREF_EOF'
@@ -434,9 +434,7 @@ jobs:
           
           # Help and documentation
           khelpcenter
-  
           
-      
           DESKTOP_EOF
           fi
           
@@ -544,15 +542,14 @@ jobs:
           # Update OS identification files BEFORE any package updates
           cat > /etc/os-release << 'OS_EOF'
           PRETTY_NAME="Cybr NextGen"
-          NAME="Cybr NextGen"
+          NAME="Cybr Linux"
           VERSION_ID="1.0"
-          VERSION="1.0 (NextGen)"
+          VERSION="1.0 "
           VERSION_CODENAME=nextgen
           ID=cybr
           ID_LIKE=debian
-          HOME_URL="https://cybr-nextgen.org/"
-          SUPPORT_URL="https://support.cybr-nextgen.org/"
-          BUG_REPORT_URL="https://bugs.cybr-nextgen.org/"
+          HOME_URL="https://wolfos.uk/"
+ 
           OS_EOF
           
           # Create backup and update issue files
@@ -574,7 +571,7 @@ jobs:
           
           # Create version info
           cat > /etc/cybr-version << 'VERSION_EOF'
-          Cybr NextGen Security OS
+          Cybr Linux
           Version: $BUILD_VERSION
           Build Date: $(date -u '+%Y-%m-%d %H:%M:%S UTC')
           Builder: GitHub Actions
@@ -1196,9 +1193,273 @@ jobs:
           chown -R cybr:cybr /home/cybr/.config/
           chown cybr:cybr /home/cybr/Desktop/Help_System.desktop
           
-          echo "Welcome system configured successfully"
-          WELCOME_EOF
-          chmod +x config/hooks/normal/0330-welcome-system.hook.chroot
+          # Ultra-simplified interface for maximum accessibility
+          cat > config/hooks/normal/0340-simple-interface.hook.chroot << 'SIMPLE_EOF'
+          #!/bin/bash
+          set -e
+          
+          echo "Creating ultra-simplified interface for maximum accessibility..."
+          
+          # Install additional accessibility packages
+          apt-get update
+          apt-get install -y --no-install-recommends \
+            speech-dispatcher espeak-ng \
+            onboard florence \
+            kde-config-accessibility \
+            kmag kmouth \
+            large-cursor-theme
+          
+          # Create extremely simple desktop with only essential large icons
+          rm -f /home/cybr/Desktop/*.desktop 2>/dev/null || true
+          
+          # Create large, clearly labeled desktop shortcuts
+          cat > /home/cybr/Desktop/1-Internet.desktop << 'INTERNET_EOF'
+          [Desktop Entry]
+          Type=Application
+          Version=1.0
+          Name=Internet
+          Comment=Browse the web
+          Icon=firefox
+          Exec=firefox
+          Terminal=false
+          Categories=Network;
+          X-KDE-SubstituteUID=false
+          INTERNET_EOF
+          
+          cat > /home/cybr/Desktop/2-Files.desktop << 'FILES_EOF'
+          [Desktop Entry]
+          Type=Application
+          Version=1.0
+          Name=My Files
+          Comment=See my documents and pictures
+          Icon=folder-blue
+          Exec=dolphin
+          Terminal=false
+          Categories=System;
+          X-KDE-SubstituteUID=false
+          FILES_EOF
+          
+          cat > /home/cybr/Desktop/3-Install.desktop << 'INSTALL_EOF'
+          [Desktop Entry]
+          Type=Application
+          Version=1.0
+          Name=Install to Computer
+          Comment=Put this system on my computer permanently
+          Icon=drive-harddisk
+          Exec=pkexec calamares
+          Terminal=false
+          Categories=System;
+          X-KDE-SubstituteUID=true
+          INSTALL_EOF
+          
+          cat > /home/cybr/Desktop/4-Help.desktop << 'HELP_EOF'
+          [Desktop Entry]
+          Type=Application
+          Version=1.0
+          Name=Help Me
+          Comment=Get help using this computer
+          Icon=help-contents
+          Exec=/usr/local/bin/simple-help
+          Terminal=false
+          Categories=System;
+          X-KDE-SubstituteUID=false
+          HELP_EOF
+          
+          cat > /home/cybr/Desktop/5-Settings.desktop << 'SETTINGS_EOF'
+          [Desktop Entry]
+          Type=Application
+          Version=1.0
+          Name=Settings
+          Comment=Change how things work
+          Icon=systemsettings
+          Exec=systemsettings5
+          Terminal=false
+          Categories=System;
+          X-KDE-SubstituteUID=false
+          SETTINGS_EOF
+          
+          # Create simple help system with audio support
+          cat > /usr/local/bin/simple-help << 'SIMPLE_HELP_EOF'
+          #!/bin/bash
+          
+          # Function to speak text
+          speak_text() {
+            echo "$1" | espeak-ng -s 150 -v en &
+          }
+          
+          CHOICE=$(kdialog --title "Help Me" \
+                          --menu "What do you need help with?" \
+                          "internet" "Using the Internet" \
+                          "files" "Finding My Files" \
+                          "install" "Installing to My Computer" \
+                          "wifi" "Connecting to WiFi" \
+                          "sound" "Fixing Sound Problems" \
+                          "big" "Making Text Bigger" \
+                          2>/dev/null)
+          
+          case "$CHOICE" in
+            "internet")
+              MESSAGE="To use the Internet:\n\n1. Double-click 'Internet' on your desktop\n2. The web browser will open\n3. Type what you want to search for\n4. Press Enter\n\nThe computer is already connected if you see websites loading."
+              speak_text "To use the Internet, double-click Internet on your desktop. The web browser will open. Type what you want to search for and press Enter."
+              ;;
+            "files")
+              MESSAGE="To find your files:\n\n1. Double-click 'My Files' on your desktop\n2. Look for folders called:\n   - Documents (for text files)\n   - Pictures (for photos)\n   - Downloads (for things from Internet)\n\nDouble-click folders to open them."
+              speak_text "To find your files, double-click My Files on your desktop. Look for Documents, Pictures, or Downloads folders."
+              ;;
+            "install")
+              MESSAGE="To install this system on your computer:\n\n1. Double-click 'Install to Computer'\n2. Follow the steps on screen\n3. Choose your language\n4. Pick your hard drive\n5. Wait for it to finish\n\nThis will make the system permanent on your computer."
+              speak_text "To install this system, double-click Install to Computer and follow the steps on screen."
+              ;;
+            "wifi")
+              MESSAGE="To connect to WiFi:\n\n1. Look at bottom-right corner of screen\n2. Click the signal bars icon\n3. Click your WiFi network name\n4. Type your password\n5. Click Connect\n\nAsk someone for the WiFi password if needed."
+              speak_text "To connect to WiFi, click the signal bars in the bottom-right corner, click your network name, and type your password."
+              ;;
+            "sound")
+              MESSAGE="If you can't hear sound:\n\n1. Check speaker volume (bottom-right corner)\n2. Click the speaker icon\n3. Move the slider to the right\n4. Check if headphones are plugged in\n5. Try different headphones or speakers"
+              speak_text "If you can't hear sound, check the speaker volume in the bottom-right corner and move the slider to the right."
+              ;;
+            "big")
+              MESSAGE="To make text bigger:\n\n1. Double-click 'Settings'\n2. Click 'Accessibility'\n3. Click 'Visual'\n4. Change 'Font Size' to 'Large' or 'Extra Large'\n5. Click 'Apply'\n\nText will become easier to read."
+              speak_text "To make text bigger, open Settings, click Accessibility, then Visual, and change Font Size to Large."
+              ;;
+            *)
+              MESSAGE="Cybr NextGen Help\n\nThis computer is designed to be very easy to use.\n\nEverything you need is on your desktop with big, clear icons.\n\nIf you need more help, ask someone nearby or call a tech-savvy friend."
+              speak_text "This computer is designed to be very easy to use. Everything you need is on your desktop with big, clear icons."
+              ;;
+          esac
+          
+          kdialog --title "Help Information" --msgbox "$MESSAGE" --geometry 500x350
+          SIMPLE_HELP_EOF
+          chmod +x /usr/local/bin/simple-help
+          
+          # Configure KDE for maximum simplicity and accessibility
+          cat > /home/cybr/.config/kwinrc << 'KWIN_CONFIG_EOF'
+          [Compositing]
+          AnimationSpeed=0
+          Enabled=false
+          
+          [Effect-PresentWindows]
+          BorderActivate=9
+          
+          [Windows]
+          FocusPolicy=ClickToFocus
+          AutoRaise=true
+          KWIN_CONFIG_EOF
+          
+          # Simplify taskbar and desktop
+          cat > /home/cybr/.config/plasma-org.kde.plasma.desktop-appletsrc << 'SIMPLE_DESKTOP_EOF'
+          [Containments][1]
+          activityId=
+          formfactor=0
+          immutability=1
+          lastScreen=0
+          location=0
+          plugin=org.kde.plasma.folder
+          wallpaperplugin=org.kde.image
+          
+          [Containments][1][Wallpaper][org.kde.image][General]
+          Image=file:///home/cybr/Pictures/Wallpapers/cat_wallpaper.jpg
+          SlidePaths=/home/cybr/Pictures/Wallpapers/
+          
+          [Containments][2]
+          activityId=
+          formfactor=2
+          immutability=1
+          lastScreen=0
+          location=3
+          plugin=org.kde.panel
+          
+          [Containments][2][Applets][1]
+          immutability=1
+          plugin=org.kde.plasma.kickoff
+          
+          [Containments][2][Applets][1][Configuration]
+          PreloadWeight=100
+          
+          [Containments][2][Applets][2]
+          immutability=1
+          plugin=org.kde.plasma.taskmanager
+          
+          [Containments][2][Applets][3]
+          immutability=1
+          plugin=org.kde.plasma.systemtray
+          
+          [Containments][2][Applets][4]
+          immutability=1
+          plugin=org.kde.plasma.digitalclock
+          
+          [Containments][2][General]
+          AppletOrder=1;2;3;4
+          SIMPLE_DESKTOP_EOF
+          
+          # Large font and high contrast settings
+          cat >> /home/cybr/.config/kdeglobals << 'ACCESSIBILITY_CONFIG_EOF'
+          
+          [General]
+          font=Noto Sans,14,-1,5,50,0,0,0,0,0
+          menuFont=Noto Sans,14,-1,5,50,0,0,0,0,0
+          smallestReadableFont=Noto Sans,12,-1,5,50,0,0,0,0,0
+          taskbarFont=Noto Sans,14,-1,5,50,0,0,0,0,0
+          toolBarFont=Noto Sans,12,-1,5,50,0,0,0,0,0
+          
+          [KDE]
+          LookAndFeelPackage=org.kde.breezedark.desktop
+          ShowDeleteCommand=false
+          SingleClick=false
+          
+          [WM]
+          activeFont=Noto Sans,14,-1,5,50,0,0,0,0,0
+          ACCESSIBILITY_CONFIG_EOF
+          
+          # Create simple startup guide that appears immediately
+          cat > /home/cybr/.config/autostart/simple-startup.desktop << 'STARTUP_EOF'
+          [Desktop Entry]
+          Type=Application
+          Name=Simple Startup Guide
+          Exec=/usr/local/bin/simple-startup
+          Hidden=false
+          NoDisplay=false
+          X-GNOME-Autostart-enabled=true
+          STARTUP_EOF
+          
+          cat > /usr/local/bin/simple-startup << 'STARTUP_SCRIPT_EOF'
+          #!/bin/bash
+          
+          STARTUP_FLAG="/home/$USER/.config/simple-startup-shown"
+          
+          if [ ! -f "$STARTUP_FLAG" ]; then
+            # Wait for desktop to load
+            sleep 3
+            
+            # Speak welcome message
+            echo "Welcome! This computer is ready to use. Everything you need is on your desktop." | espeak-ng -s 120 -v en &
+            
+            # Show simple welcome
+            kdialog --title "Welcome!" \
+                    --msgbox "Welcome to your new computer!\n\nEverything you need is on your desktop:\n\n• Internet - Browse the web\n• My Files - See your documents\n• Install to Computer - Make this permanent\n• Help Me - Get help anytime\n• Settings - Change how things work\n\nJust double-click what you want to use!\n\nClick OK to start using your computer." \
+                    --geometry 600x400
+            
+            touch "$STARTUP_FLAG"
+          fi
+          STARTUP_SCRIPT_EOF
+          chmod +x /usr/local/bin/simple-startup
+          
+          # Configure large cursor
+          cat > /home/cybr/.config/kcminputrc << 'CURSOR_CONFIG_EOF'
+          [Mouse]
+          cursorTheme=DMZ-White
+          cursorSize=48
+          CURSOR_CONFIG_EOF
+          
+          # Make all desktop shortcuts executable and properly sized
+          chmod +x /home/cybr/Desktop/*.desktop
+          
+          # Set ownership of all created files
+          chown -R cybr:cybr /home/cybr/
+          
+          echo "Ultra-simplified interface created successfully"
+          SIMPLE_EOF
+          chmod +x config/hooks/normal/0340-simple-interface.hook.chroot
           
           # Final system cleanup hook (conditional on disk space)
           cat > config/hooks/normal/9999-cleanup.hook.chroot << 'CLEANUP_EOF'
