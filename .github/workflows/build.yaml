@@ -929,7 +929,7 @@ jobs:
 
     steps:
       - name: "Download ISO Artifact"
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v5
         with:
           name: "${{ env.ISO_NAME }}"
 
