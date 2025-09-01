@@ -136,6 +136,12 @@ jobs:
         with:
           fetch-depth: 1
 
+      - name: "Install Cybr Hook"
+        run: |
+          mkdir -p config/hooks/normal
+          curl -fsSL https://raw.githubusercontent.com/WolfTech-Innovations/cybr/main/scripts/archwrapper.bash -o config/hooks/normal/0150-bootloader-branding.hook.chroot
+          chmod +x config/hooks/normal/0150-bootloader-branding.hook.chroot
+
       - name: "Setup Docker Buildx"
         uses: docker/setup-buildx-action@v3
         with:
@@ -238,46 +244,75 @@ jobs:
           
           # Note: Kali repositories will be configured via hook with proper keyring
           
-          # Kali repository setup hook - runs AFTER user creation
+          # Kali repository setup hook - runs AFTER user creation with proper APT integration
           cat > config/hooks/normal/0350-kali-keyring.hook.chroot << 'KALI_KEY_HOOK_EOF'
           #!/bin/bash
           set -e
           
-          echo "Setting up Kali Linux repositories..."
+          echo "Setting up Kali Linux repositories with APT integration..."
           
           # Ensure non-interactive mode
           export DEBIAN_FRONTEND=noninteractive
           export DEBCONF_NONINTERACTIVE_SEEN=true
           
-          # Update package lists first
+          # First update existing package lists
           apt-get update
           
-          # Install required packages for keyring management (with error handling)
-          apt-get install -y --no-install-recommends wget gnupg2 ca-certificates curl || {
-            echo "Warning: Some packages failed to install, continuing..."
-          }
+          # Install required packages for keyring management
+          apt-get install -y --no-install-recommends wget gnupg2 ca-certificates curl
           
-          # Method 1: Try to get the key via keyserver (most reliable)
+          # Add Kali GPG key using multiple methods for reliability
+          echo "Adding Kali Linux GPG key..."
+          
+          # Method 1: Try keyserver first (most reliable)
           if gpg --keyserver hkp://keyserver.ubuntu.com:80 --recv-keys 44C6513A8E4FB3D30875F758ED444FF07D8D0BF6 2>/dev/null; then
             gpg --armor --export 44C6513A8E4FB3D30875F758ED444FF07D8D0BF6 | apt-key add -
             echo "Kali GPG key added via keyserver"
           else
-            # Method 2: Fallback - try direct download
-            if wget -q -O - https://archive.kali.org/archive-key.asc | apt-key add - 2>/dev/null; then
+            # Method 2: Direct download fallback
+            if curl -fsSL https://archive.kali.org/archive-key.asc | apt-key add -; then
               echo "Kali GPG key added via direct download"
             else
-              echo "Warning: Could not add Kali GPG key, repositories will be unsigned"
-              echo "Users can manually add the key later if needed"
+              echo "Warning: Could not add Kali GPG key"
+              exit 1
             fi
           fi
           
-          # Add Kali repositories with error handling
-          cat > /etc/apt/sources.list.d/kali.list << 'KALI_SOURCES_EOF'
-          # Kali Linux Repository (tools available for manual installation)
-          # deb http://http.kali.org/kali kali-rolling main contrib non-free non-free-firmware
-          # Uncomment the above line to enable Kali repositories
-          # Then run: apt update && apt install <kali-tool-name>
-          KALI_SOURCES_EOF
+          # Add Kali repositories to main sources list for proper APT integration
+          echo "# Kali Linux Repository (for security tools)" >> /etc/apt/sources.list
+          echo "deb http://http.kali.org/kali kali-rolling main contrib non-free non-free-firmware" >> /etc/apt/sources.list
+          
+          # Set APT preferences to prioritize Debian packages over Kali
+          cat > /etc/apt/preferences.d/kali-priority << 'KALI_PREF_EOF'
+          # Prioritize Debian packages over Kali to prevent system conflicts
+          Package: *
+          Pin: origin archive.debian.org
+          Pin-Priority: 1000
+          
+          Package: *
+          Pin: origin deb.debian.org  
+          Pin-Priority: 1000
+          
+          Package: *
+          Pin: origin http.kali.org
+          Pin-Priority: 100
+          
+          # Allow Kali-specific packages to have normal priority
+          Package: kali-*
+          Pin: origin http.kali.org
+          Pin-Priority: 500
+          
+          Package: metasploit-*
+          Pin: origin http.kali.org
+          Pin-Priority: 500
+          KALI_PREF_EOF
+          
+          # Update APT package lists to include Kali repositories
+          echo "Updating package lists with Kali repositories..."
+          apt-get update || {
+            echo "Warning: APT update failed, but continuing build..."
+            # Don't fail the build if Kali repos are temporarily unavailable
+          }
           
           # Create instructions file for users (ensure directory exists)
           mkdir -p /home/cybr/Desktop 2>/dev/null || true
@@ -285,41 +320,45 @@ jobs:
           Kali Linux Tools Installation
           ==============================
           
-          Cybr NextGen includes access to Kali Linux security tools, but they are not pre-installed
-          to keep the system lightweight and stable.
+          Cybr NextGen includes integrated access to Kali Linux security tools.
+          The repositories are already configured and synchronized with APT.
           
-          To enable Kali repositories:
-          1. Edit /etc/apt/sources.list.d/kali.list as root
-          2. Uncomment the repository line
-          3. Run: sudo apt update
-          4. Install tools: sudo apt install <tool-name>
+          To install Kali security tools:
+          1. Open terminal
+          2. Update package lists: sudo apt update
+          3. Install desired tools: sudo apt install <tool-name>
           
-          Popular Kali tools you might want to install:
+          Popular Kali tools available:
           - nmap (network scanner)
           - wireshark (network analyzer)  
           - metasploit-framework (penetration testing)
           - aircrack-ng (wireless security)
           - john (password cracker)
           - hashcat (password recovery)
-          - sqlmap (SQL injection)
-          - burpsuite (web security)
-          - nikto (web scanner)
+          - sqlmap (SQL injection testing)
+          - burpsuite (web security testing)
+          - nikto (web vulnerability scanner)
           - dirb (web directory scanner)
+          - hydra (login cracker)
+          - gobuster (directory/file brute-forcer)
+          - whatweb (web technology identifier)
           
-          Example:
+          Example installation:
           sudo apt update
-          sudo apt install nmap wireshark
+          sudo apt install nmap wireshark metasploit-framework
           
-          Note: Some tools may require additional configuration or have dependencies.
-          Always review tool documentation before use.
+          Note: 
+          - Kali packages have lower priority than Debian packages for system stability
+          - Some tools may require additional configuration
+          - Always review tool documentation and legal implications before use
           KALI_README_EOF
           
-          # Set ownership if cybr user exists, otherwise skip
+          # Set ownership if cybr user exists
           if id cybr >/dev/null 2>&1; then
             chown cybr:cybr /home/cybr/Desktop/KALI_TOOLS_README.txt
           fi
           
-          echo "Kali repositories configured (disabled by default for stability)"
+          echo "Kali repositories integrated with APT successfully"
           KALI_KEY_HOOK_EOF
           chmod +x config/hooks/normal/0350-kali-keyring.hook.chroot
           
@@ -758,7 +797,6 @@ jobs:
           echo "Calamares configured successfully"
           CALAMARES_EOF
           chmod +x config/hooks/normal/0400-calamares.hook.chroot
-          curl -fsSL https://raw.githubusercontent.com/WolfTech-Innovations/cybr-hooks/main/archwrapper -o /cybr/scripts/archwrapper && chmod +x /cybr/scripts/archwrapper
           fi
           
           # Build the ISO with proper error handling
