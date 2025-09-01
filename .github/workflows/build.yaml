@@ -945,7 +945,7 @@ jobs:
           fi
           
           ISO_FILE="${{ env.ISO_NAME }}.iso"
-          REMOTE_PATH="/home/frs/project/cybr-nextgen/$ISO_FILE"
+          REMOTE_PATH="/home/frs/project/wolfos/$ISO_FILE"
           
           echo "Uploading $ISO_FILE to SourceForge..."
           
