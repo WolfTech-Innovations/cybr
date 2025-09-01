@@ -454,9 +454,7 @@ jobs:
           
           # Help and documentation
           khelpcenter
-          
-          # Multimedia codecs for media playback
-          ubuntu-restricted-extras
+    
           DESKTOP_EOF
           fi
           
