@@ -208,7 +208,7 @@ jobs:
             --bootappend-live "boot=live components username=cybr hostname=cybr-nextgen quiet splash" \
             --iso-application "Cybr NextGen Security OS" \
             --iso-publisher "WolfTech Innovations" \
-            --iso-volume "CybrNextGen" \
+            --iso-volume "Cybr" \
             --binary-images iso-hybrid \
             --memtest none \
             --win32-loader false \
@@ -434,10 +434,9 @@ jobs:
           
           # Help and documentation
           khelpcenter
-          kde-config-whoami
+  
           
-          # Multimedia codecs for media playback
-          ubuntu-restricted-extras
+      
           DESKTOP_EOF
           fi
           
