@@ -14,6 +14,12 @@ on:
         default: "standard"
         type: choice
         options: ["minimal", "standard", "full"]
+      build_architecture:
+        description: "Target architecture"
+        required: false
+        default: "amd64"
+        type: choice
+        options: ["amd64", "arm64"]
       skip_upload:
         description: "Skip upload to SourceForge"
         required: false
@@ -30,7 +36,7 @@ env:
   BUILDX_CACHE_TO: type=gha,mode=max
   BUILDX_CACHE_FROM: type=gha
   BUILD_VERSION: ${{ github.run_number }}
-  ISO_NAME: "cybr-nextgen-v${{ github.run_number }}"
+  ISO_NAME_BASE: "cybr-linux-v${{ github.run_number }}"
 
 jobs:
   # ============================================================================
@@ -88,6 +94,7 @@ jobs:
           echo "│           VALIDATION REPORT             │"
           echo "├─────────────────────────────────────────┤"
           echo "│ Build Variant: ${{ github.event.inputs.build_variant || 'standard' }}"
+          echo "│ Architecture:  ${{ github.event.inputs.build_architecture || 'amd64' }}"
           echo "│ Force Fail:    ${{ github.event.inputs.force_fail || 'false' }}"
           echo "│ Skip Upload:   ${{ github.event.inputs.skip_upload || 'false' }}"
           echo "│ Build Number:  ${{ github.run_number }}"
@@ -103,10 +110,16 @@ jobs:
     needs: validate
     if: needs.validate.outputs.should_build == 'true'
     timeout-minutes: 340
+    strategy:
+      matrix:
+        architecture: [amd64, arm64]
+      fail-fast: false
     outputs:
       build_success: ${{ steps.build-status.outputs.success }}
-      iso_size: ${{ steps.iso-info.outputs.size }}
-      iso_sha256: ${{ steps.iso-info.outputs.sha256 }}
+      iso_size_amd64: ${{ steps.iso-info.outputs.size_amd64 }}
+      iso_sha256_amd64: ${{ steps.iso-info.outputs.sha256_amd64 }}
+      iso_size_arm64: ${{ steps.iso-info.outputs.size_arm64 }}
+      iso_sha256_arm64: ${{ steps.iso-info.outputs.sha256_arm64 }}
 
     steps:
       - name: "Build Progress Banner"
@@ -120,6 +133,8 @@ jobs:
           ║  ██╔══██╗██║   ██║██║██║     ██║  ██║    ╚════██║   ██║   ██╔══██║  ║
           ║  ██████╔╝╚██████╔╝██║███████╗██████╔╝    ███████║   ██║   ██║  ██║  ║
           ║  ╚═════╝  ╚═════╝ ╚═╝╚══════╝╚═════╝     ╚══════╝   ╚═╝   ╚═╝  ╚═╝  ║
+          ║                                                                      ║
+          ║                    Building for: ${{ matrix.architecture }}         ║
           ╚══════════════════════════════════════════════════════════════════════╝
           
           EOF
@@ -190,25 +205,27 @@ jobs:
           BUILD_VARIANT="${BUILD_VARIANT:-standard}"
           BUILD_VERSION="${BUILD_VERSION:-1}"
           ISO_NAME="${ISO_NAME:-cybr-nextgen}"
+          BUILD_ARCH="${BUILD_ARCH:-amd64}"
           
           echo "Starting Debian-based Cybr build..."
           echo "Variant: $BUILD_VARIANT"
           echo "Version: $BUILD_VERSION"
+          echo "Architecture: $BUILD_ARCH"
           
           # Setup live-build configuration
           mkdir -p /build/live-build
           cd /build/live-build
           
-          # Configure live-build for Debian with non-interactive mode
+          # Configure live-build for Debian with dynamic architecture
           lb config \
             --distribution bookworm \
             --archive-areas "main contrib non-free non-free-firmware" \
-            --architectures amd64 \
-            --linux-flavours amd64 \
+            --architectures $BUILD_ARCH \
+            --linux-flavours $BUILD_ARCH \
             --bootappend-live "boot=live components username=cybr hostname=cybr-nextgen quiet splash" \
-            --iso-application "Cybr NextGen Security OS" \
+            --iso-application "Cybr Linux Security OS" \
             --iso-publisher "WolfTech Innovations" \
-            --iso-volume "CybrNextGen" \
+            --iso-volume "CybrLinux" \
             --binary-images iso-hybrid \
             --memtest none \
             --win32-loader false \
@@ -283,7 +300,7 @@ jobs:
           
           # Add Kali repositories to main sources list for proper APT integration
           echo "# Kali Linux Repository (for security tools)" >> /etc/apt/sources.list
-          echo "deb http://http.kali.org/kali kali-rolling main contrib non-free non-free-firmware" >> /etc/apt/sources.list
+          echo "deb [trusted=yes] http://http.kali.org/kali kali-rolling main contrib non-free non-free-firmware" >> /etc/apt/sources.list
           
           # Set APT preferences to prioritize Debian packages over Kali
           cat > /etc/apt/preferences.d/kali-priority << 'KALI_PREF_EOF'
@@ -1454,21 +1471,26 @@ jobs:
 
       - name: "Execute ISO Build"
         run: |
-          echo "Starting Debian-based ISO build process..."
+          echo "Starting Debian-based ISO build process for ${{ matrix.architecture }}..."
+          
+          # Set architecture-specific ISO name
+          ISO_NAME="${{ env.ISO_NAME_BASE }}-${{ matrix.architecture }}"
           
           docker run --rm \
             --privileged \
             -v $PWD:/build \
             -e BUILD_VARIANT="${{ github.event.inputs.build_variant || 'standard' }}" \
             -e BUILD_VERSION="${{ env.BUILD_VERSION }}" \
-            -e ISO_NAME="${{ env.ISO_NAME }}" \
+            -e ISO_NAME="$ISO_NAME" \
+            -e BUILD_ARCH="${{ matrix.architecture }}" \
             cybr-debian-builder:${{ needs.validate.outputs.build_hash }} \
             ./scripts/build-debian-iso.sh
 
       - name: "Validate ISO Build"
         id: iso-info
         run: |
-          ISO_FILE="${{ env.ISO_NAME }}.iso"
+          ISO_NAME="${{ env.ISO_NAME_BASE }}-${{ matrix.architecture }}"
+          ISO_FILE="${ISO_NAME}.iso"
           
           if [[ ! -f "$ISO_FILE" ]]; then
             echo "ERROR: ISO file not found: $ISO_FILE"
@@ -1480,16 +1502,17 @@ jobs:
           SIZE_MB=$(( SIZE / 1024 / 1024 ))
           SHA256=$(sha256sum "$ISO_FILE" | cut -d' ' -f1)
           
-          echo "size=$SIZE" >> $GITHUB_OUTPUT
-          echo "sha256=$SHA256" >> $GITHUB_OUTPUT
+          # Set architecture-specific outputs
+          echo "size_${{ matrix.architecture }}=$SIZE" >> $GITHUB_OUTPUT
+          echo "sha256_${{ matrix.architecture }}=$SHA256" >> $GITHUB_OUTPUT
           
           echo "┌─────────────────────────────────────────┐"
-          echo "│            ISO BUILD SUMMARY            │"
+          echo "│         ISO BUILD SUMMARY (${{ matrix.architecture }})        │"
           echo "├─────────────────────────────────────────┤"
           echo "│ File:      $ISO_FILE"
           echo "│ Size:      ${SIZE_MB} MB (${SIZE} bytes)"
           echo "│ SHA256:    $SHA256"
-          echo "│ Status:    ✅ Build Successful"
+          echo "│ Status:    Build Successful"
           echo "└─────────────────────────────────────────┘"
 
       - name: "Set Build Status"
@@ -1508,8 +1531,8 @@ jobs:
         uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: "${{ env.ISO_NAME }}"
-          path: "${{ env.ISO_NAME }}.iso"
+          name: "cybr-linux-${{ matrix.architecture }}-v${{ github.run_number }}"
+          path: "cybr-linux-v${{ github.run_number }}-${{ matrix.architecture }}.iso"
           retention-days: 7
           compression-level: 0
 
@@ -1618,10 +1641,13 @@ jobs:
           | Parameter | Value |
           |-----------|-------|
           | **Build Number** | `#${{ github.run_number }}` |
-          | **ISO Name** | `${{ env.ISO_NAME }}.iso` |
+          | **ISO Names** | `cybr-linux-v${{ github.run_number }}-amd64.iso`, `cybr-linux-v${{ github.run_number }}-arm64.iso` |
           | **Build Variant** | `${{ github.event.inputs.build_variant || 'standard' }}` |
-          | **ISO Size** | `${{ needs.build.outputs.iso_size || 'N/A' }}` bytes |
-          | **SHA256** | `${{ needs.build.outputs.iso_sha256 || 'N/A' }}` |
+          | **Architectures** | `amd64, arm64` |
+          | **AMD64 Size** | `${{ needs.build.outputs.iso_size_amd64 || 'N/A' }}` bytes |
+          | **AMD64 SHA256** | `${{ needs.build.outputs.iso_sha256_amd64 || 'N/A' }}` |
+          | **ARM64 Size** | `${{ needs.build.outputs.iso_size_arm64 || 'N/A' }}` bytes |
+          | **ARM64 SHA256** | `${{ needs.build.outputs.iso_sha256_arm64 || 'N/A' }}` |
           
           ## Features
           
