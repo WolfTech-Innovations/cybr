@@ -37,7 +37,7 @@ jobs:
   #                           PRE-BUILD VALIDATION
   # ============================================================================
   validate:
-    name: "🔍 Pre-Build Validation"
+    name: "Pre-Build Validation"
     runs-on: ubuntu-latest
     timeout-minutes: 10
     outputs:
@@ -98,7 +98,7 @@ jobs:
   #                              MAIN BUILD JOB
   # ============================================================================
   build:
-    name: "🏗️ Build Cybr OS"
+    name: "Build Cybr OS"
     runs-on: ubuntu-latest
     needs: validate
     if: needs.validate.outputs.should_build == 'true'
@@ -604,31 +604,42 @@ jobs:
           USER_EOF
           chmod +x config/hooks/normal/0300-user-setup.hook.chroot
           
-          # Final system cleanup hook
+          # Final system cleanup hook (conditional on disk space)
           cat > config/hooks/normal/9999-cleanup.hook.chroot << 'CLEANUP_EOF'
           #!/bin/bash
           set -e
           
-          echo "Performing final system cleanup..."
+          echo "Checking disk space before cleanup..."
           
-          # Clean package cache
-          apt-get autoremove --purge -y
-          apt-get autoclean
-          apt-get clean
+          # Get available disk space in GB
+          AVAILABLE_GB=$(df / | tail -1 | awk '{printf "%.0f", $4/1024/1024}')
+          echo "Available disk space: ${AVAILABLE_GB}GB"
           
-          # Clear logs and temporary files
-          find /var/log -type f -exec truncate -s 0 {} \;
-          rm -rf /tmp/* /var/tmp/*
-          rm -rf /var/cache/apt/archives/*.deb
-          
-          # Clear bash history
-          rm -f /root/.bash_history
-          rm -f /home/*/.bash_history
-          
-          # Remove SSH host keys (will be regenerated on first boot)
-          rm -f /etc/ssh/ssh_host_*
-          
-          echo "System cleanup completed"
+          # Only perform cleanup if less than 25GB available
+          if [ "$AVAILABLE_GB" -lt 25 ]; then
+            echo "Less than 25GB available, performing cleanup..."
+            
+            # Clean package cache
+            apt-get autoremove --purge -y
+            apt-get autoclean
+            apt-get clean
+            
+            # Clear logs and temporary files
+            find /var/log -type f -exec truncate -s 0 {} \;
+            rm -rf /tmp/* /var/tmp/*
+            rm -rf /var/cache/apt/archives/*.deb
+            
+            # Clear bash history
+            rm -f /root/.bash_history
+            rm -f /home/*/.bash_history
+            
+            # Remove SSH host keys (will be regenerated on first boot)
+            rm -f /etc/ssh/ssh_host_*
+            
+            echo "System cleanup completed"
+          else
+            echo "Sufficient disk space available, skipping cleanup"
+          fi
           CLEANUP_EOF
           chmod +x config/hooks/normal/9999-cleanup.hook.chroot
           
@@ -903,7 +914,7 @@ jobs:
   #                              UPLOAD JOB
   # ============================================================================
   upload:
-    name: "📤 Upload to SourceForge"
+    name: "Upload to SourceForge"
     runs-on: ubuntu-latest
     needs: [validate, build]
     if: |
@@ -959,7 +970,7 @@ jobs:
   #                            NOTIFICATION JOB
   # ============================================================================
   notify:
-    name: "🔔 Send Notifications"
+    name: "Send Notifications"
     runs-on: ubuntu-latest
     needs: [validate, build, upload]
     if: always()
@@ -975,16 +986,13 @@ jobs:
           if [[ "$BUILD_STATUS" == "true" ]]; then
             if [[ "$UPLOAD_STATUS" == "success" || "$UPLOAD_STATUS" == "skipped" ]]; then
               echo "overall_status=success" >> $GITHUB_OUTPUT
-              echo "status_emoji=🎉" >> $GITHUB_OUTPUT
               echo "status_message=Build and upload completed successfully!" >> $GITHUB_OUTPUT
             else
               echo "overall_status=partial" >> $GITHUB_OUTPUT
-              echo "status_emoji=⚠️" >> $GITHUB_OUTPUT
               echo "status_message=Build succeeded but upload failed" >> $GITHUB_OUTPUT
             fi
           else
             echo "overall_status=failure" >> $GITHUB_OUTPUT
-            echo "status_emoji=❌" >> $GITHUB_OUTPUT
             echo "status_message=Build pipeline failed" >> $GITHUB_OUTPUT
           fi
 
@@ -992,15 +1000,15 @@ jobs:
         if: always()
         run: |
           cat >> $GITHUB_STEP_SUMMARY << 'SUMMARY_EOF'
-          # ${{ steps.status.outputs.status_emoji }} Cybr NextGen Build Summary
+          # Cybr NextGen Build Summary
           
           ## Pipeline Results
           
           | Job | Status |
           |-----|--------|
-          | **Validation** | ${{ (needs.validate.result == 'success' && '✅ Success') || '❌ Failed' }} |
-          | **Build** | ${{ (needs.build.result == 'success' && '✅ Success') || '❌ Failed' }} |
-          | **Upload** | ${{ (needs.upload.result == 'success' && '✅ Success') || (needs.upload.result == 'skipped' && '⏭️ Skipped') || '❌ Failed' }} |
+          | **Validation** | ${{ (needs.validate.result == 'success' && 'Success') || 'Failed' }} |
+          | **Build** | ${{ (needs.build.result == 'success' && 'Success') || 'Failed' }} |
+          | **Upload** | ${{ (needs.upload.result == 'success' && 'Success') || (needs.upload.result == 'skipped' && 'Skipped') || 'Failed' }} |
           
           ## Build Details
           
@@ -1014,11 +1022,11 @@ jobs:
           
           ## Features
           
-          - 🐧 **Base**: Debian Bookworm
-          - 🖥️ **Desktop**: KDE Plasma with SDDM
-          - 📦 **Installer**: Calamares
-          - 🔧 **Repositories**: Kali Linux tools available
-          - 🎨 **Branding**: Custom Cybr NextGen theme
+          - Base: Debian Bookworm
+          - Desktop: KDE Plasma with SDDM
+          - Installer: Calamares
+          - Repositories: Kali Linux tools available
+          - Branding: Custom Cybr NextGen theme
           
           **Message:** ${{ steps.status.outputs.status_message }}
           SUMMARY_EOF
@@ -1032,7 +1040,7 @@ jobs:
           echo "║                             EXECUTION COMPLETE                        ║"
           echo "╠════════════════════════════════════════════════════════════════════════╣"
           echo "║                                                                        ║"
-          echo "║  Status: ${{ steps.status.outputs.status_emoji }} ${{ steps.status.outputs.overall_status }}                                                    ║"
+          echo "║  Status: ${{ steps.status.outputs.overall_status }}                                                    ║"
           echo "║  Message: ${{ steps.status.outputs.status_message }}                   "
           echo "║                                                                        ║"
           echo "║  Build ID: ${{ github.run_number }}                                                     ║"
@@ -1056,7 +1064,7 @@ jobs:
 #                         SECURITY AND MAINTENANCE
 # ============================================================================
   security-scan:
-    name: "🔒 Security Scan"
+    name: "Security Scan"
     runs-on: ubuntu-latest
     needs: build
     if: |
@@ -1084,7 +1092,7 @@ jobs:
           path: "trivy-results.sarif"
 
   cleanup:
-    name: "🧹 Cleanup"
+    name: "Cleanup"
     runs-on: ubuntu-latest
     needs: [build, upload, notify, security-scan]
     if: always()
