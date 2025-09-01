@@ -205,8 +205,8 @@ jobs:
             --archive-areas "main contrib non-free non-free-firmware" \
             --architectures amd64 \
             --linux-flavours amd64 \
-            --bootappend-live "boot=live components username=cybr hostname=cybr-nextgen quiet splash" \
-            --iso-application "Cybr NextGen Security OS" \
+            --bootappend-live "boot=live components username=cybr hostname=cybr quiet splash" \
+            --iso-application "Cybr Linux" \
             --iso-publisher "WolfTech Innovations" \
             --iso-volume "CybrNextGen" \
             --binary-images iso-hybrid \
@@ -232,6 +232,7 @@ jobs:
           APT::Get::Remove "true";
           Dir::Cache::Archives "/var/cache/apt/archives";
           APT::Get::Allow-Downgrades
+          
           APT_CONF_EOF
           
           # Set global environment variables for the build
