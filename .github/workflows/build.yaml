@@ -1,4 +1,4 @@
-name: "Cybr NextGen Build System"
+aname: "Cybr NextGen Build System"
 
 on:
   workflow_dispatch:
@@ -440,7 +440,6 @@ jobs:
           # Advanced window effects and compositing
           kwin-addons
           kwin-decoration-oxygen
-          kwin-effects-addons
           
           # macOS-style dock and animations
           plank
