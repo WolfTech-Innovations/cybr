@@ -232,6 +232,7 @@ jobs:
             --checksums sha256 \
             --compression xz \
             --zsync false
+            --image-name $ISO_NAME_BASE
           
           # Create global APT configuration for non-interactive mode
           mkdir -p config/apt
