@@ -1,4 +1,4 @@
-aname: "Cybr NextGen Build System"
+name: "Cybr NextGen Build System"
 
 on:
   workflow_dispatch:
@@ -424,11 +424,12 @@ jobs:
           
           # User-friendly utilities
           partitionmanager
-          spectacle
+         spectacle
           ark
           kcalc
           
           # Enhanced visual effects and UI packages
+         
           plasma-browser-integration
           plasma-widgets-addons
           plasma-workspace-wallpapers
@@ -439,6 +440,7 @@ jobs:
           # Advanced window effects and compositing
           kwin-addons
           kwin-decoration-oxygen
+          
           
           # macOS-style dock and animations
           plank
@@ -456,7 +458,10 @@ jobs:
           bluedevil
           plasma-systemmonitor
           
-          
+          # Advanced theming and customization
+         
+          qt5-style-kvantum
+          qt5-style-kvantum-themes
           
           # Icon themes and visual enhancements
           papirus-icon-theme
@@ -465,7 +470,15 @@ jobs:
           
           # Transparency and blur effects
           picom
-
+          
+          # Desktop effects and animations
+          kio-extras
+          kdeplasma-addons
+          plasma-discover-backend-snap
+          
+          # Advanced window management
+          kwin-bismuth
+          
           # System monitoring and eye candy
           conky
           htop
