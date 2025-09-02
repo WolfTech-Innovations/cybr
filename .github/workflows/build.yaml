@@ -208,7 +208,7 @@ jobs:
             --bootappend-live "boot=live components username=cybr hostname=cybr-nextgen quiet splash" \
             --iso-application "Cybr NextGen Security OS" \
             --iso-publisher "WolfTech Innovations" \
-            --iso-volume "Cybr" \
+            --iso-volume "CybrNextGen" \
             --binary-images iso-hybrid \
             --memtest none \
             --win32-loader false \
