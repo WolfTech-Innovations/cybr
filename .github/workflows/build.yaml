@@ -458,23 +458,17 @@ jobs:
           bluedevil
           plasma-systemmonitor
           
-          # Advanced theming and customization
-          kvantum
-          qt5-style-kvantum
-          qt5-style-kvantum-themes
+          
           
           # Icon themes and visual enhancements
           papirus-icon-theme
-          tela-icon-theme
+        
           breeze-cursor-theme
           
           # Transparency and blur effects
           picom
           compton
           
-          # Desktop effects and animations
-          kio-extras
-          kdeplasma-addons
           plasma-discover-backend-snap
           
           # Advanced window management
