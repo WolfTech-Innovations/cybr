@@ -424,12 +424,11 @@ jobs:
           
           # User-friendly utilities
           partitionmanager
-          kde-spectacle
+          spectacle
           ark
           kcalc
           
           # Enhanced visual effects and UI packages
-          latte-dock
           plasma-browser-integration
           plasma-widgets-addons
           plasma-workspace-wallpapers
@@ -466,13 +465,7 @@ jobs:
           
           # Transparency and blur effects
           picom
-          compton
-          
-          plasma-discover-backend-snap
-          
-          # Advanced window management
-          kwin-bismuth
-          
+
           # System monitoring and eye candy
           conky
           htop
