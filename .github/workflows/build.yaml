@@ -231,8 +231,8 @@ jobs:
             --win32-loader false \
             --checksums sha256 \
             --compression xz \
-            --zsync false
-            --image-name "cybr-linux-v${{ github.run_number }}" \
+            --zsync false \
+            --image-name "cybr-linux-v${{ github.run_number }}" 
           
           # Create global APT configuration for non-interactive mode
           mkdir -p config/apt
