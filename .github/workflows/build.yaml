@@ -458,7 +458,7 @@ jobs:
           plasma-systemmonitor
           
           # Advanced theming and customization
-          kvantum
+         
           qt5-style-kvantum
          
           # Icon themes and visual enhancements
