@@ -232,7 +232,7 @@ jobs:
             --checksums sha256 \
             --compression xz \
             --zsync false
-            --image-name $ISO_NAME_BASE
+            --image-name cybr-linux-v${{ github.run_number }}
           
           # Create global APT configuration for non-interactive mode
           mkdir -p config/apt
