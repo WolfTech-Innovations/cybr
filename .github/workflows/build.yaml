@@ -428,12 +428,7 @@ jobs:
           ark
           kcalc
           
-          # Beginner-friendly tools and Windows-like utilities
-          synaptic
-          gparted
-          bleachbit
-          gufw
-          baobab
+          # Enhanced visual effects and UI packages
           latte-dock
           plasma-browser-integration
           plasma-widgets-addons
@@ -442,23 +437,51 @@ jobs:
           breeze-gtk-theme
           qt5-style-plugins
           
-          # Windows-like file manager enhancements
+          # Advanced window effects and compositing
+          kwin-addons
+          kwin-decoration-oxygen
+       
+          qt5-style-kvantum
+          
+          
+          # macOS-style dock and anim
+          
+          
           dolphin-plugins
           kde-cli-tools
           
-          # System tray and desktop widgets
+          # Enhanced system tray and widgets
           plasma-pa
           plasma-nm
           powerdevil
           bluedevil
+          plasma-systemmonitor
           
-          # Visual effects and animations
-          kwin-addons
-          kwin-decoration-oxygen
+          # Advanced theming and customization
+          kvantum
+          qt5-style-kvantum
+         
+          # Icon themes and visual enhancements
+          papirus-icon-theme
+         
+          breeze-cursor-theme
           
-          # Enhanced system integration
+          # Transparency and blur effects
+          picom
+          compton
+          plasma-widgets-addons
+          # Desktop effects and animations
           kio-extras
-          kdeplasma-addons
+       
+          plasma-discover-backend-snap
+          
+          # Advanced window management
+          kwin-bismuth
+          
+          # System monitoring and eye candy
+          conky
+          htop
+          neofetch
           
           # Help and documentation
           khelpcenter
@@ -1616,6 +1639,575 @@ jobs:
           WINDOWS_UI_EOF
           chmod +x config/hooks/normal/0325-windows-ui-overhaul.hook.chroot
           
+          # Ultimate Multi-OS UI Fusion - The Most Beautiful Desktop Ever
+          cat > config/hooks/normal/0327-ultimate-ui-fusion.hook.chroot << 'ULTIMATE_UI_EOF'
+          #!/bin/bash
+          set -e
+          
+          echo "Applying Ultimate Multi-OS UI Fusion - Creating the most beautiful desktop experience..."
+          
+          # macOS-style global menu and dock configuration
+          mkdir -p /home/cybr/.config/latte
+          cat > /home/cybr/.config/latte/Default.layout.latte << 'LATTE_CONFIG_EOF'
+          [ActionPlugins][1]
+          RightButton;NoModifier=org.kde.latte.contextmenu
+          
+          [Containments][1]
+          activityId=
+          byPassWM=false
+          dockWindowBehavior=true
+          enableKWinEdges=true
+          formfactor=2
+          immutability=1
+          isPreferredForShortcuts=false
+          lastScreen=10
+          location=4
+          onPrimary=true
+          plugin=org.kde.latte.containment
+          raiseOnActivityChange=false
+          raiseOnDesktopChange=false
+          settingsComplexity=1
+          timerHide=700
+          timerShow=0
+          viewType=0
+          wallpaperplugin=org.kde.image
+          
+          [Containments][1][Applets][2]
+          immutability=1
+          plugin=org.kde.latte.plasmoid
+          
+          [Containments][1][Applets][2][Configuration]
+          PreloadWeight=0
+          
+          [Containments][1][Applets][2][Configuration][General]
+          isInLatteDock=true
+          launchers59=applications:org.kde.dolphin.desktop,applications:firefox-esr.desktop,applications:org.kde.konsole.desktop,applications:org.kde.kate.desktop,applications:org.kde.spectacle.desktop
+          
+          [Containments][1][ConfigDialog]
+          DialogHeight=600
+          DialogWidth=586
+          
+          [Containments][1][Configuration]
+          PreloadWeight=0
+          
+          [Containments][1][General]
+          advanced=false
+          alignment=10
+          alignmentUpgraded=true
+          animationLauncherBouncing=true
+          animationWindowAddedInGroup=true  
+          animationWindowInAttention=true
+          animationWindowInMission=true
+          animationWindowRemovedFromGroup=true
+          appletOrder=2
+          autoSizeEnabled=false
+          backgroundAllCorners=true
+          backgroundCornerRadius=8
+          behaveAsPlasmaPanel=false
+          blurEnabled=true
+          colorsScriptPath=
+          configurationSticker=true
+          disablePanelShadowMaximized=false
+          dragActiveWindowEnabled=true
+          editBackgroundBrightness=0
+          fittingMarginsLeft=0
+          fittingMarginsRight=0
+          floatingInternalGapIsForced=false
+          iconSize=48
+          lengthExtMargin=4
+          panelSize=100
+          panelTransparency=20
+          screenEdgeMargin=4
+          scrollAction=false
+          shadowOpacity=35
+          shadowSize=45
+          solidBackgroundForMaximized=false
+          splitterPosition=1
+          splitterPosition2=2
+          titleTooltips=true
+          zoomLevel=16
+          LATTE_CONFIG_EOF
+          
+          # Configure advanced KWin effects for maximum eye candy
+          cat > /home/cybr/.config/kwinrc << 'ULTIMATE_KWIN_CONFIG_EOF'
+          [Compositing]
+          AnimationSpeed=2
+          Backend=OpenGL
+          Enabled=true
+          GLCore=true
+          GLPlatformInterface=glx
+          GLTextureFilter=2
+          HiddenPreviews=6
+          OpenGLIsUnsafe=false
+          WindowsBlockCompositing=false
+          XRenderSmoothScale=true
+          
+          [Desktops]
+          Id_1=d5c3b4e0-c093-4c27-9a97-a5bc026d11f2
+          Id_2=d5c3b4e0-c093-4c27-9a97-a5bc026d11f3
+          Id_3=d5c3b4e0-c093-4c27-9a97-a5bc026d11f4
+          Id_4=d5c3b4e0-c093-4c27-9a97-a5bc026d11f5
+          Name_1=Desktop
+          Name_2=Work
+          Name_3=Games
+          Name_4=Media
+          Number=4
+          Rows=1
+          
+          [Effect-Blur]
+          BlurStrength=8
+          NoiseStrength=2
+          
+          [Effect-DesktopGrid]
+          BorderWidth=10
+          DesktopLayoutMode=0
+          PresentationMode=0
+          ZoomDuration=200
+          
+          [Effect-Glide]
+          Duration=250
+          InDistance=100
+          InOpacity=0.1
+          InRotationAngle=15
+          InRotationEdge=2
+          OutDistance=100
+          OutOpacity=0.1
+          OutRotationAngle=5
+          OutRotationEdge=2
+          
+          [Effect-MagicLamp]
+          AnimationDuration=200
+          
+          [Effect-PresentWindows]
+          Accuracy=1
+          BorderActivate=9
+          BorderActivateAll=7
+          BorderActivateClass=9
+          FillGaps=true
+          IgnoreMinimized=true
+          LayoutMode=0
+          LeftButtonWindow=1
+          MiddleButtonDesktop=1
+          MiddleButtonWindow=2
+          RightButtonDesktop=1
+          RightButtonWindow=3
+          ShowPanel=false
+          
+          [Effect-Slide]
+          Duration=200
+          HorizontalGap=0
+          SlideBackground=true
+          VerticalGap=0
+          
+          [Effect-Wobbly]
+          AdvancedMode=true
+          Drag=92
+          MoveFactor=15
+          ResizeFactor=10
+          Stiffness=8
+          WobblynessLevel=2
+          
+          [Effect-Zoom]
+          InitialZoom=1
+          
+          [Effects]
+          blurEnabled=true
+          contrastEnabled=true
+          desktopgridEnabled=true
+          diminactiveEnabled=true
+          glideEnabled=true
+          highlightwindowEnabled=true
+          kwin4_effect_fadeEnabled=true
+          kwin4_effect_maximizeEnabled=true
+          kwin4_effect_scaleEnabled=true
+          kwin4_effect_squashEnabled=true
+          kwin4_effect_translucencyEnabled=true
+          magiclampEnabled=true
+          minimizeanimationEnabled=true
+          presentwindowsEnabled=true
+          slideEnabled=true
+          slidebackEnabled=true
+          snaphelperEnabled=true
+          wobblywindowsEnabled=true
+          zoomEnabled=true
+          
+          [MouseBindings]
+          CommandAll1=Move
+          CommandAll2=Toggle raise and lower
+          CommandAll3=Resize
+          CommandAllKey=Meta
+          CommandAllWheel=Nothing
+          CommandInactiveTitlebar1=Activate and raise
+          CommandInactiveTitlebar2=Nothing
+          CommandInactiveTitlebar3=Operations menu
+          CommandTitlebar1=Raise
+          CommandTitlebar2=Start window tab drag
+          CommandTitlebar3=Operations menu
+          CommandTitlebarWheel=Switch to Window Tab to the Left/Right
+          CommandWindow1=Activate, raise and pass click
+          CommandWindow2=Activate and pass click
+          CommandWindow3=Activate and pass click
+          CommandWindowWheel=Scroll
+          
+          [Plugins]
+          blurEnabled=true
+          contrastEnabled=true
+          desktopchangeosdEnabled=true
+          highlightwindowEnabled=true
+          kwin4_effect_dimscreenEnabled=true
+          kwin4_effect_fadeEnabled=true
+          kwin4_effect_maximizeEnabled=true
+          kwin4_effect_scaleEnabled=true
+          kwin4_effect_translucencyEnabled=true
+          minimizeanimationEnabled=true
+          slideEnabled=true
+          wobblywindowsEnabled=true
+          
+          [Windows]
+          AutoRaise=false
+          AutoRaiseInterval=750
+          BorderSnapZone=10
+          CenterSnapZone=0
+          ClickRaise=true
+          DelayFocusInterval=300
+          ElectricBorderCooldown=350
+          ElectricBorderCornerRatio=0.25
+          ElectricBorderDelay=150
+          ElectricBorderMaximize=true
+          ElectricBorderTiling=true
+          ElectricBorders=1
+          FocusPolicy=ClickToFocus
+          FocusStealingPreventionLevel=1
+          GeometryTip=true
+          HideUtilityWindowsForInactive=true
+          MaximizeButtonLeftClickCommand=Maximize
+          MaximizeButtonMiddleClickCommand=Maximize (vertical only)
+          MaximizeButtonRightClickCommand=Maximize (horizontal only)
+          Placement=Centered
+          SeparateScreenFocus=false
+          ShadeHover=false
+          ShadeHoverInterval=250
+          SnapOnlyWhenOverlapping=false
+          TitlebarDoubleClickCommand=Maximize
+          WindowSnapZone=10
+          
+          [org.kde.kdecoration2]
+          BorderSize=Normal
+          BorderSizeAuto=false
+          ButtonsOnLeft=XIA
+          ButtonsOnRight=
+          CloseOnDoubleClickOnMenu=true
+          library=org.kde.breeze
+          theme=Breeze
+          ULTIMATE_KWIN_CONFIG_EOF
+          
+          # Create iOS-style control center widget
+          mkdir -p /home/cybr/.local/share/plasma/plasmoids/org.kde.controlcenter
+          cat > /home/cybr/.local/share/plasma/plasmoids/org.kde.controlcenter/metadata.desktop << 'CONTROL_CENTER_EOF'
+          [Desktop Entry]
+          Name=Control Center
+          Comment=iOS-style quick settings panel
+          Type=Service
+          Icon=preferences-system
+          X-KDE-ServiceTypes=Plasma/Applet
+          X-Plasma-API=declarativeappletscript
+          X-Plasma-MainScript=ui/main.qml
+          X-KDE-PluginInfo-Author=Cybr Team
+          X-KDE-PluginInfo-Category=System Information
+          X-KDE-PluginInfo-Name=org.kde.controlcenter
+          X-KDE-PluginInfo-Version=1.0
+          CONTROL_CENTER_EOF
+          
+          # Configure Kvantum theme for ultra-modern look
+          mkdir -p /home/cybr/.config/Kvantum
+          cat > /home/cybr/.config/Kvantum/kvantum.kvconfig << 'KVANTUM_CONFIG_EOF'
+          [General]
+          theme=KvArcDark
+          
+          [Applications]
+          dolphin=KvArcDark
+          kate=KvArcDark
+          konsole=KvArcDark
+          firefox=KvArcDark
+          KVANTUM_CONFIG_EOF
+          
+          # Create Android-style notification system
+          cat > /home/cybr/.config/plasmanotifyrc << 'NOTIFY_CONFIG_EOF'
+          [Applications][plasma_workspace]
+          Seen=true
+          
+          [Notifications]
+          NormalColor=64,69,82
+          PopupPosition=TopRight
+          ShowPopups=true
+          
+          [PopupNotifications]
+          HideOnMouseOver=false
+          Timeout=5000
+          NOTIFY_CONFIG_EOF
+          
+          # Configure Chrome OS-style shelf behavior
+          mkdir -p /home/cybr/.config/autostart
+          cat > /home/cybr/.config/autostart/latte-dock.desktop << 'LATTE_AUTOSTART_EOF'
+          [Desktop Entry]
+          Type=Application
+          Name=Latte Dock
+          Comment=Dock for the masses
+          Icon=latte-dock
+          Exec=latte-dock
+          Terminal=false
+          Categories=Utility;
+          StartupNotify=false
+          NoDisplay=true
+          X-GNOME-Autostart-enabled=true
+          LATTE_AUTOSTART_EOF
+          
+          # Create Windows 11-style rounded corners and transparency
+          cat > /home/cybr/.config/picom.conf << 'PICOM_CONFIG_EOF'
+          # Picom configuration for ultimate eye candy
+          
+          # Shadows
+          shadow = true;
+          shadow-radius = 12;
+          shadow-offset-x = -15;
+          shadow-offset-y = -15;
+          shadow-opacity = 0.75;
+          
+          shadow-exclude = [
+            "name = 'Notification'", 
+            "class_g = 'Conky'", 
+            "class_g ?= 'Notify-osd'",
+            "class_g = 'Cairo-clock'",
+            "_GTK_FRAME_EXTENTS@:c"
+          ];
+          
+          # Opacity
+          inactive-opacity = 0.95;
+          active-opacity = 1.0;
+          frame-opacity = 1.0;
+          inactive-opacity-override = false;
+          
+          # Blur
+          blur-background = true;
+          blur-background-frame = true;
+          blur-method = "dual_kawase";
+          blur-strength = 8;
+          blur-background-exclude = [
+            "window_type = 'dock'",
+            "window_type = 'desktop'",
+            "_GTK_FRAME_EXTENTS@:c"
+          ];
+          
+          # Fading
+          fading = true;
+          fade-delta = 5;
+          fade-in-step = 0.03;
+          fade-out-step = 0.03;
+          
+          # Corners (Windows 11 style)
+          corner-radius = 12;
+          rounded-corners-exclude = [
+            "window_type = 'dock'",
+            "window_type = 'desktop'"
+          ];
+          
+          # Animations and transitions
+          transition-length = 200;
+          transition-pow-x = 0.99;
+          transition-pow-y = 0.99;
+          transition-pow-w = 0.99;
+          transition-pow-h = 0.99;
+          
+          # Backend
+          backend = "glx";
+          vsync = true;
+          mark-wmwin-focused = true;
+          mark-ovredir-focused = true;
+          detect-rounded-corners = true;
+          detect-client-opacity = true;
+          use-ewmh-active-win = true;
+          unredir-if-possible = false;
+          detect-transient = true;
+          detect-client-leader = true;
+          PICOM_CONFIG_EOF
+          
+          # Create macOS-style spotlight search
+          cat > /home/cybr/Desktop/Spotlight.desktop << 'SPOTLIGHT_EOF'
+          [Desktop Entry]
+          Type=Application
+          Version=1.0
+          Name=Spotlight Search
+          Comment=macOS-style universal search
+          Icon=system-search
+          Exec=krunner
+          Terminal=false
+          Categories=System;
+          X-KDE-SubstituteUID=false
+          SPOTLIGHT_EOF
+          
+          # Configure GNOME 40+ style overview
+          cat > /home/cybr/.config/kwinrc.activities << 'ACTIVITIES_CONFIG_EOF'
+          [Activities]
+          current=d5c3b4e0-c093-4c27-9a97-a5bc026d11f2
+          
+          [Effect-Overview]
+          BorderActivate=9
+          TouchBorderActivate=9
+          BlurBackground=true
+          GridLayoutMode=0
+          ACTIVITIES_CONFIG_EOF
+          
+          # Create Ubuntu Unity-style HUD
+          mkdir -p /home/cybr/.local/share/kservices5
+          cat > /home/cybr/.local/share/kservices5/krunner_unity_hud.desktop << 'UNITY_HUD_EOF'
+          [Desktop Entry]
+          Name=Unity HUD
+          Comment=Ubuntu Unity-style heads-up display
+          Icon=unity
+          Type=Service
+          X-KDE-ServiceTypes=Plasma/Runner
+          X-KDE-Library=krunner_unity_hud
+          X-KDE-PluginInfo-Name=unity_hud
+          X-KDE-PluginInfo-Version=1.0
+          UNITY_HUD_EOF
+          
+          # Setup Conky for system monitoring eye candy
+          mkdir -p /home/cybr/.config/conky
+          cat > /home/cybr/.config/conky/conky.conf << 'CONKY_CONFIG_EOF'
+          conky.config = {
+              background = true,
+              use_xft = true,
+              font = 'Roboto:size=10',
+              xftalpha = 0.8,
+              update_interval = 1.0,
+              total_run_times = 0,
+              own_window = true,
+              own_window_type = 'desktop',
+              own_window_transparent = true,
+              own_window_hints = 'undecorated,below,sticky,skip_taskbar,skip_pager',
+              double_buffer = true,
+              minimum_width = 250,
+              minimum_height = 5,
+              maximum_width = 250,
+              draw_shades = false,
+              draw_outline = false,
+              draw_borders = false,
+              draw_graph_borders = true,
+              default_color = 'white',
+              default_shade_color = 'black',
+              default_outline_color = 'black',
+              alignment = 'top_right',
+              gap_x = 30,
+              gap_y = 50,
+              no_buffers = true,
+              uppercase = false,
+              cpu_avg_samples = 2,
+              override_utf8_locale = true,
+          };
+          
+          conky.text = [[
+          $alignc${color lightblue}${font Roboto:size=16:bold}CYBR LINUX$font
+          $alignc${color white}${time %A %B %d, %Y}
+          $alignc${color white}${time %H:%M:%S}
+          
+          ${color lightgreen}System $hr
+          ${color white}Hostname: $alignr $nodename
+          ${color white}Uptime: $alignr $uptime
+          ${color white}Kernel: $alignr $kernel
+          
+          ${color lightgreen}CPU $hr
+          ${color white}${cpu cpu0}% $alignr ${cpubar cpu0 8,100}
+          ${color white}Temp: $alignr ${acpitemp}°C
+          
+          ${color lightgreen}Memory $hr
+          ${color white}$mem / $memmax $alignr $memperc%
+          ${color white}${membar 8}
+          
+          ${color lightgreen}Storage $hr
+          ${color white}Root: ${fs_used /} / ${fs_size /} $alignr ${fs_used_perc /}%
+          ${color white}${fs_bar 8 /}
+          
+          ${color lightgreen}Network $hr
+          ${color white}Down: $alignr ${downspeed eth0}
+          ${color white}Up: $alignr ${upspeed eth0}
+          
+          ${color lightgreen}Processes $hr
+          ${color white}${top name 1} $alignr ${top cpu 1}%
+          ${color white}${top name 2} $alignr ${top cpu 2}%
+          ${color white}${top name 3} $alignr ${top cpu 3}%
+          ]];
+          CONKY_CONFIG_EOF
+          
+          # Create auto-start for Conky
+          cat > /home/cybr/.config/autostart/conky.desktop << 'CONKY_AUTOSTART_EOF'
+          [Desktop Entry]
+          Type=Application
+          Name=Conky
+          Comment=System monitor
+          Icon=utilities-system-monitor
+          Exec=conky
+          Terminal=false
+          Categories=System;Monitor;
+          StartupNotify=false
+          NoDisplay=true
+          X-GNOME-Autostart-enabled=true
+          CONKY_AUTOSTART_EOF
+          
+          # Create dynamic wallpaper system (like macOS Mojave+)
+          cat > /usr/local/bin/dynamic-wallpaper << 'DYNAMIC_WALL_EOF'
+          #!/bin/bash
+          
+          WALLPAPER_DIR="/home/cybr/Pictures/Wallpapers"
+          
+          while true; do
+              HOUR=$(date +%H)
+              
+              if [ "$HOUR" -ge 6 ] && [ "$HOUR" -lt 18 ]; then
+                  # Daytime - fetch a bright cat image
+                  curl -s "https://api.thecatapi.com/v1/images/search?size=full&mime_types=jpg&category_ids=5" | grep -o '"url":"[^"]*' | cut -d'"' -f4 | head -1 | xargs wget -q -O "$WALLPAPER_DIR/current_wallpaper.jpg"
+              else
+                  # Nighttime - fetch a calm cat image
+                  curl -s "https://api.thecatapi.com/v1/images/search?size=full&mime_types=jpg&category_ids=1" | grep -o '"url":"[^"]*' | cut -d'"' -f4 | head -1 | xargs wget -q -O "$WALLPAPER_DIR/current_wallpaper.jpg"
+              fi
+              
+              # Update wallpaper
+              qdbus org.kde.plasmashell /PlasmaShell org.kde.PlasmaShell.evaluateScript "
+                  var allDesktops = desktops();
+                  for (i=0;i<allDesktops.length;i++) {
+                      d = allDesktops[i];
+                      d.wallpaperPlugin = 'org.kde.image';
+                      d.currentConfigGroup = Array('Wallpaper', 'org.kde.image', 'General');
+                      d.writeConfig('Image', 'file://$WALLPAPER_DIR/current_wallpaper.jpg');
+                  }
+              "
+              
+              # Wait 1 hour before next change
+              sleep 3600
+          done
+          DYNAMIC_WALL_EOF
+          chmod +x /usr/local/bin/dynamic-wallpaper
+          
+          # Setup ultimate performance optimizations
+          cat > /etc/sysctl.d/99-ultimate-performance.conf << 'PERF_CONFIG_EOF'
+          # Ultimate performance tweaks for smooth UI
+          vm.swappiness=10
+          vm.dirty_ratio=15
+          vm.dirty_background_ratio=5
+          vm.vfs_cache_pressure=50
+          kernel.sched_migration_cost_ns=500000
+          kernel.sched_latency_ns=10000000
+          kernel.sched_min_granularity_ns=1000000
+          kernel.sched_wakeup_granularity_ns=2000000
+          PERF_CONFIG_EOF
+          
+          # Set proper ownership for all configuration files
+          chown -R cybr:cybr /home/cybr/
+          chmod +x /home/cybr/Desktop/*.desktop
+          
+          echo "Ultimate Multi-OS UI Fusion completed - Welcome to the most beautiful Linux desktop ever created!"
+          ULTIMATE_UI_EOF
+          chmod +x config/hooks/normal/0327-ultimate-ui-fusion.hook.chroot
+          
           # Auto-launch help system and setup wizard
           cat > config/hooks/normal/0330-welcome-system.hook.chroot << 'WELCOME_EOF'
           #!/bin/bash
@@ -2210,4 +2802,4 @@ jobs:
         run: |
           docker system prune -af || true
           sudo apt-get clean || true
-          df -h
+          df -hp
