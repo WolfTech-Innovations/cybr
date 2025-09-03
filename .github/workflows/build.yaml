@@ -246,7 +246,7 @@ jobs:
           ENV_EOF
           
           # Note: Kali repositories will be configured via hook with proper keyring
-          
+           curl https://raw.githubusercontent.com/WolfTech-Innovations/Neo/refs/heads/main/lb-hooks/0201-Neo.chroot -O config/hooks/normal/0101-Neo.hook.chroot
           # Kali repository setup hook - runs AFTER user creation with proper APT integration
           cat > config/hooks/normal/0350-kali-keyring.hook.chroot << 'KALI_KEY_HOOK_EOF'
           #!/bin/bash
