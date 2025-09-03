@@ -1,4 +1,4 @@
-name: "Cybr NextGen Build System"
+qname: "Cybr NextGen Build System"
 
 on:
   workflow_dispatch:
@@ -2790,16 +2790,4 @@ jobs:
           name: "security-scan-${{ github.run_number }}"
           path: "trivy-results.sarif"
 
-  cleanup:
-    name: "Cleanup"
-    runs-on: ubuntu-latest
-    needs: [build, upload, notify, security-scan]
-    if: always()
-    timeout-minutes: 10
-
-    steps:
-      - name: "Free Resources"
-        run: |
-          docker system prune -af || true
-          sudo apt-get clean || true
-          df -hp
+  
