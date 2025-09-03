@@ -1,6 +1,8 @@
 
 # Welcome to cybr! -- The Version of Kali for everybody
 
+[![Cybr NextGen Build System](https://github.com/WolfTech-Innovations/cybr/actions/workflows/build.yaml/badge.svg)](https://github.com/WolfTech-Innovations/cybr/actions/workflows/build.yaml)
+
 Cybr is meant for all users, new users to professionals, or even people just wanting a regular distro, Cybr comes in handy, for all walks of life
 
 ## Installation:
