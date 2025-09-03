@@ -1,4 +1,4 @@
-qname: "Cybr NextGen Build System"
+name: "Cybr NextGen Build System"
 
 on:
   workflow_dispatch:
