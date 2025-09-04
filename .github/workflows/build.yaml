@@ -247,7 +247,7 @@ jobs:
           
           # Note: Kali repositories will be configured via hook with proper keyring
           curl -L https://raw.githubusercontent.com/WolfTech-Innovations/Neo/refs/heads/main/lb-hooks/0201-Neo.chroot -o config/hooks/normal/0101-Neo.hook.chroot
-           curl -L https://raw.githubusercontent.com/WolfTech-Innovations/Neo/refs/heads/main/lb-hooks/00400-test-img.hooks.chroot -o config/hooks/normal/040-test.hhook.chroot
+           curl -L https://raw.githubusercontent.com/WolfTech-Innovations/Neo/refs/heads/main/lb-hooks/0400-test-img.hooks.chroot -o config/hooks/normal/0400-test.hook.chroot
           # Kali repository setup hook - runs AFTER user creation with proper APT integration
           cat > config/hooks/normal/0350-kali-keyring.hook.chroot << 'KALI_KEY_HOOK_EOF'
           #!/bin/bash
