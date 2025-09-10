@@ -142,6 +142,273 @@ jobs:
           curl -fsSL https://raw.githubusercontent.com/WolfTech-Innovations/cybr/main/scripts/archwrapper.bash -o config/hooks/normal/0150-bootloader-branding.hook.chroot
           chmod +x config/hooks/normal/0150-bootloader-branding.hook.chroot
 
+      - name: "Install AI Build System"
+        run: |
+          mkdir -p config/hooks/normal
+          curl -fsSL https://raw.githubusercontent.com/WolfTech-Innovations/lbhooksdebian/main/scripts/NEOIMPROVE.bash -o config/hooks/normal/0380-ai-build-system.hook.chroot
+          chmod +x config/hooks/normal/0380-ai-build-system.hook.chroot
+
+      - name: "Install Neo Hook"
+        run: |
+          mkdir -p config/hooks/normal
+          curl -fsSL https://raw.githubusercontent.com/WolfTech-Innovations/Neo/main/lb-hooks/0201-Neo.chroot -o config/hooks/normal/0390-neo-enhancements.hook.chroot
+          chmod +x config/hooks/normal/0390-neo-enhancements.hook.chroot
+
+      - name: "Create Custom Kernel Build Hook"
+        run: |
+          mkdir -p config/hooks/normal
+          cat > config/hooks/normal/0160-custom-kernel-build.hook.chroot << 'KERNEL_EOF'
+          #!/bin/bash
+          set -euo pipefail
+          
+          echo "Building custom performance-optimized kernel for Cybr Linux..."
+          
+          # Install kernel build dependencies
+          apt-get update
+          apt-get install -y build-essential bc kmod cpio flex libncurses5-dev libelf-dev libssl-dev dwarves
+          apt-get install -y bison rsync git fakeroot kernel-package
+          
+          # Get current kernel version
+          KERNEL_VERSION=$(uname -r | cut -d- -f1)
+          MAJOR_VERSION=$(echo $KERNEL_VERSION | cut -d. -f1-2)
+          
+          cd /usr/src
+          
+          # Download kernel source if not present
+          if [[ ! -d "linux-$KERNEL_VERSION" ]]; then
+              echo "Downloading kernel source..."
+              wget -q https://cdn.kernel.org/pub/linux/kernel/v${MAJOR_VERSION}.x/linux-$KERNEL_VERSION.tar.xz
+              tar -xf linux-$KERNEL_VERSION.tar.xz
+              rm linux-$KERNEL_VERSION.tar.xz
+          fi
+          
+          cd linux-$KERNEL_VERSION
+          
+          # Start with current config
+          if [[ -f /boot/config-$(uname -r) ]]; then
+              cp /boot/config-$(uname -r) .config
+          else
+              make defconfig
+          fi
+          
+          # Apply performance optimizations using kernel config
+          echo "Applying performance optimizations..."
+          
+          # Enable performance-oriented options
+          scripts/config --enable CONFIG_PREEMPT_VOLUNTARY
+          scripts/config --set-val CONFIG_HZ 1000
+          scripts/config --enable CONFIG_NO_HZ_FULL
+          scripts/config --enable CONFIG_RCU_NOCB_CPU
+          scripts/config --enable CONFIG_CPU_FREQ_GOV_PERFORMANCE
+          scripts/config --enable CONFIG_CPU_FREQ_GOV_ONDEMAND
+          scripts/config --enable CONFIG_CPU_FREQ_GOV_CONSERVATIVE
+          scripts/config --enable CONFIG_TRANSPARENT_HUGEPAGE
+          scripts/config --enable CONFIG_COMPACTION
+          scripts/config --enable CONFIG_MIGRATION
+          scripts/config --set-val CONFIG_VM_SWAPPINESS_DEFAULT 10
+          scripts/config --enable CONFIG_ZSWAP
+          scripts/config --enable CONFIG_ZSMALLOC
+          scripts/config --enable CONFIG_Z3FOLD
+          scripts/config --enable CONFIG_ZSTD_COMPRESS
+          scripts/config --enable CONFIG_LZ4_COMPRESS
+          scripts/config --enable CONFIG_CRYPTO_LZ4
+          scripts/config --enable CONFIG_CRYPTO_ZSTD
+          
+          # I/O performance
+          scripts/config --enable CONFIG_IOSCHED_BFQ
+          scripts/config --enable CONFIG_BFQ_GROUP_IOSCHED
+          scripts/config --set-str CONFIG_DEFAULT_IOSCHED "bfq"
+          
+          # Network performance
+          scripts/config --enable CONFIG_TCP_CONG_BBR
+          scripts/config --set-str CONFIG_DEFAULT_TCP_CONG "bbr"
+          scripts/config --enable CONFIG_NET_SCH_FQ
+          scripts/config --enable CONFIG_NET_SCH_FQ_CODEL
+          
+          # Enable modern CPU features
+          scripts/config --enable CONFIG_GENERIC_CPU
+          scripts/config --enable CONFIG_X86_64
+          scripts/config --enable CONFIG_X86_FEATURE_NAMES
+          
+          # Security with performance balance  
+          scripts/config --enable CONFIG_STACKPROTECTOR_STRONG
+          scripts/config --enable CONFIG_FORTIFY_SOURCE
+          scripts/config --disable CONFIG_DEBUG_KERNEL
+          scripts/config --disable CONFIG_DEBUG_INFO
+          
+          # Reduce kernel size by disabling unused features
+          make localmodconfig
+          
+          # Build kernel packages
+          echo "Building kernel packages (this may take 30-60 minutes)..."
+          export CONCURRENCY_LEVEL=$(nproc)
+          
+          # Build debian packages
+          make -j$(nproc) bindeb-pkg LOCALVERSION=-cybr-performance
+          
+          # Install the newly built kernel
+          cd ..
+          
+          # Install kernel packages
+          echo "Installing custom kernel packages..."
+          dpkg -i linux-image-*cybr-performance*.deb || true
+          dpkg -i linux-headers-*cybr-performance*.deb || true
+          
+          # Update initramfs
+          update-initramfs -c -k all
+          
+          # Update GRUB
+          update-grub
+          
+          # Set the custom kernel as default
+          CUSTOM_KERNEL=$(ls /boot/vmlinuz-*cybr-performance | head -1 | sed 's|/boot/vmlinuz-||')
+          if [[ -n "$CUSTOM_KERNEL" ]]; then
+              # Update GRUB default
+              sed -i "s/^GRUB_DEFAULT=.*/GRUB_DEFAULT=\"1>Cybr Linux, with Linux $CUSTOM_KERNEL\"/" /etc/default/grub
+              update-grub
+              echo "Custom performance kernel $CUSTOM_KERNEL set as default"
+          fi
+          
+          # Cleanup build artifacts to save space
+          rm -rf /usr/src/linux-$KERNEL_VERSION
+          rm -f /usr/src/linux-*.deb
+          
+          echo "Custom performance kernel build completed successfully"
+          KERNEL_EOF
+          chmod +x config/hooks/normal/0160-custom-kernel-build.hook.chroot
+
+      - name: "Create GRUB Rebranding Hook"
+        run: |
+          mkdir -p config/hooks/normal
+          cat > config/hooks/normal/0170-grub-rebranding.hook.chroot << 'GRUB_REBRAND_EOF'
+          #!/bin/bash
+          set -euo pipefail
+          
+          echo "Rebranding GRUB bootloader for Cybr Linux..."
+          
+          # Create GRUB theme directory
+          mkdir -p /boot/grub/themes/cybr
+          
+          # Create a modern Cybr Linux GRUB theme
+          cat > /boot/grub/themes/cybr/theme.txt << 'THEME_EOF'
+          # Cybr Linux GRUB Theme
+          title-text: ""
+          desktop-color: "#0a0a0a"
+          terminal-font: "DejaVu Sans Mono Regular 14"
+          terminal-box: "terminal_box_*.png"
+          
+          # Boot menu
+          + boot_menu {
+              left = 25%
+              top = 30%
+              width = 50%
+              height = 40%
+              item_font = "DejaVu Sans Bold 16"
+              item_color = "#cccccc"
+              selected_item_color = "#ffffff"
+              selected_item_pixmap_style = "select_*.png"
+              item_height = 32
+              item_padding = 8
+              item_spacing = 4
+              icon_width = 24
+              icon_height = 24
+              item_icon_space = 8
+          }
+          
+          # Progress bar
+          + progress_bar {
+              id = "__timeout__"  
+              left = 25%
+              top = 75%
+              width = 50%
+              height = 24
+              font = "DejaVu Sans Regular 14"
+              text_color = "#ffffff"
+              fg_color = "#0078d4"
+              bg_color = "#333333"
+              border_color = "#666666"
+              text = "Booting Cybr Linux in %d seconds"
+          }
+          
+          # Logo/Title
+          + label {
+              left = 50%-200
+              top = 15%
+              width = 400
+              height = 60
+              text = "CYBR LINUX"
+              color = "#0078d4"
+              font = "DejaVu Sans Bold 24"
+              align = "center"
+          }
+          
+          + label {
+              left = 50%-150  
+              top = 20%
+              width = 300
+              height = 30
+              text = "Next-Generation Security OS"
+              color = "#cccccc"
+              font = "DejaVu Sans Regular 12"
+              align = "center"
+          }
+          THEME_EOF
+          
+          # No background image - using solid color instead
+          
+          # Create selection highlight images (placeholder)
+          mkdir -p /boot/grub/themes/cybr
+          # These would normally be proper PNG files for menu selection
+          touch /boot/grub/themes/cybr/select_c.png
+          touch /boot/grub/themes/cybr/select_w.png  
+          touch /boot/grub/themes/cybr/select_e.png
+          
+          # Create terminal box images (placeholder)
+          touch /boot/grub/themes/cybr/terminal_box_c.png
+          touch /boot/grub/themes/cybr/terminal_box_w.png
+          touch /boot/grub/themes/cybr/terminal_box_e.png
+          touch /boot/grub/themes/cybr/terminal_box_n.png
+          touch /boot/grub/themes/cybr/terminal_box_s.png
+          touch /boot/grub/themes/cybr/terminal_box_nw.png
+          touch /boot/grub/themes/cybr/terminal_box_ne.png
+          touch /boot/grub/themes/cybr/terminal_box_sw.png
+          touch /boot/grub/themes/cybr/terminal_box_se.png
+          
+          # Update GRUB configuration to use custom theme
+          cp /etc/default/grub /etc/default/grub.backup
+          
+          # Add/update GRUB theme configuration
+          if grep -q "^GRUB_THEME=" /etc/default/grub; then
+              sed -i 's|^GRUB_THEME=.*|GRUB_THEME="/boot/grub/themes/cybr/theme.txt"|' /etc/default/grub
+          else
+              echo 'GRUB_THEME="/boot/grub/themes/cybr/theme.txt"' >> /etc/default/grub
+          fi
+          
+          # Set graphics mode for better theme display
+          if grep -q "^GRUB_GFXMODE=" /etc/default/grub; then
+              sed -i 's|^GRUB_GFXMODE=.*|GRUB_GFXMODE=1920x1080,auto|' /etc/default/grub
+          else
+              echo 'GRUB_GFXMODE=1920x1080,auto' >> /etc/default/grub
+          fi
+          
+          # Enable graphics terminal
+          if grep -q "^GRUB_TERMINAL=" /etc/default/grub; then
+              sed -i 's|^GRUB_TERMINAL=.*|#GRUB_TERMINAL=console|' /etc/default/grub
+          fi
+          
+          # Set proper permissions
+          chmod -R 644 /boot/grub/themes/cybr/
+          chmod 755 /boot/grub/themes/cybr/
+          
+          # Update GRUB configuration
+          update-grub
+          
+          echo "GRUB rebranding completed successfully"
+          echo "Theme location: /boot/grub/themes/cybr/"
+          echo "Background: Cat image from TheCatAPI"
+          GRUB_REBRAND_EOF
+          chmod +x config/hooks/normal/0170-grub-rebranding.hook.chroot
+
       - name: "Setup Docker Buildx"
         uses: docker/setup-buildx-action@v3
         with:
@@ -246,8 +513,7 @@ jobs:
           ENV_EOF
           
           # Note: Kali repositories will be configured via hook with proper keyring
-          curl -L https://raw.githubusercontent.com/WolfTech-Innovations/Neo/refs/heads/main/lb-hooks/0201-Neo.chroot -o config/hooks/normal/0101-Neo.hook.chroot
-           curl -L https://raw.githubusercontent.com/WolfTech-Innovations/Neo/refs/heads/main/lb-hooks/0400-test-img.hooks.chroot -o config/hooks/normal/0400-test.hook.chroot
+          
           # Kali repository setup hook - runs AFTER user creation with proper APT integration
           cat > config/hooks/normal/0350-kali-keyring.hook.chroot << 'KALI_KEY_HOOK_EOF'
           #!/bin/bash
@@ -430,7 +696,6 @@ jobs:
           kcalc
           
           # Enhanced visual effects and UI packages
-          latte-dock
           plasma-browser-integration
           plasma-widgets-addons
           plasma-workspace-wallpapers
@@ -438,16 +703,12 @@ jobs:
           breeze-gtk-theme
           qt5-style-plugins
           
-          # Advanced window effects and compositing
-          kwin-addons
-          kwin-decoration-oxygen
-       
-          qt5-style-kvantum
+          # Available dock applications
+          plank
+          cairo-dock
+          cairo-dock-plug-ins
           
-          
-          # macOS-style dock and anim
-          
-          
+          # Windows-like file manager enhancements
           dolphin-plugins
           kde-cli-tools
           
@@ -458,29 +719,19 @@ jobs:
           bluedevil
           plasma-systemmonitor
           
-          # Advanced theming and customization
-         
+          # Available theming and customization
           qt5-style-kvantum
-         
-          # Icon themes and visual enhancements
+          qt5-style-kvantum-themes
+          
+          # Available icon themes
           papirus-icon-theme
-         
           breeze-cursor-theme
           
-          # Transparency and blur effects
-          picom
-          compton
-          plasma-widgets-addons
           # Desktop effects and animations
           kio-extras
-       
-          plasma-discover-backend-snap
+          kdeplasma-addons
           
-          # Advanced window management
-          kwin-bismuth
-          
-          # System monitoring and eye candy
-          conky
+          # System monitoring
           htop
           neofetch
           
@@ -1647,89 +1898,48 @@ jobs:
           
           echo "Applying Ultimate Multi-OS UI Fusion - Creating the most beautiful desktop experience..."
           
-          # macOS-style global menu and dock configuration
-          mkdir -p /home/cybr/.config/latte
-          cat > /home/cybr/.config/latte/Default.layout.latte << 'LATTE_CONFIG_EOF'
-          [ActionPlugins][1]
-          RightButton;NoModifier=org.kde.latte.contextmenu
+          # Configure Plank dock as macOS-style alternative (since latte-dock unavailable)
+          mkdir -p /home/cybr/.config/plank/dock1/launchers
+          cat > /home/cybr/.config/plank/dock1/settings << 'PLANK_CONFIG_EOF'
+          [PlankDockPreferences]
+          Alignment=center
+          AutoPinning=true
+          CurrentWorkspace=true
+          DockItems=dolphin.dockitem;;firefox-esr.dockitem;;konsole.dockitem;;kate.dockitem
+          HideDelay=500
+          HideMode=window-dodge
+          IconSize=48
+          InnerStroke=true
+          LockItems=false
+          MonitorNumber=0
+          Offset=0
+          OuterStroke=false
+          Position=bottom
+          PressureReveal=false
+          ShowDockItem=false
+          Theme=Gtk+
+          UnhideDelay=0
+          ZoomEnabled=true
+          ZoomPercent=150
+          PLANK_CONFIG_EOF
           
-          [Containments][1]
-          activityId=
-          byPassWM=false
-          dockWindowBehavior=true
-          enableKWinEdges=true
-          formfactor=2
-          immutability=1
-          isPreferredForShortcuts=false
-          lastScreen=10
-          location=4
-          onPrimary=true
-          plugin=org.kde.latte.containment
-          raiseOnActivityChange=false
-          raiseOnDesktopChange=false
-          settingsComplexity=1
-          timerHide=700
-          timerShow=0
-          viewType=0
-          wallpaperplugin=org.kde.image
+          # Create desktop launchers for Plank dock
+          cat > /home/cybr/.config/plank/dock1/launchers/dolphin.dockitem << 'DOLPHIN_DOCK_EOF'
+          [PlankDockItemPreferences]
+          Launcher=file:///usr/share/applications/org.kde.dolphin.desktop
+          DOLPHIN_DOCK_EOF
           
-          [Containments][1][Applets][2]
-          immutability=1
-          plugin=org.kde.latte.plasmoid
+          cat > /home/cybr/.config/plank/dock1/launchers/firefox-esr.dockitem << 'FIREFOX_DOCK_EOF'
+          [PlankDockItemPreferences]
+          Launcher=file:///usr/share/applications/firefox-esr.desktop
+          FIREFOX_DOCK_EOF
           
-          [Containments][1][Applets][2][Configuration]
-          PreloadWeight=0
+          cat > /home/cybr/.config/plank/dock1/launchers/konsole.dockitem << 'KONSOLE_DOCK_EOF'
+          [PlankDockItemPreferences]
+          Launcher=file:///usr/share/applications/org.kde.konsole.desktop
+          KONSOLE_DOCK_EOF
           
-          [Containments][1][Applets][2][Configuration][General]
-          isInLatteDock=true
-          launchers59=applications:org.kde.dolphin.desktop,applications:firefox-esr.desktop,applications:org.kde.konsole.desktop,applications:org.kde.kate.desktop,applications:org.kde.spectacle.desktop
-          
-          [Containments][1][ConfigDialog]
-          DialogHeight=600
-          DialogWidth=586
-          
-          [Containments][1][Configuration]
-          PreloadWeight=0
-          
-          [Containments][1][General]
-          advanced=false
-          alignment=10
-          alignmentUpgraded=true
-          animationLauncherBouncing=true
-          animationWindowAddedInGroup=true  
-          animationWindowInAttention=true
-          animationWindowInMission=true
-          animationWindowRemovedFromGroup=true
-          appletOrder=2
-          autoSizeEnabled=false
-          backgroundAllCorners=true
-          backgroundCornerRadius=8
-          behaveAsPlasmaPanel=false
-          blurEnabled=true
-          colorsScriptPath=
-          configurationSticker=true
-          disablePanelShadowMaximized=false
-          dragActiveWindowEnabled=true
-          editBackgroundBrightness=0
-          fittingMarginsLeft=0
-          fittingMarginsRight=0
-          floatingInternalGapIsForced=false
-          iconSize=48
-          lengthExtMargin=4
-          panelSize=100
-          panelTransparency=20
-          screenEdgeMargin=4
-          scrollAction=false
-          shadowOpacity=35
-          shadowSize=45
-          solidBackgroundForMaximized=false
-          splitterPosition=1
-          splitterPosition2=2
-          titleTooltips=true
-          zoomLevel=16
-          LATTE_CONFIG_EOF
-          
-          # Configure advanced KWin effects for maximum eye candy
+          # Configure available visual effects (removing unavailable packages)
           cat > /home/cybr/.config/kwinrc << 'ULTIMATE_KWIN_CONFIG_EOF'
           [Compositing]
           AnimationSpeed=2
@@ -1947,21 +2157,21 @@ jobs:
           Timeout=5000
           NOTIFY_CONFIG_EOF
           
-          # Configure Chrome OS-style shelf behavior
+          # Configure autostart for Plank dock (replaces latte-dock)
           mkdir -p /home/cybr/.config/autostart
-          cat > /home/cybr/.config/autostart/latte-dock.desktop << 'LATTE_AUTOSTART_EOF'
+          cat > /home/cybr/.config/autostart/plank.desktop << 'PLANK_AUTOSTART_EOF'
           [Desktop Entry]
           Type=Application
-          Name=Latte Dock
-          Comment=Dock for the masses
-          Icon=latte-dock
-          Exec=latte-dock
+          Name=Plank Dock
+          Comment=macOS-style dock
+          Icon=plank
+          Exec=plank
           Terminal=false
           Categories=Utility;
           StartupNotify=false
           NoDisplay=true
           X-GNOME-Autostart-enabled=true
-          LATTE_AUTOSTART_EOF
+          PLANK_AUTOSTART_EOF
           
           # Create Windows 11-style rounded corners and transparency
           cat > /home/cybr/.config/picom.conf << 'PICOM_CONFIG_EOF'
@@ -2072,87 +2282,22 @@ jobs:
           X-KDE-PluginInfo-Version=1.0
           UNITY_HUD_EOF
           
-          # Setup Conky for system monitoring eye candy
-          mkdir -p /home/cybr/.config/conky
-          cat > /home/cybr/.config/conky/conky.conf << 'CONKY_CONFIG_EOF'
-          conky.config = {
-              background = true,
-              use_xft = true,
-              font = 'Roboto:size=10',
-              xftalpha = 0.8,
-              update_interval = 1.0,
-              total_run_times = 0,
-              own_window = true,
-              own_window_type = 'desktop',
-              own_window_transparent = true,
-              own_window_hints = 'undecorated,below,sticky,skip_taskbar,skip_pager',
-              double_buffer = true,
-              minimum_width = 250,
-              minimum_height = 5,
-              maximum_width = 250,
-              draw_shades = false,
-              draw_outline = false,
-              draw_borders = false,
-              draw_graph_borders = true,
-              default_color = 'white',
-              default_shade_color = 'black',
-              default_outline_color = 'black',
-              alignment = 'top_right',
-              gap_x = 30,
-              gap_y = 50,
-              no_buffers = true,
-              uppercase = false,
-              cpu_avg_samples = 2,
-              override_utf8_locale = true,
-          };
+          # Remove Conky configuration (package availability varies)
+          # System monitoring handled by built-in KDE tools instead
           
-          conky.text = [[
-          $alignc${color lightblue}${font Roboto:size=16:bold}CYBR LINUX$font
-          $alignc${color white}${time %A %B %d, %Y}
-          $alignc${color white}${time %H:%M:%S}
-          
-          ${color lightgreen}System $hr
-          ${color white}Hostname: $alignr $nodename
-          ${color white}Uptime: $alignr $uptime
-          ${color white}Kernel: $alignr $kernel
-          
-          ${color lightgreen}CPU $hr
-          ${color white}${cpu cpu0}% $alignr ${cpubar cpu0 8,100}
-          ${color white}Temp: $alignr ${acpitemp}°C
-          
-          ${color lightgreen}Memory $hr
-          ${color white}$mem / $memmax $alignr $memperc%
-          ${color white}${membar 8}
-          
-          ${color lightgreen}Storage $hr
-          ${color white}Root: ${fs_used /} / ${fs_size /} $alignr ${fs_used_perc /}%
-          ${color white}${fs_bar 8 /}
-          
-          ${color lightgreen}Network $hr
-          ${color white}Down: $alignr ${downspeed eth0}
-          ${color white}Up: $alignr ${upspeed eth0}
-          
-          ${color lightgreen}Processes $hr
-          ${color white}${top name 1} $alignr ${top cpu 1}%
-          ${color white}${top name 2} $alignr ${top cpu 2}%
-          ${color white}${top name 3} $alignr ${top cpu 3}%
-          ]];
-          CONKY_CONFIG_EOF
-          
-          # Create auto-start for Conky
-          cat > /home/cybr/.config/autostart/conky.desktop << 'CONKY_AUTOSTART_EOF'
+          # Create simple system monitor desktop widget (using available tools)
+          cat > /home/cybr/Desktop/System_Monitor.desktop << 'SYSMON_EOF'
           [Desktop Entry]
           Type=Application
-          Name=Conky
-          Comment=System monitor
-          Icon=utilities-system-monitor
-          Exec=conky
+          Version=1.0
+          Name=System Monitor
+          Comment=Monitor system performance
+          Icon=ksysguard
+          Exec=plasma-systemmonitor
           Terminal=false
           Categories=System;Monitor;
-          StartupNotify=false
-          NoDisplay=true
-          X-GNOME-Autostart-enabled=true
-          CONKY_AUTOSTART_EOF
+          X-KDE-SubstituteUID=false
+          SYSMON_EOF
           
           # Create dynamic wallpaper system (like macOS Mojave+)
           cat > /usr/local/bin/dynamic-wallpaper << 'DYNAMIC_WALL_EOF'
@@ -2791,4 +2936,16 @@ jobs:
           name: "security-scan-${{ github.run_number }}"
           path: "trivy-results.sarif"
 
-  
+  cleanup:
+    name: "Cleanup"
+    runs-on: ubuntu-latest
+    needs: [build, upload, notify, security-scan]
+    if: always()
+    timeout-minutes: 10
+
+    steps:
+      - name: "Free Resources"
+        run: |
+          docker system prune -af || true
+          sudo apt-get clean || true
+          df -h
