@@ -695,9 +695,8 @@ jobs:
           ark
           kcalc
           
-          # Enhanced visual effects and UI packages
+          # Available KDE and system packages only
           plasma-browser-integration
-          plasma-widgets-addons
           plasma-workspace-wallpapers
           kde-config-gtk-style
           breeze-gtk-theme
@@ -708,18 +707,14 @@ jobs:
           cairo-dock
           cairo-dock-plug-ins
           
-          # Windows-like file manager enhancements
-          dolphin-plugins
-          kde-cli-tools
-          
-          # Enhanced system tray and widgets
+          # System tray and widgets
           plasma-pa
           plasma-nm
           powerdevil
           bluedevil
           plasma-systemmonitor
           
-          # Available theming and customization
+          # Available theming
           qt5-style-kvantum
           qt5-style-kvantum-themes
           
@@ -727,9 +722,8 @@ jobs:
           papirus-icon-theme
           breeze-cursor-theme
           
-          # Desktop effects and animations
+          # Available KDE components
           kio-extras
-          kdeplasma-addons
           
           # System monitoring
           htop
