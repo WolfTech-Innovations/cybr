@@ -24,7 +24,11 @@ Happy computing!
 
 ## Our Team
 
--- Chris F. - Head of cybr Development Team and the one behind it's resilient computing experience for its users.
+-- Christopher F. - CEO and Head of cybr Development Team and the one behind it's resilient computing experience for its users.
+
+-- Joseph D. - Head of HR and marketing
+
+-- Christopher (2 > Diff employee) - Programming department
 
 ## Legal Stuff:
 
