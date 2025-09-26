@@ -1,24 +1,377 @@
-name: Send failure response to API
+name: Build and Deploy NoxOS
 
 on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main ]
   workflow_dispatch:
-    inputs:
-      force_fail:
-        description: "Force fail"
-        required: true
-        default: "Yes"
-        type: choice
-        options:
-          - "-"
-          - "Yes"
+
+env:
+  BOARD: "amd64-generic"
+  BUILD_TYPE: "minimal"
+  SF_USER: "spoinkoscdn"
+  SF_PROJECT: "NoxOS"
 
 jobs:
-  notify-api:
+  build-and-deploy:
     runs-on: ubuntu-latest
-    if: always()
+    timeout-minutes: 480
+    
     steps:
-      - name: Notify API
-        env:
-          API_URL: ${{ secrets.API_URL }}
-        run: |
-            curl "$API_URL/fail"
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 1
+    
+    - name: Free up disk space
+      run: |
+        sudo rm -rf /usr/share/dotnet
+        sudo rm -rf /usr/local/lib/android
+        sudo rm -rf /opt/ghc
+        sudo rm -rf /opt/hostedtoolcache/CodeQL
+        sudo docker image prune --all --force
+        sudo apt clean
+        sudo swapoff -a
+        sudo rm -f /swapfile
+        df -h
+    
+    - name: Install build dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y \
+          git curl wget python3 python3-pip build-essential \
+          sudo locales ca-certificates gnupg lsb-release \
+          unzip xz-utils bc bison flex libssl-dev \
+          libncurses5-dev u-boot-tools device-tree-compiler \
+          gcc-multilib g++-multilib libc6-dev-i386 \
+          lib32ncurses5-dev lib32z1-dev zlib1g-dev \
+          libelf-dev libdbus-1-dev libbluetooth-dev \
+          libnss3-dev fonts-liberation libasound2-dev \
+          imagemagick fontconfig sshpass rsync \
+          fonts-liberation ttf-dejavu-core
+        
+        # Install Times New Roman fonts
+        wget -O /tmp/times.zip "https://github.com/JotJunior/PHP-Boleto-ZF2/raw/master/public/assets/fonts/times.zip"
+        sudo unzip /tmp/times.zip -d /usr/share/fonts/truetype/
+        sudo fc-cache -fv
+        rm /tmp/times.zip
+    
+    - name: Create build directories
+      run: |
+        mkdir -p chromeos-build artifacts branding logs
+        
+    - name: Generate NoxOS branding assets
+      run: |
+        cd branding
+        
+        # Generate main logo (800x200)
+        convert -background black -fill white -font "Times-New-Roman" \
+          -size 800x200 -gravity center label:"NoxOS" nox-logo.png || \
+        convert -background black -fill white -font "Liberation-Serif" \
+          -size 800x200 -gravity center label:"NoxOS" nox-logo.png
+        
+        # Generate boot splash (1920x1080)
+        convert -size 1920x1080 xc:black \
+          -fill white -font "Times-New-Roman" -pointsize 72 \
+          -gravity center -annotate +0+0 "NoxOS\nMinimal • Fast • Secure" \
+          boot-splash.png || \
+        convert -size 1920x1080 xc:black \
+          -fill white -font "Liberation-Serif" -pointsize 72 \
+          -gravity center -annotate +0+0 "NoxOS\nMinimal • Fast • Secure" \
+          boot-splash.png
+        
+        # Generate icons
+        mkdir -p icons
+        for size in 16 32 48 64 128 256; do
+          convert -background transparent -fill white -font "Times-New-Roman" \
+            -size ${size}x${size} -gravity center label:"N" icons/nox-${size}.png || \
+          convert -background transparent -fill white -font "Liberation-Serif" \
+            -size ${size}x${size} -gravity center label:"N" icons/nox-${size}.png
+        done
+        
+        # Generate wallpaper
+        mkdir -p wallpapers
+        convert -size 1920x1080 gradient:black-gray20 \
+          -fill white -font "Times-New-Roman" -pointsize 24 \
+          -gravity southeast -annotate +50+50 "NoxOS" \
+          wallpapers/default.jpg || \
+        convert -size 1920x1080 gradient:black-gray20 \
+          -fill white -font "Liberation-Serif" -pointsize 24 \
+          -gravity southeast -annotate +50+50 "NoxOS" \
+          wallpapers/default.jpg
+        
+        # Create branding config
+        mkdir -p config
+        cat > config/branding.conf << 'EOF'
+[branding]
+name=NoxOS
+full_name=NoxOS ChromeOS
+version=1.0
+description=Minimal and Fast ChromeOS Distribution
+homepage=https://sourceforge.net/projects/noxos/
+support_url=https://sourceforge.net/projects/noxos/support
+
+[appearance]
+primary_color=#000000
+accent_color=#ffffff
+font_family=Times New Roman
+logo_path=nox-logo.png
+EOF
+        
+        cat > config/customizations.json << 'EOF'
+{
+  "system_name": "NoxOS",
+  "welcome_message": "Welcome to NoxOS - Fast and Minimal ChromeOS",
+  "startup_sound": true,
+  "default_wallpaper": "wallpapers/default.jpg",
+  "ui_customizations": {
+    "shelf_color": "#000000",
+    "status_area_color": "#ffffff",
+    "window_frame_color": "#333333"
+  }
+}
+EOF
+        
+        ls -la
+    
+    - name: Install depot_tools
+      run: |
+        git clone https://chromium.googlesource.com/chromium/tools/depot_tools.git /tmp/depot_tools
+        echo "/tmp/depot_tools" >> $GITHUB_PATH
+        export PATH="/tmp/depot_tools:$PATH"
+        git config --global user.name "NoxOS Builder"
+        git config --global user.email "christopher.fox@wolfos.uk"
+        git config --global color.ui auto
+    
+    - name: Initialize ChromiumOS
+      run: |
+        export PATH="/tmp/depot_tools:$PATH"
+        cd chromeos-build
+        
+        echo "Initializing ChromiumOS repository..."
+        repo init -u https://chromium.googlesource.com/chromiumos/manifest.git \
+          --repo-url https://chromium.googlesource.com/external/repo.git \
+          -g minilayout 2>&1 | tee ../logs/repo-init.log
+        
+        echo "Syncing ChromiumOS source..."
+        repo sync -c -j$(nproc) --force-sync --no-clone-bundle 2>&1 | tee ../logs/repo-sync.log
+    
+    - name: Apply NoxOS customizations
+      run: |
+        cd chromeos-build
+        
+        # Create NoxOS overlay
+        mkdir -p src/private-overlays/overlay-noxos/chromeos-base/chromeos-branding
+        
+        # Copy branding assets
+        cp -r ../branding/* src/platform2/chromeos-base/chromeos-branding/files/ 2>/dev/null || true
+        
+        # Create custom branding ebuild
+        cat > src/private-overlays/overlay-noxos/chromeos-base/chromeos-branding/chromeos-branding-9999.ebuild << 'EOF'
+# Copyright 2025 NoxOS Project
+# Distributed under the terms of the GNU General Public License v2
+
+EAPI=7
+inherit cros-workon
+
+CROS_WORKON_PROJECT="chromiumos/platform2"
+CROS_WORKON_LOCALNAME="platform2"
+CROS_WORKON_SUBTREE="chromeos-branding"
+
+DESCRIPTION="NoxOS ChromeOS branding"
+HOMEPAGE="https://sourceforge.net/projects/noxos/"
+
+LICENSE="BSD-Google"
+KEYWORDS="*"
+SLOT="0"
+
+RDEPEND="chromeos-base/chromeos-assets"
+
+src_install() {
+    insinto /usr/share/chromeos-assets/images
+    doins "${S}"/files/nox-logo.png
+    doins "${S}"/files/boot-splash.png
+    
+    insinto /usr/share/chromeos-assets/wallpapers
+    doins "${S}"/files/wallpapers/default.jpg
+    
+    insinto /opt/google/chrome
+    newins "${S}"/files/nox-logo.png product_logo.png
+    
+    insinto /usr/share/pixmaps
+    doins "${S}"/files/icons/nox-*.png
+}
+EOF
+        
+        # Create overlay profile
+        mkdir -p src/private-overlays/overlay-noxos/profiles/base
+        echo "noxos" > src/private-overlays/overlay-noxos/profiles/base/make.defaults
+        
+        # Create minimal build configuration
+        cat > minimal-build.conf << 'EOF'
+USE="minimal -debug -test -autotest -cros_host -profiling"
+USE="${USE} -bluetooth -cellular -cras -debugd"
+USE="${USE} -ml_service -arc -android_container_pi"
+USE="${USE} -chrome_media -vaapi -v4l2_codec"
+USE="${USE} chrome chromeos-base/chromeos-chrome noxos-branding"
+FEATURES="-test"
+CHROMEOS_VERSION_STRING="NoxOS"
+CHROMEOS_VERSION_DESCRIPTION="NoxOS ChromeOS - Minimal and Fast"
+EOF
+    
+    - name: Build NoxOS
+      run: |
+        cd chromeos-build
+        export PATH="/tmp/depot_tools:$PATH"
+        
+        # Set up build environment
+        echo "Setting up build environment..."
+        cros_sdk --enter --cmd="setup_board --board=${BOARD}" 2>&1 | tee ../logs/setup-board.log
+        
+        # Build packages
+        echo "Building ChromeOS packages..."
+        cros_sdk --enter --cmd="
+          export BOARD=${BOARD}
+          export USE='minimal -debug -test -autotest -cros_host -profiling -bluetooth -cellular -cras -debugd -ml_service -arc -android_container_pi -chrome_media -vaapi -v4l2_codec chrome chromeos-base/chromeos-chrome'
+          export FEATURES='-test'
+          export CHROMEOS_VERSION_STRING='NoxOS'
+          export CHROMEOS_VERSION_DESCRIPTION='NoxOS ChromeOS - Minimal and Fast'
+          
+          emerge-${BOARD} --quiet-build chromeos-base/chromeos-branding
+          build_packages --board=${BOARD} --nowithautotest --nowithtest --nowithfactory
+        " 2>&1 | tee ../logs/build-packages.log
+        
+        # Build system image
+        echo "Building NoxOS system image..."
+        cros_sdk --enter --cmd="
+          export BOARD=${BOARD}
+          build_image --board=${BOARD} --noenable_rootfs_verification --boot_args='cros_secure cros_debug' dev
+        " 2>&1 | tee ../logs/build-image.log
+        
+        # Create USB image
+        echo "Creating USB installation image..."
+        cros_sdk --enter --cmd="
+          export BOARD=${BOARD}
+          mod_image_for_test.sh --board=${BOARD} --image=../build/images/${BOARD}/latest/chromiumos_image.bin
+          ./build_image --board=${BOARD} --noenable_rootfs_verification --boot_args='cros_secure cros_debug' --disk_layout=usb dev
+        " 2>&1 | tee ../logs/create-usb-image.log
+    
+    - name: Prepare artifacts
+      run: |
+        cd chromeos-build
+        BUILD_DIR="src/build/images/${BOARD}/latest"
+        
+        if [ -d "${BUILD_DIR}" ]; then
+          # Copy images
+          cp "${BUILD_DIR}"/*.bin ../artifacts/ 2>/dev/null || true
+          cp "${BUILD_DIR}"/*.img ../artifacts/ 2>/dev/null || true
+          
+          # Rename files with NoxOS prefix
+          cd ../artifacts
+          for file in *.bin *.img; do
+            if [ -f "$file" ]; then
+              newname="NoxOS-$(date +%Y.%m.%d)-${file}"
+              mv "$file" "$newname"
+              # Create checksums
+              sha256sum "$newname" > "${newname}.sha256"
+              md5sum "$newname" > "${newname}.md5"
+            fi
+          done
+          
+          # Create release info
+          cat > release-info.txt << EOF
+NoxOS ChromeOS Distribution
+Version: $(date +%Y.%m.%d)
+Board: ${BOARD}
+Build Date: $(date -u +%Y-%m-%dT%H:%M:%SZ)
+Build Type: Minimal
+Description: Fast and minimal ChromeOS distribution with custom NoxOS branding
+
+Files:
+$(ls -la *.bin *.img 2>/dev/null | grep -v "total")
+
+Checksums available in .sha256 and .md5 files
+EOF
+          
+          ls -la
+        fi
+    
+    - name: Upload to SourceForge
+      env:
+        SF_PASS: ${{ secrets.SF_PASS }}
+      run: |
+        cd artifacts
+        
+        if [ -z "$SF_PASS" ]; then
+          echo "Warning: SF_PASS not set, skipping upload"
+          exit 0
+        fi
+        
+        # Create upload directory structure
+        UPLOAD_PATH="/home/frs/project/${SF_PROJECT}/releases/$(date +%Y.%m.%d)"
+        
+        echo "Uploading NoxOS build to SourceForge..."
+        
+        # Upload files using sshpass and rsync
+        for file in NoxOS-*.bin NoxOS-*.img *.sha256 *.md5 release-info.txt; do
+          if [ -f "$file" ]; then
+            echo "Uploading $file..."
+            sshpass -p "$SF_PASS" rsync -avz -e "ssh -o StrictHostKeyChecking=no" \
+              "$file" "${SF_USER}@frs.sourceforge.net:${UPLOAD_PATH}/" || \
+            sshpass -p "$SF_PASS" scp -o StrictHostKeyChecking=no \
+              "$file" "${SF_USER}@frs.sourceforge.net:${UPLOAD_PATH}/"
+          fi
+        done
+        
+        echo "Upload completed successfully!"
+        
+        # Create latest symlink
+        sshpass -p "$SF_PASS" ssh -o StrictHostKeyChecking=no \
+          "${SF_USER}@frs.sourceforge.net" \
+          "cd /home/frs/project/${SF_PROJECT}/ && rm -f latest && ln -sf releases/$(date +%Y.%m.%d) latest" || true
+    
+    - name: Upload build artifacts (backup)
+      uses: actions/upload-artifact@v4
+      with:
+        name: noxos-build-${{ github.sha }}
+        path: |
+          artifacts/NoxOS-*.bin
+          artifacts/NoxOS-*.img
+          artifacts/*.sha256
+          artifacts/*.md5
+          artifacts/release-info.txt
+          branding/
+        retention-days: 21
+    
+    - name: Upload build logs
+      uses: actions/upload-artifact@v4
+      if: always()
+      with:
+        name: noxos-build-logs-${{ github.sha }}
+        path: logs/
+        retention-days: 7
+    
+    - name: Build summary
+      if: always()
+      run: |
+        echo "## NoxOS Build Summary" >> $GITHUB_STEP_SUMMARY
+        echo "- **Build Date**: $(date)" >> $GITHUB_STEP_SUMMARY
+        echo "- **Board**: ${BOARD}" >> $GITHUB_STEP_SUMMARY
+        echo "- **Build Type**: ${BUILD_TYPE}" >> $GITHUB_STEP_SUMMARY
+        echo "- **Commit**: ${GITHUB_SHA}" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        
+        if [ -d "artifacts" ]; then
+          echo "### Generated Artifacts:" >> $GITHUB_STEP_SUMMARY
+          ls -la artifacts/ | grep -E "\.(bin|img)$" | while read -r line; do
+            echo "- $line" >> $GITHUB_STEP_SUMMARY
+          done
+        fi
+        
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "### Branding Assets:" >> $GITHUB_STEP_SUMMARY
+        echo "- Main logo: 800x200 Times New Roman 'NoxOS' on black" >> $GITHUB_STEP_SUMMARY
+        echo "- Boot splash: 1920x1080 with NoxOS branding" >> $GITHUB_STEP_SUMMARY
+        echo "- Icons: Multiple sizes (16-256px) with 'N' logo" >> $GITHUB_STEP_SUMMARY
+        echo "- Wallpaper: Gradient background with NoxOS watermark" >> $GITHUB_STEP_SUMMARY
