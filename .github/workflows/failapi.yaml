@@ -914,7 +914,7 @@ jobs:
         fi
 
     - name: Archive build logs
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       if: always()
       with:
         name: midnightos-build-logs-${{ github.run_number }}
@@ -925,7 +925,7 @@ jobs:
         retention-days: 14
 
     - name: Archive release artifacts
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       if: success()
       with:
         name: midnightos-release-${{ github.run_number }}
