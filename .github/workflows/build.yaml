@@ -1,2684 +1,879 @@
-name: "Cybr NextGen Build System"
+name: Build and Deploy MidnightOS
 
 on:
-  workflow_dispatch:
-    inputs:
-      force_fail:
-        description: "Force build failure for testing"
-        required: false
-        default: "false"
-        type: boolean
-      build_variant:
-        description: "Build variant"
-        required: false
-        default: "standard"
-        type: choice
-        options: ["minimal", "standard", "full"]
-      skip_upload:
-        description: "Skip upload to SourceForge"
-        required: false
-        default: "false"
-        type: boolean
   push:
-    branches: [main, develop]
-    paths: ['scripts/**', 'config/**', '.github/workflows/build.yml']
-  schedule:
-    - cron: '0 2 * * 0' # Weekly builds on Sunday 2AM UTC
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
 
 env:
-  DOCKER_BUILDKIT: 1
-  BUILDX_CACHE_TO: type=gha,mode=max
-  BUILDX_CACHE_FROM: type=gha
-  BUILD_VERSION: ${{ github.run_number }}
-  ISO_NAME: "cybr-nextgen-v${{ github.run_number }}"
+  BOARD: "amd64-generic"
+  BUILD_TYPE: "midnight-ui"
+  SF_USER: "spoinkoscdn"
+  SF_PROJECT: "MidnightOS"
 
 jobs:
-  # ============================================================================
-  #                           PRE-BUILD VALIDATION
-  # ============================================================================
-  validate:
-    name: "Pre-Build Validation"
+  build-and-deploy:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
-    outputs:
-      should_build: ${{ steps.check.outputs.should_build }}
-      build_hash: ${{ steps.hash.outputs.hash }}
-    steps:
-      - name: "ASCII Art Banner"
-        run: |
-          cat << 'EOF'
-          
-          ╔═══════════════════════════════════════════════════════════════════════╗
-          ║                                                                       ║
-          ║    ▄████▄▓██   ██▓ ▄▄▄▄    ██▀███      ▄▄▄▄    █    ██  ██▓ ██▓   ▄▄▄▄   ║
-          ║   ▒██▀ ▀█ ▒██  ██▒▓█████▄ ▓██ ▒ ██▒   ▓█████▄  ██  ▓██▒▓██▒▓██▒  ▓█████▄ ║
-          ║   ▒▓█    ▄ ▒██ ██░▒██▒ ▄██▓██ ░▄█ ▒   ▒██▒ ▄██▓██  ▒██░▒██▒▒██░  ▒██▒ ▄██║
-          ║   ▒▓▓▄ ▄██▒░ ▐██▓░▒██░█▀  ▒██▀▀█▄     ▒██░█▀  ▓▓█  ░██░░██░▒██░  ▒██░█▀  ║
-          ║   ▒ ▓███▀ ░░ ██▒▓░░▓█  ▀█▓░██▓ ▒██▒   ░▓█  ▀█▓▒▒█████▓ ░██░░██████▒█  ▀█▓║
-          ║   ░ ░▒ ▒  ░ ██▒▒▒ ░▒▓███▀▒░ ▒▓ ░▒▓░   ░▒▓███▀▒░▒▓▒ ▒ ▒ ░▓  ░ ▒░▓  ░▒▓███▀▒║
-          ║     ░  ▒  ▓██ ░▒░ ▒░▒   ░   ░▒ ░ ▒░   ▒░▒   ░ ░░▒░ ░ ░  ▒ ░░ ░ ▒  ░▒   ░ ║
-          ║   ░       ▒ ▒ ░░   ░    ░   ░░   ░     ░    ░  ░░░ ░ ░  ▒ ░  ░ ░   ░    ░ ║
-          ║   ░ ░     ░ ░      ░         ░         ░         ░      ░      ░  ░      ║
-          ║   ░       ░ ░           ░                   ░                        ░    ║
-          ║                                                                       ║
-          ║                    NEXT-GENERATION SECURITY OS BUILDER               ║
-          ║                                                                       ║
-          ╚═══════════════════════════════════════════════════════════════════════╝
-          
-          EOF
-          
-      - name: "Checkout Repository"
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - name: "Generate Build Hash"
-        id: hash
-        run: |
-          HASH=$(echo "${{ github.sha }}-${{ github.event.inputs.build_variant }}-${{ github.run_number }}" | sha256sum | cut -d' ' -f1 | head -c 16)
-          echo "hash=$HASH" >> $GITHUB_OUTPUT
-          echo "Build Hash: $HASH"
-          
-      - name: "Validation Checks"
-        id: check
-        run: |
-          echo "should_build=true" >> $GITHUB_OUTPUT
-          
-          echo "┌─────────────────────────────────────────┐"
-          echo "│           VALIDATION REPORT             │"
-          echo "├─────────────────────────────────────────┤"
-          echo "│ Build Variant: ${{ github.event.inputs.build_variant || 'standard' }}"
-          echo "│ Force Fail:    ${{ github.event.inputs.force_fail || 'false' }}"
-          echo "│ Skip Upload:   ${{ github.event.inputs.skip_upload || 'false' }}"
-          echo "│ Build Number:  ${{ github.run_number }}"
-          echo "│ Trigger:       ${{ github.event_name }}"
-          echo "└─────────────────────────────────────────┘"
-
-  # ============================================================================
-  #                              MAIN BUILD JOB
-  # ============================================================================
-  build:
-    name: "Build Cybr OS"
-    runs-on: ubuntu-latest
-    needs: validate
-    if: needs.validate.outputs.should_build == 'true'
-    timeout-minutes: 340
-    outputs:
-      build_success: ${{ steps.build-status.outputs.success }}
-      iso_size: ${{ steps.iso-info.outputs.size }}
-      iso_sha256: ${{ steps.iso-info.outputs.sha256 }}
+    timeout-minutes: 480
 
     steps:
-      - name: "Build Progress Banner"
-        run: |
-          cat << 'EOF'
-          
-          ╔══════════════════════════════════════════════════════════════════════╗
-          ║  ██████╗ ██╗   ██╗██╗██╗     ██████╗     ███████╗████████╗ █████╗   ║
-          ║  ██╔══██╗██║   ██║██║██║     ██╔══██╗    ██╔════╝╚══██╔══╝██╔══██╗  ║
-          ║  ██████╔╝██║   ██║██║██║     ██║  ██║    ███████╗   ██║   ███████║  ║
-          ║  ██╔══██╗██║   ██║██║██║     ██║  ██║    ╚════██║   ██║   ██╔══██║  ║
-          ║  ██████╔╝╚██████╔╝██║███████╗██████╔╝    ███████║   ██║   ██║  ██║  ║
-          ║  ╚═════╝  ╚═════╝ ╚═╝╚══════╝╚═════╝     ╚══════╝   ╚═╝   ╚═╝  ╚═╝  ║
-          ╚══════════════════════════════════════════════════════════════════════╝
-          
-          EOF
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 1
 
-      - name: "Maximize Build Space"
-        run: |
-          echo "Freeing up disk space..."
-          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
-          sudo apt-get clean
-          df -h
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
 
-      - name: "Checkout Repository"
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 1
+    - name: Create build context
+      run: |
+        mkdir -p docker-build
+        
+        # Create Dockerfile for ChromeOS build environment with UI theme support
+        cat > docker-build/Dockerfile << 'EOF'
+        FROM ubuntu:22.04
 
-      - name: "Install Cybr Hook"
-        run: |
-          mkdir -p config/hooks/normal
-          curl -fsSL https://raw.githubusercontent.com/WolfTech-Innovations/cybr/main/scripts/archwrapper.bash -o config/hooks/normal/0150-bootloader-branding.hook.chroot
-          chmod +x config/hooks/normal/0150-bootloader-branding.hook.chroot
+        ENV DEBIAN_FRONTEND=noninteractive
+        ENV TZ=UTC
 
-      - name: "Install Neo Hook"
-        run: |
-          mkdir -p config/hooks/normal
-          curl -fsSL https://raw.githubusercontent.com/WolfTech-Innovations/Neo/main/lb-hooks/0201-Neo.chroot -o config/hooks/normal/0390-neo-enhancements.hook.chroot
-          chmod +x config/hooks/normal/0390-neo-enhancements.hook.chroot
+        # Install build dependencies
+        RUN apt-get update && apt-get install -y \
+            git curl wget python3 python3-pip build-essential \
+            sudo locales ca-certificates gnupg lsb-release \
+            unzip xz-utils bc bison flex libssl-dev \
+            libncurses5-dev u-boot-tools device-tree-compiler \
+            gcc-multilib g++-multilib libc6-dev-i386 \
+            lib32ncurses5-dev lib32z1-dev zlib1g-dev \
+            libelf-dev libdbus-1-dev libbluetooth-dev \
+            libnss3-dev fonts-liberation libasound2-dev \
+            imagemagick fontconfig sshpass rsync \
+            fonts-liberation ttf-dejavu-core \
+            inkscape gimp librsvg2-bin optipng \
+            && apt-get clean && rm -rf /var/lib/apt/lists/*
 
-      - name: "Setup Docker Buildx"
-        uses: docker/setup-buildx-action@v3
-        with:
-          driver-opts: |
-            network=host
-            image=moby/buildkit:buildx-stable-1
+        # Install Google Fonts and dark theme fonts
+        RUN wget -O /tmp/roboto.zip https://fonts.google.com/download?family=Roboto \
+            && unzip /tmp/roboto.zip -d /usr/share/fonts/truetype/roboto/ \
+            && rm /tmp/roboto.zip \
+            && wget -O /tmp/material-icons.woff2 https://fonts.gstatic.com/s/materialicons/v140/flUhRq6tzZclQEJ-Vdg-IuiaDsNcIhQ8tQ.woff2 \
+            && mkdir -p /usr/share/fonts/woff2/ \
+            && mv /tmp/material-icons.woff2 /usr/share/fonts/woff2/ \
+            && fc-cache -fv
 
-      - name: "Create Debian Build Environment"
-        run: |
-          cat > Dockerfile << 'DOCKERFILE_EOF'
-          FROM debian:bookworm
-          
-          # Install build dependencies
-          RUN apt-get update && \
-              DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
-                  debootstrap live-build xorriso squashfs-tools \
-                  git curl wget ca-certificates gnupg2 \
-                  syslinux-utils isolinux mtools rsync \
-                  dosfstools parted gdisk \
-              && apt-get clean \
-              && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
-          
-          WORKDIR /build
-          COPY scripts/ ./scripts/
-          RUN find ./scripts -name "*.sh" -o -name "*.bash" | xargs chmod +x
-          
-          ENV DEBIAN_FRONTEND=noninteractive
-          ENV LANG=C.UTF-8
-          ENV LC_ALL=C.UTF-8
-          DOCKERFILE_EOF
+        # Create build user
+        RUN useradd -m -s /bin/bash -G sudo builder \
+            && echo 'builder ALL=(ALL) NOPASSWD:ALL' >> /etc/sudoers
 
-      - name: "Build Docker Image"
-        run: |
-          echo "Building Debian build environment..."
-          docker build -t cybr-debian-builder:${{ needs.validate.outputs.build_hash }} .
+        # Install depot_tools
+        RUN git clone https://chromium.googlesource.com/chromium/tools/depot_tools.git /opt/depot_tools \
+            && chown -R builder:builder /opt/depot_tools
 
-      - name: "Create Build Scripts"
-        run: |
-          mkdir -p scripts config
-          
-          # Main build script
-          cat > scripts/build-debian-iso.sh << 'BUILD_EOF'
-          #!/bin/bash
-          set -euo pipefail
-          
-          BUILD_VARIANT="${BUILD_VARIANT:-standard}"
-          BUILD_VERSION="${BUILD_VERSION:-1}"
-          ISO_NAME="${ISO_NAME:-cybr-nextgen}"
-          
-          echo "Starting Debian-based Cybr build..."
-          echo "Variant: $BUILD_VARIANT"
-          echo "Version: $BUILD_VERSION"
-          
-          # Setup live-build configuration
-          mkdir -p /build/live-build
-          cd /build/live-build
-          
-          # Configure live-build for Debian with non-interactive mode
-          lb config \
-            --distribution bookworm \
-            --archive-areas "main contrib non-free non-free-firmware" \
-            --architectures amd64 \
-            --linux-flavours amd64 \
-            --bootappend-live "boot=live components username=cybr hostname=cybr-nextgen quiet splash" \
-            --iso-application "Cybr NextGen Security OS" \
-            --iso-publisher "WolfTech Innovations" \
-            --iso-volume "CybrNextGen" \
-            --binary-images iso-hybrid \
-            --memtest none \
-            --win32-loader false \
-            --checksums sha256 \
-            --compression xz \
-            --zsync false
-          
-          # Create global APT configuration for non-interactive mode
-          mkdir -p config/apt
-          cat > config/apt/apt.conf << 'APT_CONF_EOF'
-          Dpkg::Options {
-             "--force-confnew";
-             "--force-confmiss";
-             "--force-confdef";
-             "--force-confold";
-          }
-          
-          APT::Get::Assume-Yes "true";
-          APT::Get::Fix-Broken "true";
-          APT::Get::Allow-Unauthenticated "false";
-          APT::Get::Allow-Downgrades "true";
-          APT::Get::Allow-Remove-Essential "false";
-          APT::Get::Allow-Change-Held-Packages "true";
-          APT::Get::Remove "true";
-          Dir::Cache::Archives "/var/cache/apt/archives";
-          APT_CONF_EOF
-          
-          # Set global environment variables for the build
-          mkdir -p config/includes.chroot/etc
-          cat > config/includes.chroot/etc/environment << 'ENV_EOF'
-          PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/games:/usr/local/games"
-          DEBIAN_FRONTEND=noninteractive
-          DEBCONF_NONINTERACTIVE_SEEN=true
-          APT_LISTCHANGES_FRONTEND=none
-          ENV_EOF
-          
-          # Note: Kali repositories will be configured via hook with proper keyring
-          
-          # Kali repository setup hook - runs AFTER user creation with proper APT integration
-          cat > config/hooks/normal/0350-kali-keyring.hook.chroot << 'KALI_KEY_HOOK_EOF'
-          #!/bin/bash
-          set -e
-          
-          echo "Setting up Kali Linux repositories with APT integration..."
-          
-          # Ensure non-interactive mode
-          export DEBIAN_FRONTEND=noninteractive
-          export DEBCONF_NONINTERACTIVE_SEEN=true
-          
-          # First update existing package lists
-          apt-get update
-          
-          # Install required packages for keyring management
-          apt-get install -y --no-install-recommends wget gnupg2 ca-certificates curl
-          
-          # Add Kali GPG key using multiple methods for reliability
-          echo "Adding Kali Linux GPG key..."
-          
-          # Method 1: Try keyserver first (most reliable)
-          if gpg --keyserver hkp://keyserver.ubuntu.com:80 --recv-keys 44C6513A8E4FB3D30875F758ED444FF07D8D0BF6 2>/dev/null; then
-            gpg --armor --export 44C6513A8E4FB3D30875F758ED444FF07D8D0BF6 | apt-key add -
-            echo "Kali GPG key added via keyserver"
-          else
-            # Method 2: Direct download fallback
-            if curl -fsSL https://archive.kali.org/archive-key.asc | apt-key add -; then
-              echo "Kali GPG key added via direct download"
-            else
-              echo "Warning: Could not add Kali GPG key"
-              exit 1
-            fi
-          fi
-          
-          # Add Kali repositories to main sources list for proper APT integration
-          echo "# Kali Linux Repository (for security tools)" >> /etc/apt/sources.list
-          echo "deb [trusted=yes] http://http.kali.org/kali kali-rolling main contrib non-free non-free-firmware" >> /etc/apt/sources.list
-          
-          # Set APT preferences to prioritize Debian packages over Kali
-          cat > /etc/apt/preferences.d/kali-priority << 'KALI_PREF_EOF'
-          # Prioritize Debian packages over Kali to prevent system conflicts
-          Package: *
-          Pin: origin archive.debian.org
-          Pin-Priority: 1000
-          
-          Package: *
-          Pin: origin deb.debian.org  
-          Pin-Priority: 1000
-          
-          Package: *
-          Pin: origin http.kali.org
-          Pin-Priority: 100
-          
-          # Allow Kali-specific packages to have normal priority
-          Package: kali-*
-          Pin: origin http.kali.org
-          Pin-Priority: 500
-          
-          Package: metasploit-*
-          Pin: origin http.kali.org
-          Pin-Priority: 500
-          KALI_PREF_EOF
-          
-          # Update APT package lists to include Kali repositories
-          echo "Updating package lists with Kali repositories..."
-          apt-get update || {
-            echo "Warning: APT update failed, but continuing build..."
-            # Don't fail the build if Kali repos are temporarily unavailable
-          }
-          
-          # Create instructions file for users (ensure directory exists)
-          mkdir -p /home/cybr/Desktop 2>/dev/null || true
-          cat > /home/cybr/Desktop/KALI_TOOLS_README.txt << 'KALI_README_EOF'
-          Kali Linux Tools Installation
-          ==============================
-          
-          Cybr NextGen includes integrated access to Kali Linux security tools.
-          The repositories are already configured and synchronized with APT.
-          
-          To install Kali security tools:
-          1. Open terminal
-          2. Update package lists: sudo apt update
-          3. Install desired tools: sudo apt install <tool-name>
-          
-          Popular Kali tools available:
-          - nmap (network scanner)
-          - wireshark (network analyzer)  
-          - metasploit-framework (penetration testing)
-          - aircrack-ng (wireless security)
-          - john (password cracker)
-          - hashcat (password recovery)
-          - sqlmap (SQL injection testing)
-          - burpsuite (web security testing)
-          - nikto (web vulnerability scanner)
-          - dirb (web directory scanner)
-          - hydra (login cracker)
-          - gobuster (directory/file brute-forcer)
-          - whatweb (web technology identifier)
-          
-          Example installation:
-          sudo apt update
-          sudo apt install nmap wireshark metasploit-framework
-          
-          Note: 
-          - Kali packages have lower priority than Debian packages for system stability
-          - Some tools may require additional configuration
-          - Always review tool documentation and legal implications before use
-          KALI_README_EOF
-          
-          # Set ownership if cybr user exists
-          if id cybr >/dev/null 2>&1; then
-            chown cybr:cybr /home/cybr/Desktop/KALI_TOOLS_README.txt
-          fi
-          
-          echo "Kali repositories integrated with APT successfully"
-          KALI_KEY_HOOK_EOF
-          chmod +x config/hooks/normal/0350-kali-keyring.hook.chroot
-          
-          # Create package lists based on variant
-          mkdir -p config/package-lists
-          
-          # Base system packages
-          cat > config/package-lists/base.list.chroot << 'BASE_EOF'
-          # Base system
-          live-task-standard
-          sudo
-          openssh-client
-          openssh-server
-          curl
-          wget
-          git
-          nano
-          htop
-          tree
-          file
-          
-          # Network tools
-          net-tools
-          iputils-ping
-          dnsutils
-          whois
-          nmap
-          netcat-traditional
-          
-          # Basic security
-          ufw
-          fail2ban
-          clamav
-          clamav-freshclam
-          BASE_EOF
-          
-          # Desktop environment for standard/full builds with UX enhancements
-          if [[ "$BUILD_VARIANT" != "minimal" ]]; then
-            cat > config/package-lists/desktop.list.chroot << 'DESKTOP_EOF'
-          # KDE Plasma Desktop
-          kde-plasma-desktop
-          plasma-workspace
-          plasma-nm
-          kde-config-sddm
-          plasma-discover
-          plasma-systemmonitor
-          
-          # Display Manager
-          sddm
-          
-          # Calamares Installer
-          calamares
-          calamares-settings-debian
-          
-          # Essential KDE applications
-          dolphin
-          konsole
-          kate
-          firefox-esr
-          
-          # User-friendly utilities
-          partitionmanager
-          kde-spectacle
-          ark
-          kcalc
-          
-          # Available KDE and system packages only
-          plasma-browser-integration
-          plasma-workspace-wallpapers
-          kde-config-gtk-style
-          breeze-gtk-theme
-          qt5-style-plugins
-          
-          # Available dock applications
-          plank
-          cairo-dock
-          cairo-dock-plug-ins
-          
-          # System tray and widgets
-          plasma-pa
-          plasma-nm
-          powerdevil
-          bluedevil
-          plasma-systemmonitor
-          
-          # Available theming
-          qt5-style-kvantum
-          qt5-style-kvantum-themes
-          
-          # Available icon themes
-          papirus-icon-theme
-          breeze-cursor-theme
-          
-          # Available KDE components
-          kio-extras
-          
-          # System monitoring
-          htop
-          neofetch
-          
-          # Help and documentation
-          khelpcenter
-          DESKTOP_EOF
-          fi
-          
-          # Additional packages for full build
-          if [[ "$BUILD_VARIANT" == "full" ]]; then
-            cat > config/package-lists/full.list.chroot << 'FULL_EOF'
-          # Development tools
-          code
-          git-gui
-          
-          # Media
-          vlc
-          gimp
-          
-          # Office
-          libreoffice
-          
-          # Network analysis (from Kali repos)
-          wireshark
-          tcpdump
-          FULL_EOF
-          fi
-          
-          # Create hooks for customization
-          mkdir -p config/hooks/normal
-          
-          # Pre-configuration hook to prevent dpkg conflicts
-          cat > config/hooks/normal/0010-prevent-conflicts.hook.chroot << 'PRECONFIG_EOF'
-          #!/bin/bash
-          set -e
-          
-          echo "Configuring system for non-interactive package management..."
-          
-          # Set environment variables
-          export DEBIAN_FRONTEND=noninteractive
-          export DEBCONF_NONINTERACTIVE_SEEN=true
-          export APT_LISTCHANGES_FRONTEND=none
-          export NEEDRESTART_MODE=a
-          export NEEDRESTART_SUSPEND=1
-          
-          # Configure debconf for non-interactive mode
-          echo 'debconf debconf/frontend select Noninteractive' | debconf-set-selections
-          echo 'debconf debconf/priority select critical' | debconf-set-selections
-          
-          # Configure dpkg to handle configuration file conflicts automatically
-          cat > /etc/apt/apt.conf.d/99local << 'DPKG_CONF_EOF'
-          Dpkg::Options {
-             "--force-confnew";
-             "--force-confmiss";
-             "--force-confdef";
-             "--force-confold";
-             "--force-overwrite";
-          }
-          
-          APT::Get::Assume-Yes "true";
-          APT::Get::Fix-Broken "true";
-          APT::Get::AllowUnauthenticated "false";
-          APT::Get::Allow-Downgrades "true";
-          APT::Get::Allow-Remove-Essential "false";
-          APT::Get::Allow-Change-Held-Packages "true";
-          APT::Install-Recommends "false";
-          APT::Install-Suggests "false";
-          APT::Get::Show-Upgraded "true";
-          Dpkg::Use-Pty "0";
-          DPKG_CONF_EOF
-          
-          # Create debconf selections to avoid interactive prompts
-          cat > /tmp/debconf-selections << 'DEBCONF_EOF'
-          # Prevent grub from asking about installation
-          grub-pc grub-pc/install_devices_disks_changed multiselect
-          grub-pc grub-pc/install_devices multiselect
-          
-          # Prevent keyboard configuration prompts
-          keyboard-configuration keyboard-configuration/layout select
-          keyboard-configuration keyboard-configuration/layoutcode string us
-          
-          # Prevent tzdata prompts
-          tzdata tzdata/Areas select Etc
-          tzdata tzdata/Zones/Etc select UTC
-          
-          # Prevent postfix prompts
-          postfix postfix/main_mailer_type select No configuration
-          
-          # Base-files configuration to prevent /etc/issue conflicts
-          base-files base-files/use_local_etc_issue boolean true
-          DEBCONF_EOF
-          
-          debconf-set-selections < /tmp/debconf-selections
-          rm -f /tmp/debconf-selections
-          
-          echo "Non-interactive configuration completed"
-          PRECONFIG_EOF
-          chmod +x config/hooks/normal/0010-prevent-conflicts.hook.chroot
-          
-          # Cybr branding hook with dpkg conflict handling
-          cat > config/hooks/normal/0100-cybr-branding.hook.chroot << 'BRAND_EOF'
-          #!/bin/bash
-          set -e
-          
-          echo "Applying Cybr NextGen branding..."
-          
-          # Configure dpkg to handle conffile conflicts automatically
-          export DEBIAN_FRONTEND=noninteractive
-          export DEBCONF_NONINTERACTIVE_SEEN=true
-          
-          # Set dpkg options to avoid interactive prompts
-          echo 'DPkg::options { "--force-confdef"; "--force-confold"; }' > /etc/apt/apt.conf.d/local
-          
-          # Update OS identification files BEFORE any package updates
-          cat > /etc/os-release << 'OS_EOF'
-          PRETTY_NAME="Cybr Linux"
-          NAME="Cybr Linux"
-          VERSION_ID="1.0"
-          VERSION="1.0 (Rolling)"
-          VERSION_CODENAME=rolling
-          ID=cybr
-          ID_LIKE=debian
-          HOME_URL="https://wolfos.pages.dev/"
-          SUPPORT_URL="https://wolfos.pages.dev/support"
-          BUG_REPORT_URL="https://wolfos.pages.dev/issues"
-          OS_EOF
-          
-          # Create backup and update issue files
-          cp /etc/issue /etc/issue.backup 2>/dev/null || true
-          cp /etc/issue.net /etc/issue.net.backup 2>/dev/null || true
-          
-          cat > /etc/issue << 'ISSUE_EOF'
-          Cybr Linux \n \l
-          
-          ISSUE_EOF
-          
-          cat > /etc/issue.net << 'ISSUE_NET_EOF'
-          Cybr Linux
-          ISSUE_NET_EOF
-          
-          # Mark these files as locally modified to prevent dpkg conflicts
-          dpkg-divert --local --rename --add /etc/issue
-          dpkg-divert --local --rename --add /etc/issue.net
-          
-          # Create version info
-          cat > /etc/cybr-version << 'VERSION_EOF'
-          Cybr NextGen Security OS
-          Version: $BUILD_VERSION
-          Build Date: $(date -u '+%Y-%m-%d %H:%M:%S UTC')
-          Builder: GitHub Actions
-          Variant: $BUILD_VARIANT
-          VERSION_EOF
-          
-          echo "Branding applied successfully"
-          BRAND_EOF
-          chmod +x config/hooks/normal/0100-cybr-branding.hook.chroot
-          
-          # SDDM configuration hook
-          cat > config/hooks/normal/0200-sddm-config.hook.chroot << 'SDDM_EOF'
-          #!/bin/bash
-          set -e
-          
-          echo "Configuring SDDM..."
-          
-          # Enable SDDM service
-          systemctl enable sddm
-          
-          # Configure SDDM theme
-          mkdir -p /etc/sddm.conf.d
-          cat > /etc/sddm.conf.d/cybr.conf << 'SDDM_CONF_EOF'
-          [Theme]
-          Current=breeze
-          
-          [Users]
-          MaximumUid=60513
-          MinimumUid=500
-          
-          [Autologin]
-          Relogin=false
-          Session=
-          User=
-          SDDM_CONF_EOF
-          
-          echo "SDDM configured successfully"
-          SDDM_EOF
-          chmod +x config/hooks/normal/0200-sddm-config.hook.chroot
-          
-          # User setup hook
-          cat > config/hooks/normal/0300-user-setup.hook.chroot << 'USER_EOF'
-          #!/bin/bash
-          set -e
-          
-          echo "Setting up default user..."
-          
-          # Create cybr user
-          useradd -m -s /bin/bash -G sudo cybr
-          echo "cybr:cybr" | chpasswd
-          
-          # Configure automatic login for live session
-          mkdir -p /etc/systemd/system/getty@tty1.service.d
-          cat > /etc/systemd/system/getty@tty1.service.d/autologin.conf << 'AUTOLOGIN_EOF'
-          [Service]
-          ExecStart=
-          ExecStart=-/sbin/agetty --autologin cybr --noclear %I $TERM
-          AUTOLOGIN_EOF
-          
-          # Desktop launcher for Calamares (if desktop variant)
-          if [[ "$BUILD_VARIANT" != "minimal" ]]; then
-            mkdir -p /home/cybr/Desktop
-            cat > /home/cybr/Desktop/calamares.desktop << 'LAUNCHER_EOF'
-          [Desktop Entry]
-          Type=Application
-          Version=1.0
-          Name=Install Cybr Linux
-          Comment=Install the system to your computer
-          Icon=drive-harddisk
-          Exec=pkexec calamares
-          Terminal=false
-          StartupNotify=true
-          Categories=System;
-          X-KDE-SubstituteUID=true
-          LAUNCHER_EOF
-          
-          chmod +x /home/cybr/Desktop/calamares.desktop
-          chown cybr:cybr /home/cybr/Desktop/calamares.desktop
-          fi
-          
-          echo "User and installer setup completed"
-          USER_EOF
-          chmod +x config/hooks/normal/0300-user-setup.hook.chroot
-          
-          # User Experience Enhancement Hook
-          cat > config/hooks/normal/0320-ux-enhancements.hook.chroot << 'UX_EOF'
-          #!/bin/bash
-          set -e
-          
-          echo "Applying comprehensive user experience enhancements..."
-          
-          # Create desktop directories and shortcuts
-          mkdir -p /home/cybr/Desktop
-          mkdir -p /home/cybr/Documents/Guides
-          mkdir -p /home/cybr/Documents/Templates
-          
-          # Create beginner-friendly desktop shortcuts
-          cat > /home/cybr/Desktop/System_Information.desktop << 'SYSINFO_EOF'
-          [Desktop Entry]
-          Type=Application
-          Version=1.0
-          Name=System Information
-          Comment=View detailed system information
-          Icon=computer
-          Exec=kinfocenter
-          Terminal=false
-          Categories=System;
-          X-KDE-SubstituteUID=false
-          SYSINFO_EOF
-          
-          cat > /home/cybr/Desktop/Package_Manager.desktop << 'SYNAPTIC_EOF'
-          [Desktop Entry]
-          Type=Application
-          Version=1.0
-          Name=Package Manager
-          Comment=Install and remove software packages
-          Icon=synaptic
-          Exec=pkexec synaptic
-          Terminal=false
-          Categories=System;PackageManager;
-          X-KDE-SubstituteUID=true
-          SYNAPTIC_EOF
-          
-          cat > /home/cybr/Desktop/Firewall_Settings.desktop << 'FIREWALL_EOF'
-          [Desktop Entry]
-          Type=Application
-          Version=1.0
-          Name=Firewall Settings
-          Comment=Configure system firewall (beginner-friendly)
-          Icon=security-high
-          Exec=gufw
-          Terminal=false
-          Categories=System;Security;
-          X-KDE-SubstituteUID=false
-          FIREWALL_EOF
-          
-          cat > /home/cybr/Desktop/Disk_Usage.desktop << 'DISKUSAGE_EOF'
-          [Desktop Entry]
-          Type=Application
-          Version=1.0
-          Name=Disk Usage Analyzer
-          Comment=See what is taking up space on your computer
-          Icon=baobab
-          Exec=baobab
-          Terminal=false
-          Categories=System;Filesystem;
-          X-KDE-SubstituteUID=false
-          DISKUSAGE_EOF
-          
-          # Create comprehensive getting started guide
-          cat > /home/cybr/Desktop/Getting_Started_Guide.html << 'GUIDE_EOF'
-          <!DOCTYPE html>
-          <html>
-          <head>
-          <title>Cybr NextGen - Getting Started Guide</title>
-          <style>
-          body { font-family: Arial, sans-serif; margin: 40px; background-color: #f5f5f5; }
-          .container { max-width: 800px; margin: 0 auto; background-color: white; padding: 30px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
-          h1 { color: #2c3e50; border-bottom: 3px solid #3498db; padding-bottom: 10px; }
-          h2 { color: #34495e; margin-top: 30px; }
-          .section { margin: 20px 0; padding: 15px; background-color: #ecf0f1; border-radius: 5px; }
-          .tip { background-color: #d5f4e6; border-left: 4px solid #27ae60; padding: 15px; margin: 15px 0; }
-          .warning { background-color: #fdf2e9; border-left: 4px solid #f39c12; padding: 15px; margin: 15px 0; }
-          .command { background-color: #2c3e50; color: white; padding: 10px; border-radius: 3px; font-family: monospace; }
-          ul li { margin: 5px 0; }
-          a { color: #3498db; text-decoration: none; }
-          a:hover { text-decoration: underline; }
-          </style>
-          </head>
-          <body>
-          <div class="container">
-          <h1>Welcome to Cybr NextGen Security OS!</h1>
-          
-          <div class="section">
-          <h2>Quick Start - First 5 Minutes</h2>
-          <ol>
-          <li><strong>Connect to Internet:</strong> Click the network icon in the bottom-right corner</li>
-          <li><strong>Install to Hard Drive:</strong> Double-click "Install Cybr NextGen" on desktop</li>
-          <li><strong>Update System:</strong> Open terminal and run: <span class="command">sudo apt update && sudo apt upgrade</span></li>
-          <li><strong>Explore Desktop:</strong> Right-click anywhere to see options and menus</li>
-          </ol>
-          </div>
-          
-          <div class="section">
-          <h2>Essential Applications</h2>
-          <ul>
-          <li><strong>Web Browser:</strong> Firefox (pre-installed)</li>
-          <li><strong>File Manager:</strong> Dolphin (click folder icon)</li>
-          <li><strong>Terminal:</strong> Konsole (press Ctrl+Alt+T)</li>
-          <li><strong>Text Editor:</strong> Kate (like Notepad but better)</li>
-          <li><strong>Package Manager:</strong> Synaptic (install/remove software)</li>
-          <li><strong>System Monitor:</strong> See running programs and performance</li>
-          </ul>
-          </div>
-          
-          <div class="section">
-          <h2>Installing Security Tools</h2>
-          <div class="tip">
-          <strong>Good News!</strong> Cybr NextGen has access to thousands of security tools from Kali Linux repositories.
-          </div>
-          <p>To install security tools:</p>
-          <ol>
-          <li>Open terminal (Ctrl+Alt+T)</li>
-          <li>Update package lists: <span class="command">sudo apt update</span></li>
-          <li>Install desired tool: <span class="command">sudo apt install toolname</span></li>
-          </ol>
-          
-          <h3>Popular Tools for Beginners:</h3>
-          <ul>
-          <li><strong>nmap</strong> - Network scanner (find devices on network)</li>
-          <li><strong>wireshark</strong> - Network traffic analyzer</li>
-          <li><strong>nikto</strong> - Web vulnerability scanner</li>
-          <li><strong>john</strong> - Password security tester</li>
-          </ul>
-          </div>
-          
-          <div class="section">
-          <h2>Common Tasks Made Easy</h2>
-          
-          <h3>Managing Software</h3>
-          <p>Use the <strong>Package Manager</strong> (Synaptic) from your desktop - no command line needed!</p>
-          
-          <h3>System Updates</h3>
-          <p>Keep your system secure with regular updates:</p>
-          <p class="command">sudo apt update && sudo apt upgrade</p>
-          
-          <h3>Firewall Protection</h3>
-          <p>Your firewall is already configured! Use <strong>Firewall Settings</strong> from desktop to modify.</p>
-          
-          <h3>File Management</h3>
-          <p>Dolphin file manager works like Windows Explorer - drag, drop, copy, paste all work the same way.</p>
-          </div>
-          
-          <div class="warning">
-          <strong>Security Reminder:</strong> Always research tools before using them. Many security tools are powerful and should only be used on networks you own or have permission to test.
-          </div>
-          
-          <div class="section">
-          <h2>Getting Help</h2>
-          <ul>
-          <li><strong>KDE Help Center:</strong> Built-in help system (search in menu)</li>
-          <li><strong>Manual Pages:</strong> Type <span class="command">man commandname</span> in terminal</li>
-          <li><strong>Online Community:</strong> Debian and KDE communities are very helpful</li>
-          <li><strong>Tool Documentation:</strong> Most security tools have extensive documentation</li>
-          </ul>
-          </div>
-          
-          <div class="section">
-          <h2>Keyboard Shortcuts</h2>
-          <ul>
-          <li><strong>Ctrl+Alt+T:</strong> Open terminal</li>
-          <li><strong>Alt+F2:</strong> Run command dialog</li>
-          <li><strong>Alt+Tab:</strong> Switch between windows</li>
-          <li><strong>Super (Windows) Key:</strong> Open application launcher</li>
-          <li><strong>Ctrl+Alt+L:</strong> Lock screen</li>
-          <li><strong>Print Screen:</strong> Take screenshot</li>
-          </ul>
-          </div>
-          
-          <div class="tip">
-          <strong>New to Linux?</strong> Don't worry! Cybr NextGen is designed to be familiar. Most things work similar to Windows or Mac, but with more power and security.
-          </div>
-          
-          </div>
-          </body>
-          </html>
-          GUIDE_EOF
-          
-          # Create security tools quick reference
-          cat > /home/cybr/Documents/Guides/Security_Tools_Quick_Reference.txt << 'TOOLS_REF_EOF'
-          CYBR NEXTGEN - SECURITY TOOLS QUICK REFERENCE
-          ============================================
-          
-          NETWORK SCANNING:
-          -----------------
-          nmap -sn 192.168.1.0/24          # Find devices on network
-          nmap -sS -O target.com           # Scan ports and OS detection
-          nmap --script vuln target.com    # Vulnerability scan
-          
-          WEB SECURITY:
-          -------------
-          nikto -h http://target.com       # Web vulnerability scan
-          dirb http://target.com           # Find hidden directories
-          whatweb target.com               # Identify web technologies
-          
-          PASSWORD SECURITY:
-          ------------------
-          john --wordlist=/usr/share/wordlists/rockyou.txt hashes.txt
-          hydra -l admin -P passwords.txt ssh://target.com
-          
-          NETWORK ANALYSIS:
-          -----------------
-          wireshark                        # GUI network analyzer
-          tcpdump -i eth0                  # Command line packet capture
-          
-          WIRELESS SECURITY:
-          ------------------
-          airmon-ng start wlan0            # Enable monitor mode
-          airodump-ng wlan0mon             # Scan for wireless networks
-          
-          SYSTEM INFORMATION:
-          ------------------
-          nmap localhost                   # Scan your own system
-          ss -tuln                        # Show listening ports
-          ps aux                          # Show running processes
-          
-          REMEMBER:
-          - Always get permission before testing on networks you don't own
-          - Use these tools responsibly and legally
-          - Many tools have extensive help: toolname --help
-          - Read man pages: man toolname
-          TOOLS_REF_EOF
-          
-          # Configure KDE for better user experience with dark theme
-          mkdir -p /home/cybr/.config
-          
-          # Set up KDE desktop defaults with dark theme
-          cat > /home/cybr/.config/kdeglobals << 'KDE_CONFIG_EOF'
-          [General]
-          BrowserApplication=firefox.desktop
-          ColorScheme=BreezeDark
-          
-          [Colors:Button]
-          BackgroundAlternate=49,54,59
-          BackgroundNormal=49,54,59
-          DecorationFocus=61,174,233
-          DecorationHover=61,174,233
-          ForegroundActive=61,174,233
-          ForegroundInactive=161,169,177
-          ForegroundLink=41,128,185
-          ForegroundNegative=218,68,83
-          ForegroundNeutral=246,116,0
-          ForegroundNormal=252,252,252
-          ForegroundPositive=39,174,96
-          ForegroundVisited=127,140,141
-          
-          [Colors:Selection]
-          BackgroundAlternate=61,174,233
-          BackgroundNormal=61,174,233
-          DecorationFocus=61,174,233
-          DecorationHover=61,174,233
-          ForegroundActive=252,252,252
-          ForegroundInactive=252,252,252
-          ForegroundLink=252,252,252
-          ForegroundNegative=252,252,252
-          ForegroundNeutral=252,252,252
-          ForegroundNormal=252,252,252
-          ForegroundPositive=252,252,252
-          ForegroundVisited=252,252,252
-          
-          [Colors:Tooltip]
-          BackgroundAlternate=42,46,50
-          BackgroundNormal=42,46,50
-          DecorationFocus=61,174,233
-          DecorationHover=61,174,233
-          ForegroundActive=61,174,233
-          ForegroundInactive=161,169,177
-          ForegroundLink=41,128,185
-          ForegroundNegative=218,68,83
-          ForegroundNeutral=246,116,0
-          ForegroundNormal=252,252,252
-          ForegroundPositive=39,174,96
-          ForegroundVisited=127,140,141
-          
-          [Colors:View]
-          BackgroundAlternate=35,38,41
-          BackgroundNormal=35,38,41
-          DecorationFocus=61,174,233
-          DecorationHover=61,174,233
-          ForegroundActive=61,174,233
-          ForegroundInactive=161,169,177
-          ForegroundLink=41,128,185
-          ForegroundNegative=218,68,83
-          ForegroundNeutral=246,116,0
-          ForegroundNormal=252,252,252
-          ForegroundPositive=39,174,96
-          ForegroundVisited=127,140,141
-          
-          [Colors:Window]
-          BackgroundAlternate=49,54,59
-          BackgroundNormal=42,46,50
-          DecorationFocus=61,174,233
-          DecorationHover=61,174,233
-          ForegroundActive=61,174,233
-          ForegroundInactive=161,169,177
-          ForegroundLink=41,128,185
-          ForegroundNegative=218,68,83
-          ForegroundNeutral=246,116,0
-          ForegroundNormal=252,252,252
-          ForegroundPositive=39,174,96
-          ForegroundVisited=127,140,141
-          
-          [KDE]
-          SingleClick=false
-          
-          [WM]
-          activeBackground=42,46,50
-          activeBlend=252,252,252
-          activeForeground=252,252,252
-          inactiveBackground=42,46,50
-          inactiveBlend=161,169,177
-          inactiveForeground=161,169,177
-          KDE_CONFIG_EOF
-          
-          # Configure Plasma desktop settings for dark theme
-          mkdir -p /home/cybr/.config
-          cat > /home/cybr/.config/plasmarc << 'PLASMA_CONFIG_EOF'
-          [Theme]
-          name=breeze-dark
-          
-          [Wallpapers]
-          usersWallpapers=
-          PLASMA_CONFIG_EOF
-          
-          # Download and set cat background image from thecatapi
-          mkdir -p /home/cybr/Pictures/Wallpapers
-          
-          # Download cat image with proper error handling
-          echo "Downloading wallpaper from TheCatAPI..."
-          if curl -f -s "https://api.thecatapi.com/v1/images/search?size=full&mime_types=jpg&format=json&has_breeds=false&order=RANDOM&page=0&limit=1" -o /tmp/cat_api.json; then
-            CAT_URL=$(grep -o '"url":"[^"]*' /tmp/cat_api.json | cut -d'"' -f4 | head -1)
-            if [[ -n "$CAT_URL" ]] && wget -q --timeout=30 -O /home/cybr/Pictures/Wallpapers/cat_wallpaper.jpg "$CAT_URL"; then
-              echo "Successfully downloaded cat wallpaper from API"
-            else
-              echo "API download failed, using fallback image"
-              wget -q -O /home/cybr/Pictures/Wallpapers/cat_wallpaper.jpg "https://cdn2.thecatapi.com/images/0XYvRd7oD.jpg"
-            fi
-          else
-            echo "API unavailable, using fallback cat image"
-            wget -q -O /home/cybr/Pictures/Wallpapers/cat_wallpaper.jpg "https://cdn2.thecatapi.com/images/0XYvRd7oD.jpg"
-          fi
-          
-          # Ensure the wallpaper file exists and has proper permissions
-          if [[ -f /home/cybr/Pictures/Wallpapers/cat_wallpaper.jpg ]]; then
-            chmod 644 /home/cybr/Pictures/Wallpapers/cat_wallpaper.jpg
-            echo "Cat wallpaper ready: $(ls -lh /home/cybr/Pictures/Wallpapers/cat_wallpaper.jpg)"
-          else
-            echo "Warning: Could not set up cat wallpaper"
-          fi
-          
-          # Configure KDE Plasma wallpaper settings
-          mkdir -p /home/cybr/.config
-          cat > /home/cybr/.config/plasma-org.kde.plasma.desktop-appletsrc << 'WALLPAPER_CONFIG_EOF'
-          [ActionPlugins][0]
-          RightButton;NoModifier=org.kde.contextmenu
-          
-          [ActionPlugins][1]
-          RightButton;NoModifier=org.kde.contextmenu
-          
-          [Containments][1]
-          activityId=
-          formfactor=0
-          immutability=1
-          lastScreen=0
-          location=0
-          plugin=org.kde.plasma.folder
-          wallpaperplugin=org.kde.image
-          
-          [Containments][1][ConfigDialog]
-          DialogHeight=540
-          DialogWidth=720
-          
-          [Containments][1][Wallpaper][org.kde.image][General]
-          Image=file:///home/cybr/Pictures/Wallpapers/cat_wallpaper.jpg
-          SlidePaths=/home/cybr/Pictures/Wallpapers/
-          FillMode=2
-          WALLPAPER_CONFIG_EOF
-          
-          # Also set wallpaper via KDE's wallpaper configuration
-          mkdir -p /home/cybr/.local/share/wallpapers
-          if [[ -f /home/cybr/Pictures/Wallpapers/cat_wallpaper.jpg ]]; then
-            ln -sf /home/cybr/Pictures/Wallpapers/cat_wallpaper.jpg /home/cybr/.local/share/wallpapers/current_wallpaper.jpg
-          fi
-          
-          # Configure Firefox with custom homepage and dark theme
-          mkdir -p /home/cybr/.mozilla/firefox
-          mkdir -p /etc/firefox/policies
-          
-          # Create Firefox policies for organization-wide settings
-          cat > /etc/firefox/policies/policies.json << 'FIREFOX_POLICY_EOF'
-          {
-            "policies": {
-              "Homepage": {
-                "URL": "https://alphasearch.pages.dev",
-                "StartPage": "homepage"
-              },
-              "NewTabPage": false,
-              "SearchSuggestEnabled": true,
-              "DisableTelemetry": true,
-              "DisableFirefoxStudies": true,
-              "OfferToSaveLogins": false,
-              "PasswordManagerEnabled": false,
-              "Preferences": {
-                "browser.theme.dark-private-windows": false,
-                "ui.systemUsesDarkTheme": {
-                  "Value": 1,
-                  "Status": "default"
-                },
-                "devtools.theme": {
-                  "Value": "dark",
-                  "Status": "locked"
-                }
-              }
-            }
-          }
-          FIREFOX_POLICY_EOF
-          
-          # Create Firefox user.js for additional customization
-          cat > /home/cybr/.mozilla/firefox/user.js << 'FIREFOX_USERJS_EOF'
-          // Dark theme and privacy settings
-          user_pref("ui.systemUsesDarkTheme", 1);
-          user_pref("browser.in-content.dark-mode", true);
-          user_pref("devtools.theme", "dark");
-          user_pref("extensions.activeThemeID", "firefox-compact-dark@mozilla.org");
-          
-          // Homepage settings
-          user_pref("browser.startup.homepage", "https://alphasearch.pages.dev");
-          user_pref("browser.startup.page", 1);
-          user_pref("browser.newtabpage.enabled", false);
-          user_pref("browser.newtab.url", "https://alphasearch.pages.dev");
-          
-          // Privacy and security
-          user_pref("privacy.trackingprotection.enabled", true);
-          user_pref("dom.security.https_only_mode", true);
-          user_pref("network.cookie.sameSite.noneRequiresSecure", true);
-          FIREFOX_USERJS_EOF
-          
-          # Set SDDM to use dark theme
-          mkdir -p /etc/sddm.conf.d
-          cat > /etc/sddm.conf.d/theme.conf << 'SDDM_THEME_EOF'
-          [Theme]
-          Current=breeze
-          CursorTheme=breeze_cursors
-          
-          [General]
-          Numlock=on
-          SDDM_THEME_EOF
-          
-          # Configure Dolphin for Windows-like experience
-          mkdir -p /home/cybr/.config
-          cat > /home/cybr/.config/dolphinrc << 'DOLPHIN_CONFIG_EOF'
-          [General]
-          GlobalViewProps=true
-          ShowFullPath=true
-          
-          [MainWindow]
-          ToolBarsMovable=Disabled
-          
-          [PreviewSettings]
-          Plugins=directorythumbnail,imagethumbnail,jpegthumbnail
-          DOLPHIN_CONFIG_EOF
-          
-          # Make all desktop items executable
-          chmod +x /home/cybr/Desktop/*.desktop
-          
-          # Set proper ownership
-          chown -R cybr:cybr /home/cybr/
-          
-          echo "User experience enhancements applied successfully"
-          UX_EOF
-          chmod +x config/hooks/normal/0320-ux-enhancements.hook.chroot
-          
-          # Windows-like UI/UX Complete Overhaul Hook
-          cat > config/hooks/normal/0325-windows-ui-overhaul.hook.chroot << 'WINDOWS_UI_EOF'
-          #!/bin/bash
-          set -e
-          
-          echo "Applying Windows-like UI/UX complete overhaul..."
-          
-          # Configure Plasma Desktop for Windows 10/11-like experience
-          mkdir -p /home/cybr/.config
-          
-          # Plasma desktop configuration - Windows-like layout
-          cat > /home/cybr/.config/plasmarc << 'PLASMA_WIN_CONFIG_EOF'
-          [Theme]
-          name=breeze-dark
-          
-          [PlasmaViews][Panel 1][Defaults]
-          thickness=44
-          
-          [PlasmaViews][Panel 1][Horizontal1920]
-          thickness=44
-          PLASMA_WIN_CONFIG_EOF
-          
-          # Configure taskbar (panel) to look like Windows
-          cat > /home/cybr/.config/plasma-org.kde.plasma.desktop-appletsrc << 'PANEL_CONFIG_EOF'
-          [ActionPlugins][0]
-          RightButton;NoModifier=org.kde.contextmenu
-          
-          [ActionPlugins][1]
-          RightButton;NoModifier=org.kde.contextmenu
-          
-          [Containments][1]
-          activityId=
-          formfactor=0
-          immutability=1
-          lastScreen=0
-          location=0
-          plugin=org.kde.plasma.folder
-          wallpaperplugin=org.kde.image
-          
-          [Containments][1][ConfigDialog]
-          DialogHeight=540
-          DialogWidth=720
-          
-          [Containments][1][General]
-          ToolBoxButtonState=topcenter
-          ToolBoxButtonX=720
-          showToolbox=false
-          
-          [Containments][1][Wallpaper][org.kde.image][General]
-          Image=file:///home/cybr/Pictures/Wallpapers/cat_wallpaper.jpg
-          SlidePaths=/home/cybr/Pictures/Wallpapers/
-          FillMode=2
-          
-          [Containments][2]
-          activityId=
-          formfactor=2
-          immutability=1
-          lastScreen=0
-          location=4
-          plugin=org.kde.panel
-          wallpaperplugin=org.kde.image
-          
-          [Containments][2][Applets][3]
-          immutability=1
-          plugin=org.kde.plasma.kickoff
-          
-          [Containments][2][Applets][3][Configuration]
-          PreloadWeight=100
-          
-          [Containments][2][Applets][3][Configuration][General]
-          icon=start-here-kde
-          
-          [Containments][2][Applets][4]
-          immutability=1
-          plugin=org.kde.plasma.pager
-          
-          [Containments][2][Applets][5]
-          immutability=1
-          plugin=org.kde.plasma.icontasks
-          
-          [Containments][2][Applets][5][Configuration][General]
-          launchers=applications:org.kde.dolphin.desktop,applications:firefox-esr.desktop,applications:org.kde.konsole.desktop
-          
-          [Containments][2][Applets][6]
-          immutability=1
-          plugin=org.kde.plasma.marginsseparator
-          
-          [Containments][2][Applets][7]
-          immutability=1
-          plugin=org.kde.plasma.systemtray
-          
-          [Containments][2][Applets][7][Configuration]
-          PreloadWeight=100
-          SystrayContainmentId=8
-          
-          [Containments][2][Applets][9]
-          immutability=1
-          plugin=org.kde.plasma.digitalclock
-          
-          [Containments][2][Applets][9][Configuration]
-          PreloadWeight=0
-          
-          [Containments][2][Applets][9][Configuration][Appearance]
-          showDate=true
-          
-          [Containments][2][General]
-          AppletOrder=3,4,5,6,7,9
-          
-          [Containments][8]
-          activityId=
-          formfactor=2
-          immutability=1
-          lastScreen=0
-          location=4
-          plugin=org.kde.plasma.private.systemtray
-          wallpaperplugin=org.kde.image
-          
-          [Containments][8][Applets][10]
-          immutability=1
-          plugin=org.kde.plasma.notifications
-          
-          [Containments][8][Applets][11]
-          immutability=1
-          plugin=org.kde.plasma.devicenotifier
-          
-          [Containments][8][Applets][12]
-          immutability=1
-          plugin=org.kde.plasma.networkmanagement
-          
-          [Containments][8][Applets][13]
-          immutability=1
-          plugin=org.kde.plasma.audio
-          
-          [Containments][8][Applets][14]
-          immutability=1
-          plugin=org.kde.plasma.battery
-          
-          [Containments][8][Applets][15]
-          immutability=1
-          plugin=org.kde.plasma.bluetooth
-          
-          [Containments][8][General]
-          extraItems=org.kde.plasma.bluetooth,org.kde.plasma.battery,org.kde.plasma.clipboard,org.kde.plasma.devicenotifier,org.kde.plasma.manage-inputmethod,org.kde.plasma.mediacontroller,org.kde.plasma.notifications,org.kde.plasma.keyboardindicator,org.kde.plasma.networkmanagement,org.kde.plasma.audio,org.kde.plasma.printmanager,org.kde.kdeconnect
-          knownItems=org.kde.plasma.bluetooth,org.kde.plasma.battery,org.kde.plasma.clipboard,org.kde.plasma.devicenotifier,org.kde.plasma.manage-inputmethod,org.kde.plasma.mediacontroller,org.kde.plasma.notifications,org.kde.plasma.keyboardindicator,org.kde.plasma.networkmanagement,org.kde.plasma.audio,org.kde.plasma.printmanager,org.kde.kdeconnect
-          PANEL_CONFIG_EOF
-          
-          # Configure KDE to behave like Windows
-          cat > /home/cybr/.config/kdeglobals << 'WINDOWS_KDE_CONFIG_EOF'
-          [General]
-          BrowserApplication=firefox.desktop
-          ColorScheme=BreezeDark
-          Name=Breeze Dark
-          shadeSortColumn=true
-          
-          [Icons]
-          Theme=breeze-dark
-          
-          [KDE]
-          SingleClick=false
-          ShowDeleteCommand=true
-          
-          [KFileDialog Settings]
-          Allow Expansion=false
-          Automatically select filename extension=true
-          Breadcrumb Navigation=true
-          Decoration position=0
-          LocationCombo Completionmode=5
-          PathCombo Completionmode=5
-          Show Bookmarks=false
-          Show Full Path=true
-          Show Inline Previews=true
-          Show Preview=false
-          Show Speedbar=true
-          Show hidden files=false
-          Sort by=Name
-          Sort directories first=true
-          Sort reversed=false
-          Speedbar Width=138
-          View Style=DetailTree
-          
-          [PreviewSettings]
-          MaximumRemoteSize=0
-          
-          [WM]
-          activeBackground=42,46,50
-          activeBlend=252,252,252
-          activeForeground=252,252,252
-          inactiveBackground=42,46,50
-          inactiveBlend=161,169,177
-          inactiveForeground=161,169,177
-          WINDOWS_KDE_CONFIG_EOF
-          
-          # Configure Dolphin to behave like Windows File Explorer
-          mkdir -p /home/cybr/.config
-          cat > /home/cybr/.config/dolphinrc << 'DOLPHIN_WINDOWS_CONFIG_EOF'
-          [CreateDialog]
-          LastMimeType=application/x-zerosize
-          
-          [ExtractDialog]
-          DirHistory[$e]=$HOME/Downloads/,$HOME/Desktop/,$HOME/Documents/
-          
-          [General]
-          AutoExpandFolders=false
-          BrowseThroughArchives=true
-          ConfirmClosingMultipleTabs=true
-          EditableUrl=true
-          FilterBar=false
-          GlobalViewProps=false
-          HomeUrl=file:///home/cybr
-          OpenExternallyCalledFolderInNewTab=false
-          RememberOpenedTabs=true
-          RenameInline=true
-          ShowFullPath=true
-          ShowSelectionToggle=true
-          ShowSpaceInfo=true
-          ShowToolTips=true
-          ShowZoomSlider=true
-          SplitView=false
-          UseTabForSwitchingSplitView=false
-          Version=202
-          ViewPropsTimestamp=2023,1,1,0,0,0
-          
-          [IconsMode]
-          PreviewSize=64
-          
-          [KFileDialog Settings]
-          Places Icons Auto-resize=false
-          Places Icons Static Size=22
-          
-          [MainWindow]
-          MenuBar=Disabled
-          ToolBarsMovable=Disabled
-          
-          [PlacesPanel]
-          IconSize=22
-          
-          [PreviewSettings]
-          Plugins=appimagethumbnail,audiothumbnail,comicbookthumbnail,cursorthumbnail,djvuthumbnail,ebookthumbnail,exrthumbnail,directorythumbnail,fontthumbnail,imagethumbnail,jpegthumbnail,kraorathumbnail,windowsexethumbnail,windowsimagethumbnail,mobithumbnail,opendocumentthumbnail,gsthumbnail,rawthumbnail,svgthumbnail,textthumbnail,ffmpegthumbnail
-          
-          [Search]
-          Location=Everywhere
-          
-          [VersionControl]
-          enabledPlugins=Git,Bazaar,Mercurial,Subversion
-          DOLPHIN_WINDOWS_CONFIG_EOF
-          
-          # Configure window decorations and effects for modern Windows look
-          cat > /home/cybr/.config/kwinrc << 'KWIN_CONFIG_EOF'
-          [Compositing]
-          AnimationSpeed=3
-          Enabled=true
-          GLCore=false
-          GLPlatformInterface=glx
-          GLTextureFilter=1
-          HiddenPreviews=5
-          OpenGLIsUnsafe=false
-          WindowsBlockCompositing=true
-          XRenderSmoothScale=false
-          
-          [Desktops]
-          Id_1=d5c3b4e0-c093-4c27-9a97-a5bc026d11f2
-          Name_1=Desktop 1
-          Number=1
-          Rows=1
-          
-          [Effect-Blur]
-          BlurStrength=5
-          NoiseStrength=0
-          
-          [Effect-DesktopGrid]
-          ZoomDuration=300
-          
-          [Effect-Glide]
-          Duration=350
-          InDistance=100
-          InRotationAngle=1
-          OutDistance=100
-          OutRotationAngle=5
-          
-          [Effect-MagicLamp]
-          AnimationDuration=300
-          
-          [Effect-PresentWindows]
-          BorderActivate=9
-          BorderActivateAll=7
-          
-          [Effect-Slide]
-          Duration=300
-          HorizontalGap=0
-          SlideBackground=false
-          VerticalGap=0
-          
-          [Effect-Wobbly]
-          AdvancedMode=false
-          Drag=85
-          Stiffness=10
-          WobblynessLevel=1
-          
-          [Effects]
-          blurEnabled=true
-          desktopgridEnabled=true
-          glideEnabled=true
-          highlightwindowEnabled=true
-          kwin4_effect_fadeEnabled=true
-          kwin4_effect_translucencyEnabled=true
-          magiclampEnabled=true
-          presentwindowsEnabled=true
-          slideEnabled=true
-          wobblywindowsEnabled=false
-          
-          [MouseBindings]
-          CommandTitlebar1=Raise
-          CommandTitlebar2=Start window tab drag
-          CommandTitlebar3=Operations menu
-          
-          [Plugins]
-          blurEnabled=true
-          contrastEnabled=true
-          kwin4_effect_fadeEnabled=true
-          kwin4_effect_scaleEnabled=true
-          
-          [Windows]
-          AutoRaise=false
-          ClickRaise=true
-          DelayFocusInterval=300
-          FocusPolicy=ClickToFocus
-          FocusStealingPreventionLevel=1
-          GeometryTip=false
-          HideUtilityWindowsForInactive=true
-          Placement=Centered
-          SeparateScreenFocus=false
-          ShadeHover=false
-          ShadeHoverInterval=250
-          SnapOnlyWhenOverlapping=false
-          TitlebarDoubleClickCommand=Maximize
-          
-          [org.kde.kdecoration2]
-          BorderSize=Normal
-          ButtonsOnLeft=XIA
-          ButtonsOnRight=
-          CloseOnDoubleClickOnMenu=true
-          library=org.kde.breeze
-          theme=Breeze
-          KWIN_CONFIG_EOF
-          
-          # Create Windows-like start menu configuration
-          cat > /home/cybr/.config/kickoffrc << 'KICKOFF_CONFIG_EOF'
-          [Favorites]
-          FavoriteApps=firefox-esr.desktop,org.kde.dolphin.desktop,org.kde.konsole.desktop,org.kde.kate.desktop,synaptic.desktop
-          
-          [General]
-          Icon=start-here-kde
-          SwitchTabsOnHover=true
-          KICKOFF_CONFIG_EOF
-          
-          # Configure shortcuts to match Windows
-          mkdir -p /home/cybr/.config
-          cat > /home/cybr/.config/kglobalshortcutsrc << 'SHORTCUTS_EOF'
-          [kwin]
-          Switch Window Down=Meta+Down,Meta+Down,Switch to Window Below
-          Switch Window Left=Meta+Left,Meta+Left,Switch to Window to the Left  
-          Switch Window Right=Meta+Right,Meta+Right,Switch to Window to the Right
-          Switch Window Up=Meta+Up,Meta+Up,Switch to Window Above
-          Switch to Desktop 1=Ctrl+F1,Ctrl+F1,Switch to Desktop 1
-          Switch to Desktop 2=Ctrl+F2,Ctrl+F2,Switch to Desktop 2
-          Switch to Desktop 3=Ctrl+F3,Ctrl+F3,Switch to Desktop 3
-          Switch to Desktop 4=Ctrl+F4,Ctrl+F4,Switch to Desktop 4
-          Walk Through Windows=Alt+Tab,Alt+Tab,Walk Through Windows
-          Walk Through Windows (Reverse)=Alt+Shift+Tab,Alt+Shift+Backtab,Walk Through Windows (Reverse)
-          Window Close=Alt+F4,Alt+F4,Close Window
-          Window Maximize=Meta+Up,Meta+Up,Maximize Window
-          Window Minimize=Meta+Down,Meta+Down,Minimize Window
-          Show Desktop=Meta+D,Meta+D,Show Desktop
-          
-          [plasmashell]
-          activate task manager entry 1=Meta+1,Meta+1,Activate Task Manager Entry 1
-          activate task manager entry 2=Meta+2,Meta+2,Activate Task Manager Entry 2
-          activate task manager entry 3=Meta+3,Meta+3,Activate Task Manager Entry 3
-          activate task manager entry 4=Meta+4,Meta+4,Activate Task Manager Entry 4
-          activate task manager entry 5=Meta+5,Meta+5,Activate Task Manager Entry 5
-          show-on-mouse-pos=Meta,Meta,Show Applications Menu
-          SHORTCUTS_EOF
-          
-          # Create enhanced desktop with Windows-like icons
-          mkdir -p /home/cybr/Desktop
-          
-          # This PC equivalent
-          cat > /home/cybr/Desktop/Computer.desktop << 'COMPUTER_EOF'
-          [Desktop Entry]
-          Type=Link
-          URL=computer:/
-          Icon=computer
-          Name=This Computer
-          Name[en_US]=This Computer
-          COMPUTER_EOF
-          
-          # Control Panel equivalent
-          cat > /home/cybr/Desktop/Settings.desktop << 'SETTINGS_EOF'
-          [Desktop Entry]
-          Type=Application
-          Version=1.0
-          Name=System Settings
-          Comment=Configure your system
-          Icon=preferences-system
-          Exec=systemsettings5
-          Terminal=false
-          Categories=Settings;
-          X-KDE-SubstituteUID=false
-          SETTINGS_EOF
-          
-          # Task Manager equivalent
-          cat > /home/cybr/Desktop/Task_Manager.desktop << 'TASK_MANAGER_EOF'
-          [Desktop Entry]
-          Type=Application
-          Version=1.0
-          Name=Task Manager
-          Comment=Monitor system processes and performance
-          Icon=ksysguard
-          Exec=plasma-systemmonitor
-          Terminal=false
-          Categories=System;Monitor;
-          X-KDE-SubstituteUID=false
-          TASK_MANAGER_EOF
-          
-          # Recycle Bin equivalent
-          cat > /home/cybr/Desktop/Trash.desktop << 'TRASH_EOF'
-          [Desktop Entry]
-          Type=Link
-          URL=trash:/
-          Icon=user-trash-full
-          Name=Recycle Bin
-          Name[en_US]=Recycle Bin
-          TRASH_EOF
-          
-          # Create Windows-like folder structure
-          mkdir -p /home/cybr/Documents
-          mkdir -p /home/cybr/Downloads
-          mkdir -p /home/cybr/Pictures
-          mkdir -p /home/cybr/Videos
-          mkdir -p /home/cybr/Music
-          mkdir -p /home/cybr/Desktop
-          
-          # Make all desktop items executable and set ownership
-          chmod +x /home/cybr/Desktop/*.desktop
-          chown -R cybr:cybr /home/cybr/
-          
-          echo "Windows-like UI/UX overhaul completed successfully"
-          WINDOWS_UI_EOF
-          chmod +x config/hooks/normal/0325-windows-ui-overhaul.hook.chroot
-          
-          # Ultimate Multi-OS UI Fusion - The Most Beautiful Desktop Ever
-          cat > config/hooks/normal/0327-ultimate-ui-fusion.hook.chroot << 'ULTIMATE_UI_EOF'
-          #!/bin/bash
-          set -e
-          
-          echo "Applying Ultimate Multi-OS UI Fusion - Creating the most beautiful desktop experience..."
-          
-          # Configure Plank dock as macOS-style alternative (since latte-dock unavailable)
-          mkdir -p /home/cybr/.config/plank/dock1/launchers
-          cat > /home/cybr/.config/plank/dock1/settings << 'PLANK_CONFIG_EOF'
-          [PlankDockPreferences]
-          Alignment=center
-          AutoPinning=true
-          CurrentWorkspace=true
-          DockItems=dolphin.dockitem;;firefox-esr.dockitem;;konsole.dockitem;;kate.dockitem
-          HideDelay=500
-          HideMode=window-dodge
-          IconSize=48
-          InnerStroke=true
-          LockItems=false
-          MonitorNumber=0
-          Offset=0
-          OuterStroke=false
-          Position=bottom
-          PressureReveal=false
-          ShowDockItem=false
-          Theme=Gtk+
-          UnhideDelay=0
-          ZoomEnabled=true
-          ZoomPercent=150
-          PLANK_CONFIG_EOF
-          
-          # Create desktop launchers for Plank dock
-          cat > /home/cybr/.config/plank/dock1/launchers/dolphin.dockitem << 'DOLPHIN_DOCK_EOF'
-          [PlankDockItemPreferences]
-          Launcher=file:///usr/share/applications/org.kde.dolphin.desktop
-          DOLPHIN_DOCK_EOF
-          
-          cat > /home/cybr/.config/plank/dock1/launchers/firefox-esr.dockitem << 'FIREFOX_DOCK_EOF'
-          [PlankDockItemPreferences]
-          Launcher=file:///usr/share/applications/firefox-esr.desktop
-          FIREFOX_DOCK_EOF
-          
-          cat > /home/cybr/.config/plank/dock1/launchers/konsole.dockitem << 'KONSOLE_DOCK_EOF'
-          [PlankDockItemPreferences]
-          Launcher=file:///usr/share/applications/org.kde.konsole.desktop
-          KONSOLE_DOCK_EOF
-          
-          # Configure available visual effects (removing unavailable packages)
-          cat > /home/cybr/.config/kwinrc << 'ULTIMATE_KWIN_CONFIG_EOF'
-          [Compositing]
-          AnimationSpeed=2
-          Backend=OpenGL
-          Enabled=true
-          GLCore=true
-          GLPlatformInterface=glx
-          GLTextureFilter=2
-          HiddenPreviews=6
-          OpenGLIsUnsafe=false
-          WindowsBlockCompositing=false
-          XRenderSmoothScale=true
-          
-          [Desktops]
-          Id_1=d5c3b4e0-c093-4c27-9a97-a5bc026d11f2
-          Id_2=d5c3b4e0-c093-4c27-9a97-a5bc026d11f3
-          Id_3=d5c3b4e0-c093-4c27-9a97-a5bc026d11f4
-          Id_4=d5c3b4e0-c093-4c27-9a97-a5bc026d11f5
-          Name_1=Desktop
-          Name_2=Work
-          Name_3=Games
-          Name_4=Media
-          Number=4
-          Rows=1
-          
-          [Effect-Blur]
-          BlurStrength=8
-          NoiseStrength=2
-          
-          [Effect-DesktopGrid]
-          BorderWidth=10
-          DesktopLayoutMode=0
-          PresentationMode=0
-          ZoomDuration=200
-          
-          [Effect-Glide]
-          Duration=250
-          InDistance=100
-          InOpacity=0.1
-          InRotationAngle=15
-          InRotationEdge=2
-          OutDistance=100
-          OutOpacity=0.1
-          OutRotationAngle=5
-          OutRotationEdge=2
-          
-          [Effect-MagicLamp]
-          AnimationDuration=200
-          
-          [Effect-PresentWindows]
-          Accuracy=1
-          BorderActivate=9
-          BorderActivateAll=7
-          BorderActivateClass=9
-          FillGaps=true
-          IgnoreMinimized=true
-          LayoutMode=0
-          LeftButtonWindow=1
-          MiddleButtonDesktop=1
-          MiddleButtonWindow=2
-          RightButtonDesktop=1
-          RightButtonWindow=3
-          ShowPanel=false
-          
-          [Effect-Slide]
-          Duration=200
-          HorizontalGap=0
-          SlideBackground=true
-          VerticalGap=0
-          
-          [Effect-Wobbly]
-          AdvancedMode=true
-          Drag=92
-          MoveFactor=15
-          ResizeFactor=10
-          Stiffness=8
-          WobblynessLevel=2
-          
-          [Effect-Zoom]
-          InitialZoom=1
-          
-          [Effects]
-          blurEnabled=true
-          contrastEnabled=true
-          desktopgridEnabled=true
-          diminactiveEnabled=true
-          glideEnabled=true
-          highlightwindowEnabled=true
-          kwin4_effect_fadeEnabled=true
-          kwin4_effect_maximizeEnabled=true
-          kwin4_effect_scaleEnabled=true
-          kwin4_effect_squashEnabled=true
-          kwin4_effect_translucencyEnabled=true
-          magiclampEnabled=true
-          minimizeanimationEnabled=true
-          presentwindowsEnabled=true
-          slideEnabled=true
-          slidebackEnabled=true
-          snaphelperEnabled=true
-          wobblywindowsEnabled=true
-          zoomEnabled=true
-          
-          [MouseBindings]
-          CommandAll1=Move
-          CommandAll2=Toggle raise and lower
-          CommandAll3=Resize
-          CommandAllKey=Meta
-          CommandAllWheel=Nothing
-          CommandInactiveTitlebar1=Activate and raise
-          CommandInactiveTitlebar2=Nothing
-          CommandInactiveTitlebar3=Operations menu
-          CommandTitlebar1=Raise
-          CommandTitlebar2=Start window tab drag
-          CommandTitlebar3=Operations menu
-          CommandTitlebarWheel=Switch to Window Tab to the Left/Right
-          CommandWindow1=Activate, raise and pass click
-          CommandWindow2=Activate and pass click
-          CommandWindow3=Activate and pass click
-          CommandWindowWheel=Scroll
-          
-          [Plugins]
-          blurEnabled=true
-          contrastEnabled=true
-          desktopchangeosdEnabled=true
-          highlightwindowEnabled=true
-          kwin4_effect_dimscreenEnabled=true
-          kwin4_effect_fadeEnabled=true
-          kwin4_effect_maximizeEnabled=true
-          kwin4_effect_scaleEnabled=true
-          kwin4_effect_translucencyEnabled=true
-          minimizeanimationEnabled=true
-          slideEnabled=true
-          wobblywindowsEnabled=true
-          
-          [Windows]
-          AutoRaise=false
-          AutoRaiseInterval=750
-          BorderSnapZone=10
-          CenterSnapZone=0
-          ClickRaise=true
-          DelayFocusInterval=300
-          ElectricBorderCooldown=350
-          ElectricBorderCornerRatio=0.25
-          ElectricBorderDelay=150
-          ElectricBorderMaximize=true
-          ElectricBorderTiling=true
-          ElectricBorders=1
-          FocusPolicy=ClickToFocus
-          FocusStealingPreventionLevel=1
-          GeometryTip=true
-          HideUtilityWindowsForInactive=true
-          MaximizeButtonLeftClickCommand=Maximize
-          MaximizeButtonMiddleClickCommand=Maximize (vertical only)
-          MaximizeButtonRightClickCommand=Maximize (horizontal only)
-          Placement=Centered
-          SeparateScreenFocus=false
-          ShadeHover=false
-          ShadeHoverInterval=250
-          SnapOnlyWhenOverlapping=false
-          TitlebarDoubleClickCommand=Maximize
-          WindowSnapZone=10
-          
-          [org.kde.kdecoration2]
-          BorderSize=Normal
-          BorderSizeAuto=false
-          ButtonsOnLeft=XIA
-          ButtonsOnRight=
-          CloseOnDoubleClickOnMenu=true
-          library=org.kde.breeze
-          theme=Breeze
-          ULTIMATE_KWIN_CONFIG_EOF
-          
-          # Create iOS-style control center widget
-          mkdir -p /home/cybr/.local/share/plasma/plasmoids/org.kde.controlcenter
-          cat > /home/cybr/.local/share/plasma/plasmoids/org.kde.controlcenter/metadata.desktop << 'CONTROL_CENTER_EOF'
-          [Desktop Entry]
-          Name=Control Center
-          Comment=iOS-style quick settings panel
-          Type=Service
-          Icon=preferences-system
-          X-KDE-ServiceTypes=Plasma/Applet
-          X-Plasma-API=declarativeappletscript
-          X-Plasma-MainScript=ui/main.qml
-          X-KDE-PluginInfo-Author=Cybr Team
-          X-KDE-PluginInfo-Category=System Information
-          X-KDE-PluginInfo-Name=org.kde.controlcenter
-          X-KDE-PluginInfo-Version=1.0
-          CONTROL_CENTER_EOF
-          
-          # Configure Kvantum theme for ultra-modern look
-          mkdir -p /home/cybr/.config/Kvantum
-          cat > /home/cybr/.config/Kvantum/kvantum.kvconfig << 'KVANTUM_CONFIG_EOF'
-          [General]
-          theme=KvArcDark
-          
-          [Applications]
-          dolphin=KvArcDark
-          kate=KvArcDark
-          konsole=KvArcDark
-          firefox=KvArcDark
-          KVANTUM_CONFIG_EOF
-          
-          # Create Android-style notification system
-          cat > /home/cybr/.config/plasmanotifyrc << 'NOTIFY_CONFIG_EOF'
-          [Applications][plasma_workspace]
-          Seen=true
-          
-          [Notifications]
-          NormalColor=64,69,82
-          PopupPosition=TopRight
-          ShowPopups=true
-          
-          [PopupNotifications]
-          HideOnMouseOver=false
-          Timeout=5000
-          NOTIFY_CONFIG_EOF
-          
-          # Configure autostart for Plank dock (replaces latte-dock)
-          mkdir -p /home/cybr/.config/autostart
-          cat > /home/cybr/.config/autostart/plank.desktop << 'PLANK_AUTOSTART_EOF'
-          [Desktop Entry]
-          Type=Application
-          Name=Plank Dock
-          Comment=macOS-style dock
-          Icon=plank
-          Exec=plank
-          Terminal=false
-          Categories=Utility;
-          StartupNotify=false
-          NoDisplay=true
-          X-GNOME-Autostart-enabled=true
-          PLANK_AUTOSTART_EOF
-          
-          # Create Windows 11-style rounded corners and transparency
-          cat > /home/cybr/.config/picom.conf << 'PICOM_CONFIG_EOF'
-          # Picom configuration for ultimate eye candy
-          
-          # Shadows
-          shadow = true;
-          shadow-radius = 12;
-          shadow-offset-x = -15;
-          shadow-offset-y = -15;
-          shadow-opacity = 0.75;
-          
-          shadow-exclude = [
-            "name = 'Notification'", 
-            "class_g = 'Conky'", 
-            "class_g ?= 'Notify-osd'",
-            "class_g = 'Cairo-clock'",
-            "_GTK_FRAME_EXTENTS@:c"
-          ];
-          
-          # Opacity
-          inactive-opacity = 0.95;
-          active-opacity = 1.0;
-          frame-opacity = 1.0;
-          inactive-opacity-override = false;
-          
-          # Blur
-          blur-background = true;
-          blur-background-frame = true;
-          blur-method = "dual_kawase";
-          blur-strength = 8;
-          blur-background-exclude = [
-            "window_type = 'dock'",
-            "window_type = 'desktop'",
-            "_GTK_FRAME_EXTENTS@:c"
-          ];
-          
-          # Fading
-          fading = true;
-          fade-delta = 5;
-          fade-in-step = 0.03;
-          fade-out-step = 0.03;
-          
-          # Corners (Windows 11 style)
-          corner-radius = 12;
-          rounded-corners-exclude = [
-            "window_type = 'dock'",
-            "window_type = 'desktop'"
-          ];
-          
-          # Animations and transitions
-          transition-length = 200;
-          transition-pow-x = 0.99;
-          transition-pow-y = 0.99;
-          transition-pow-w = 0.99;
-          transition-pow-h = 0.99;
-          
-          # Backend
-          backend = "glx";
-          vsync = true;
-          mark-wmwin-focused = true;
-          mark-ovredir-focused = true;
-          detect-rounded-corners = true;
-          detect-client-opacity = true;
-          use-ewmh-active-win = true;
-          unredir-if-possible = false;
-          detect-transient = true;
-          detect-client-leader = true;
-          PICOM_CONFIG_EOF
-          
-          # Create macOS-style spotlight search
-          cat > /home/cybr/Desktop/Spotlight.desktop << 'SPOTLIGHT_EOF'
-          [Desktop Entry]
-          Type=Application
-          Version=1.0
-          Name=Spotlight Search
-          Comment=macOS-style universal search
-          Icon=system-search
-          Exec=krunner
-          Terminal=false
-          Categories=System;
-          X-KDE-SubstituteUID=false
-          SPOTLIGHT_EOF
-          
-          # Configure GNOME 40+ style overview
-          cat > /home/cybr/.config/kwinrc.activities << 'ACTIVITIES_CONFIG_EOF'
-          [Activities]
-          current=d5c3b4e0-c093-4c27-9a97-a5bc026d11f2
-          
-          [Effect-Overview]
-          BorderActivate=9
-          TouchBorderActivate=9
-          BlurBackground=true
-          GridLayoutMode=0
-          ACTIVITIES_CONFIG_EOF
-          
-          # Create Ubuntu Unity-style HUD
-          mkdir -p /home/cybr/.local/share/kservices5
-          cat > /home/cybr/.local/share/kservices5/krunner_unity_hud.desktop << 'UNITY_HUD_EOF'
-          [Desktop Entry]
-          Name=Unity HUD
-          Comment=Ubuntu Unity-style heads-up display
-          Icon=unity
-          Type=Service
-          X-KDE-ServiceTypes=Plasma/Runner
-          X-KDE-Library=krunner_unity_hud
-          X-KDE-PluginInfo-Name=unity_hud
-          X-KDE-PluginInfo-Version=1.0
-          UNITY_HUD_EOF
-          
-          # Remove Conky configuration (package availability varies)
-          # System monitoring handled by built-in KDE tools instead
-          
-          # Create simple system monitor desktop widget (using available tools)
-          cat > /home/cybr/Desktop/System_Monitor.desktop << 'SYSMON_EOF'
-          [Desktop Entry]
-          Type=Application
-          Version=1.0
-          Name=System Monitor
-          Comment=Monitor system performance
-          Icon=ksysguard
-          Exec=plasma-systemmonitor
-          Terminal=false
-          Categories=System;Monitor;
-          X-KDE-SubstituteUID=false
-          SYSMON_EOF
-          
-          # Create dynamic wallpaper system (like macOS Mojave+)
-          cat > /usr/local/bin/dynamic-wallpaper << 'DYNAMIC_WALL_EOF'
-          #!/bin/bash
-          
-          WALLPAPER_DIR="/home/cybr/Pictures/Wallpapers"
-          
-          while true; do
-              HOUR=$(date +%H)
-              
-              if [ "$HOUR" -ge 6 ] && [ "$HOUR" -lt 18 ]; then
-                  # Daytime - fetch a bright cat image
-                  curl -s "https://api.thecatapi.com/v1/images/search?size=full&mime_types=jpg&category_ids=5" | grep -o '"url":"[^"]*' | cut -d'"' -f4 | head -1 | xargs wget -q -O "$WALLPAPER_DIR/current_wallpaper.jpg"
-              else
-                  # Nighttime - fetch a calm cat image
-                  curl -s "https://api.thecatapi.com/v1/images/search?size=full&mime_types=jpg&category_ids=1" | grep -o '"url":"[^"]*' | cut -d'"' -f4 | head -1 | xargs wget -q -O "$WALLPAPER_DIR/current_wallpaper.jpg"
-              fi
-              
-              # Update wallpaper
-              qdbus org.kde.plasmashell /PlasmaShell org.kde.PlasmaShell.evaluateScript "
-                  var allDesktops = desktops();
-                  for (i=0;i<allDesktops.length;i++) {
-                      d = allDesktops[i];
-                      d.wallpaperPlugin = 'org.kde.image';
-                      d.currentConfigGroup = Array('Wallpaper', 'org.kde.image', 'General');
-                      d.writeConfig('Image', 'file://$WALLPAPER_DIR/current_wallpaper.jpg');
-                  }
-              "
-              
-              # Wait 1 hour before next change
-              sleep 3600
-          done
-          DYNAMIC_WALL_EOF
-          chmod +x /usr/local/bin/dynamic-wallpaper
-          
-          # Setup ultimate performance optimizations
-          cat > /etc/sysctl.d/99-ultimate-performance.conf << 'PERF_CONFIG_EOF'
-          # Ultimate performance tweaks for smooth UI
-          vm.swappiness=10
-          vm.dirty_ratio=15
-          vm.dirty_background_ratio=5
-          vm.vfs_cache_pressure=50
-          kernel.sched_migration_cost_ns=500000
-          kernel.sched_latency_ns=10000000
-          kernel.sched_min_granularity_ns=1000000
-          kernel.sched_wakeup_granularity_ns=2000000
-          PERF_CONFIG_EOF
-          
-          # Set proper ownership for all configuration files
-          chown -R cybr:cybr /home/cybr/
-          chmod +x /home/cybr/Desktop/*.desktop
-          
-          echo "Ultimate Multi-OS UI Fusion completed - Welcome to the most beautiful Linux desktop ever created!"
-          ULTIMATE_UI_EOF
-          chmod +x config/hooks/normal/0327-ultimate-ui-fusion.hook.chroot
-          
-          # Auto-launch help system and setup wizard
-          cat > config/hooks/normal/0330-welcome-system.hook.chroot << 'WELCOME_EOF'
-          #!/bin/bash
-          set -e
-          
-          echo "Setting up welcome system and auto-launch features..."
-          
-          # Create welcome script that runs on first login
-          cat > /usr/local/bin/cybr-welcome << 'WELCOME_SCRIPT_EOF'
-          #!/bin/bash
-          
-          WELCOME_FLAG="/home/$USER/.config/cybr-welcome-shown"
-          
-          # Only show welcome on first login
-          if [ ! -f "$WELCOME_FLAG" ]; then
-            # Show welcome message
-            kdialog --title "Welcome to Cybr Linux!" \
-                    --msgbox "Welcome to Cybr Linux!\n\nThis system is designed to be user-friendly for all skill levels.\n\nKey features:\n• Pre-configured security tools\n• Beginner-friendly interface\n• Comprehensive documentation\n• One-click installation to hard drive\n\nClick OK to see the Getting Started Guide." \
-                    --geometry 500x300
+        USER builder
+        WORKDIR /home/builder
+
+        # Set up environment
+        ENV PATH="/opt/depot_tools:$PATH"
+        RUN git config --global user.name "MidnightOS Builder" \
+            && git config --global user.email "christopher.fox@wolfos.uk" \
+            && git config --global color.ui auto
+
+        # Create working directories
+        RUN mkdir -p /home/builder/{chromeos-build,artifacts,branding,logs,themes}
+
+        # Build script
+        COPY build.sh /home/builder/build.sh
+        RUN chmod +x /home/builder/build.sh
+
+        CMD ["/home/builder/build.sh"]
+        EOF
+
+        # Create comprehensive build script with midnight theme
+        cat > docker-build/build.sh << 'EOF'
+        #!/bin/bash
+        set -e
+
+        export BOARD="amd64-generic"
+        export PATH="/opt/depot_tools:$PATH"
+
+        echo "=== Generating MidnightOS Dark UI Assets ==="
+        cd /home/builder/branding
+
+        # Create midnight color scheme
+        MIDNIGHT_PRIMARY="#0F0F0F"
+        MIDNIGHT_SECONDARY="#1A1A1A"
+        MIDNIGHT_ACCENT="#6366F1"
+        MIDNIGHT_TEXT="#E5E5E5"
+        MIDNIGHT_SURFACE="#121212"
+
+        # Generate main logo (800x200) - Midnight theme
+        convert -size 800x200 xc:"$MIDNIGHT_PRIMARY" \
+          -fill "$MIDNIGHT_TEXT" -font "Roboto-Bold" -pointsize 48 \
+          -gravity center -annotate +0-10 "MidnightOS" \
+          -fill "$MIDNIGHT_ACCENT" -font "Roboto-Light" -pointsize 20 \
+          -gravity center -annotate +0+25 "MIDNIGHT EDITION" \
+          midnight-logo.png
+
+        # Generate boot splash (1920x1080) - Gradient midnight theme
+        convert -size 1920x1080 gradient:"$MIDNIGHT_PRIMARY"-"$MIDNIGHT_SECONDARY" \
+          \( -size 400x400 xc:transparent \
+             -fill "$MIDNIGHT_ACCENT" -draw "circle 200,200 200,100" \
+             -blur 0x50 \) -gravity center -composite \
+          -fill "$MIDNIGHT_TEXT" -font "Roboto-Thin" -pointsize 64 \
+          -gravity center -annotate +0-80 "MidnightOS" \
+          -fill "$MIDNIGHT_ACCENT" -font "Roboto-Light" -pointsize 24 \
+          -gravity center -annotate +0-20 "Dark • Modern • Private" \
+          -fill "$MIDNIGHT_TEXT" -font "Roboto-Regular" -pointsize 16 \
+          -gravity center -annotate +0+40 "ChromeOS reimagined for the night" \
+          boot-splash.png
+
+        # Generate modern icons with midnight theme
+        mkdir -p icons
+        for size in 16 32 48 64 128 256; do
+          convert -size ${size}x${size} xc:"$MIDNIGHT_SURFACE" \
+            -fill "$MIDNIGHT_ACCENT" -draw "roundrectangle 2,2 $((size-2)),$((size-2)) 4,4" \
+            -fill "$MIDNIGHT_TEXT" -font "Roboto-Bold" -pointsize $((size/3)) \
+            -gravity center -annotate +0+0 "M" \
+            icons/midnight-${size}.png
+        done
+
+        # Generate wallpaper collection
+        mkdir -p wallpapers
+
+        # Main midnight wallpaper
+        convert -size 1920x1080 gradient:"$MIDNIGHT_PRIMARY"-"$MIDNIGHT_SECONDARY" \
+          \( -size 1920x1080 xc:transparent \
+             -fill "$MIDNIGHT_ACCENT" -draw "circle 1500,200 1600,100" \
+             -blur 0x100 -channel A -evaluate multiply 0.3 +channel \) -composite \
+          \( -size 1920x1080 xc:transparent \
+             -fill "$MIDNIGHT_TEXT" -draw "circle 400,800 500,700" \
+             -blur 0x80 -channel A -evaluate multiply 0.1 +channel \) -composite \
+          wallpapers/midnight-default.jpg
+
+        # Abstract geometric wallpaper
+        convert -size 1920x1080 xc:"$MIDNIGHT_PRIMARY" \
+          \( -size 1920x1080 xc:transparent \
+             -fill "$MIDNIGHT_ACCENT" -draw "polygon 0,0 600,0 300,400" \
+             -blur 0x40 -channel A -evaluate multiply 0.4 +channel \) -composite \
+          \( -size 1920x1080 xc:transparent \
+             -fill "$MIDNIGHT_SECONDARY" -draw "polygon 1920,1080 1320,1080 1620,680" \
+             -blur 0x60 -channel A -evaluate multiply 0.6 +channel \) -composite \
+          wallpapers/midnight-geometric.jpg
+
+        # Minimalist dots wallpaper
+        convert -size 1920x1080 xc:"$MIDNIGHT_SURFACE" \
+          -fill "$MIDNIGHT_ACCENT" -draw "circle 960,340 980,320" \
+          -fill "$MIDNIGHT_TEXT" -draw "circle 960,540 970,530" \
+          -fill "$MIDNIGHT_ACCENT" -draw "circle 960,740 975,725" \
+          -blur 0x2 \
+          wallpapers/midnight-minimal.jpg
+
+        # Create extensive theme configuration
+        mkdir -p config themes
+
+        cat > config/midnight-branding.conf << 'BEOF'
+        [branding]
+        name=MidnightOS
+        full_name=MidnightOS Midnight Edition
+        version=1.0
+        description=Dark ChromeOS Distribution with Modern UI
+        homepage=https://sourceforge.net/projects/midnightos/
+        support_url=https://sourceforge.net/projects/midnightos/support
+
+        [theme]
+        theme_name=midnight
+        primary_color=#0F0F0F
+        secondary_color=#1A1A1A
+        accent_color=#6366F1
+        text_color=#E5E5E5
+        surface_color=#121212
+        error_color=#EF4444
+        warning_color=#F59E0B
+        success_color=#10B981
+        info_color=#3B82F6
+
+        [appearance]
+        dark_mode=true
+        auto_dark_web_content=true
+        material_you=true
+        dynamic_colors=true
+        font_family=Roboto
+        logo_path=midnight-logo.png
+        wallpaper_collection=wallpapers/
+        icon_theme=midnight
+        BEOF
+
+        cat > config/midnight-customizations.json << 'BEOF'
+        {
+          "system_name": "MidnightOS",
+          "theme_name": "Midnight Edition",
+          "welcome_message": "Welcome to MidnightOS - ChromeOS reimagined for the night",
+          "startup_sound": true,
+          "boot_animation": "midnight",
+          "default_wallpaper": "wallpapers/midnight-default.jpg",
+          "wallpaper_rotation": true,
+          "telemetry_disabled": true,
+          "crash_reporting": false,
+          "usage_stats": false,
+          "dark_mode": {
+            "enabled": true,
+            "force_dark_web_content": true,
+            "auto_dark_mode": true,
+            "dark_scrollbars": true
+          },
+          "ui_customizations": {
+            "theme": "midnight",
+            "shelf_style": "floating",
+            "shelf_color": "#121212",
+            "shelf_transparency": 0.95,
+            "status_area_color": "#E5E5E5",
+            "window_frame_color": "#1A1A1A",
+            "accent_color": "#6366F1",
+            "corner_radius": 12,
+            "blur_effects": true,
+            "animations": "enhanced",
+            "material_you": true,
+            "dynamic_colors": true
+          },
+          "chrome_flags": [
+            "--force-dark-mode",
+            "--enable-features=WebUIDarkMode,ChromeRefresh2023",
+            "--dark-mode-settings",
+            "--enable-blink-features=CSSColorSchemeUARendering"
+          ]
+        }
+        BEOF
+
+        # Create Material Design 3 theme files
+        cat > themes/material-midnight.css << 'BEOF'
+        /* MidnightOS Material Design 3 Theme */
+        :root {
+          --md-sys-color-primary: #6366F1;
+          --md-sys-color-on-primary: #FFFFFF;
+          --md-sys-color-primary-container: #1E1B4B;
+          --md-sys-color-on-primary-container: #E5E7EB;
+          --md-sys-color-secondary: #A855F7;
+          --md-sys-color-on-secondary: #FFFFFF;
+          --md-sys-color-secondary-container: #581C87;
+          --md-sys-color-on-secondary-container: #F3E8FF;
+          --md-sys-color-surface: #0F0F0F;
+          --md-sys-color-on-surface: #E5E5E5;
+          --md-sys-color-surface-variant: #1A1A1A;
+          --md-sys-color-on-surface-variant: #D1D5DB;
+          --md-sys-color-background: #0F0F0F;
+          --md-sys-color-on-background: #E5E5E5;
+          --md-sys-color-error: #EF4444;
+          --md-sys-color-on-error: #FFFFFF;
+        }
+
+        /* Midnight UI Components */
+        .midnight-card {
+          background: var(--md-sys-color-surface-variant);
+          border-radius: 12px;
+          box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.3);
+          backdrop-filter: blur(10px);
+        }
+
+        .midnight-button {
+          background: var(--md-sys-color-primary);
+          color: var(--md-sys-color-on-primary);
+          border-radius: 24px;
+          padding: 12px 24px;
+          border: none;
+          transition: all 0.2s ease;
+        }
+
+        .midnight-button:hover {
+          transform: translateY(-1px);
+          box-shadow: 0 6px 8px -2px rgba(99, 102, 241, 0.4);
+        }
+        BEOF
+
+        echo "=== Setting up OpenFyde overlay ==="
+        # Clone OpenFyde overlay for amd64
+        git clone https://github.com/openFyde/overlay-amd64-openfyde.git src/private-overlays/overlay-amd64-openfyde
+        git clone https://github.com/openFyde/chromiumos-overlay.git src/private-overlays/overlay-openfyde
+
+        # Clone additional UI/UX overlays and themes
+        echo "=== Setting up UI/UX overlays ==="
+        # Create custom UI overlay structure
+        mkdir -p src/private-overlays/overlay-midnight-ui/chromeos-base/{chromeos-chrome,chromeos-assets}
+
+        echo "=== Initializing ChromiumOS repository ==="
+        cd /home/builder/chromeos-build
+
+        echo "Initializing ChromiumOS repository..."
+        repo init -u https://chromium.googlesource.com/chromiumos/manifest.git \
+          --repo-url https://chromium.googlesource.com/external/repo.git \
+          -g minilayout 2>&1 | tee /home/builder/logs/repo-init.log
+
+        echo "Syncing ChromiumOS source..."
+        repo sync -c -j$(nproc) --force-sync --no-clone-bundle 2>&1 | tee /home/builder/logs/repo-sync.log
+
+        echo "=== Applying MidnightOS UI/UX customizations ==="
+        # Create MidnightOS overlay that extends OpenFyde with dark UI
+        mkdir -p src/private-overlays/overlay-midnightos/chromeos-base/chromeos-branding
+
+        # Copy branding assets
+        cp -r /home/builder/branding/* src/platform2/chromeos-base/chromeos-branding/files/ 2>/dev/null || true
+
+        # Create custom branding ebuild with midnight theme
+        cat > src/private-overlays/overlay-midnightos/chromeos-base/chromeos-branding/chromeos-branding-9999.ebuild << 'BEOF'
+        # Copyright 2025 MidnightOS Project
+        # Distributed under the terms of the GNU General Public License v2
+
+        EAPI=7
+        inherit cros-workon
+
+        CROS_WORKON_PROJECT="chromiumos/platform2"
+        CROS_WORKON_LOCALNAME="platform2"
+        CROS_WORKON_SUBTREE="chromeos-branding"
+
+        DESCRIPTION="MidnightOS ChromeOS branding - Dark UI/UX without telemetry"
+        HOMEPAGE="https://sourceforge.net/projects/midnightos/"
+
+        LICENSE="BSD-Google"
+        KEYWORDS="*"
+        SLOT="0"
+
+        RDEPEND="chromeos-base/chromeos-assets
+                 media-fonts/roboto"
+
+        src_install() {
+            # Install branding assets
+            insinto /usr/share/chromeos-assets/images
+            doins "${S}"/files/midnight-logo.png
+            doins "${S}"/files/boot-splash.png
+
+            # Install wallpaper collection
+            insinto /usr/share/chromeos-assets/wallpapers
+            doins "${S}"/files/wallpapers/*.jpg
+
+            # Install Chrome branding
+            insinto /opt/google/chrome
+            newins "${S}"/files/midnight-logo.png product_logo.png
+
+            # Install icons
+            insinto /usr/share/pixmaps
+            doins "${S}"/files/icons/midnight-*.png
+
+            # Install theme files
+            insinto /usr/share/chromeos-assets/themes
+            doins "${S}"/files/themes/material-midnight.css
             
-            # Open getting started guide
-            if [ -f "/home/$USER/Desktop/Getting_Started_Guide.html" ]; then
-                firefox "/home/$USER/Desktop/Getting_Started_Guide.html" &
-            fi
+            # Install UI configuration
+            insinto /etc/chrome
+            newins "${S}"/files/config/midnight-customizations.json ui-config.json
             
-            # Create flag file
-            mkdir -p "/home/$USER/.config"
-            touch "$WELCOME_FLAG"
-          fi
-          WELCOME_SCRIPT_EOF
-          chmod +x /usr/local/bin/cybr-welcome
-          
-          # Create autostart directory and desktop entry
-          mkdir -p /home/cybr/.config/autostart
-          cat > /home/cybr/.config/autostart/cybr-welcome.desktop << 'AUTOSTART_EOF'
-          [Desktop Entry]
-          Type=Application
-          Name=Cybr Welcome
-          Exec=/usr/local/bin/cybr-welcome
-          Hidden=false
-          NoDisplay=false
-          X-GNOME-Autostart-enabled=true
-          AUTOSTART_EOF
-          
-          # Create context-sensitive help system
-          cat > /usr/local/bin/cybr-help << 'HELP_SCRIPT_EOF'
-          #!/bin/bash
-          
-          case "$1" in
-            "security")
-                kdialog --title "Security Tools Help" \
-                        --textbox "/home/cybr/Documents/Guides/Security_Tools_Quick_Reference.txt" 600 400
-                ;;
-            "installation")
-                kdialog --title "Installation Help" \
-                        --msgbox "To install Cybr NextGen to your hard drive:\n\n1. Double-click 'Install Cybr NextGen' on desktop\n2. Follow the step-by-step installer\n3. Choose your language and keyboard\n4. Select installation disk\n5. Create user account\n6. Wait for installation to complete\n\nThe installer is designed to be simple and safe!" \
-                        --geometry 500x300
-                ;;
-            "networking")
-                kdialog --title "Network Help" \
-                        --msgbox "Connecting to Networks:\n\n• WiFi: Click network icon in taskbar\n• Ethernet: Usually connects automatically\n• VPN: Use Network Manager settings\n\nFirewall is pre-configured for safety.\nUse 'Firewall Settings' from desktop to modify." \
-                        --geometry 400x250
-                ;;
-            *)
-                kdialog --title "Cybr NextGen Help" \
-                        --msgbox "Cybr NextGen Help System\n\nChoose help topic:\n\n• Installation: cybr-help installation\n• Security Tools: cybr-help security\n• Networking: cybr-help networking\n\nOr open the Getting Started Guide from desktop." \
-                        --geometry 400x200
-                ;;
-          esac
-          HELP_SCRIPT_EOF
-          chmod +x /usr/local/bin/cybr-help
-          
-          # Create help launcher on desktop
-          cat > /home/cybr/Desktop/Help_System.desktop << 'HELP_DESKTOP_EOF'
-          [Desktop Entry]
-          Type=Application
-          Version=1.0
-          Name=Help System
-          Comment=Get help with using Cybr NextGen
-          Icon=help-contents
-          Exec=/usr/local/bin/cybr-help
-          Terminal=false
-          Categories=System;Documentation;
-          X-KDE-SubstituteUID=false
-          HELP_DESKTOP_EOF
-          chmod +x /home/cybr/Desktop/Help_System.desktop
-          
-          # Set ownership
-          chown -R cybr:cybr /home/cybr/.config/
-          chown cybr:cybr /home/cybr/Desktop/Help_System.desktop
-          
-          echo "Welcome system configured successfully"
-          WELCOME_EOF
-          chmod +x config/hooks/normal/0330-welcome-system.hook.chroot
-          
-          # Final system cleanup hook (conditional on disk space)
-          cat > config/hooks/normal/9999-cleanup.hook.chroot << 'CLEANUP_EOF'
-          #!/bin/bash
-          set -e
-          
-          echo "Checking disk space before cleanup..."
-          
-          # Get available disk space in GB
-          AVAILABLE_GB=$(df / | tail -1 | awk '{printf "%.0f", $4/1024/1024}')
-          echo "Available disk space: ${AVAILABLE_GB}GB"
-          
-          # Only perform cleanup if less than 25GB available
-          if [ "$AVAILABLE_GB" -lt 25 ]; then
-            echo "Less than 25GB available, performing cleanup..."
+            # Force dark mode configuration
+            insinto /etc/chrome/policies/managed
+            doins "${FILESDIR}"/midnight-dark-mode.json
             
-            # Clean package cache
-            apt-get autoremove --purge -y
-            apt-get autoclean
-            apt-get clean
-            
-            # Clear logs and temporary files
-            find /var/log -type f -exec truncate -s 0 {} \;
-            rm -rf /tmp/* /var/tmp/*
-            rm -rf /var/cache/apt/archives/*.deb
-            
-            # Clear bash history
-            rm -f /root/.bash_history
-            rm -f /home/*/.bash_history
-            
-            # Remove SSH host keys (will be regenerated on first boot)
-            rm -f /etc/ssh/ssh_host_*
-            
-            echo "System cleanup completed"
-          else
-            echo "Sufficient disk space available, skipping cleanup"
-          fi
-          CLEANUP_EOF
-          chmod +x config/hooks/normal/9999-cleanup.hook.chroot
-          
-          # Calamares configuration for installer
-          if [[ "$BUILD_VARIANT" != "minimal" ]]; then
-            cat > config/hooks/normal/0400-calamares.hook.chroot << 'CALAMARES_EOF'
-          #!/bin/bash
-          set -e
-          
-          echo "Configuring Calamares installer..."
-          
-          # Ensure Calamares is installed
-          apt-get update
-          apt-get install -y calamares
-          
-          # Create Calamares configuration directory
-          mkdir -p /etc/calamares
-          
-          # Main settings configuration
-          cat > /etc/calamares/settings.conf << 'CAL_SETTINGS_EOF'
-          modules-search: [ local ]
-          
-          instances:
-          - id:       rootfs
-            module:   unpackfs
-            config:   unpackfs_rootfs.conf
-          
-          sequence:
-          - show:
-            - welcome
-            - locale
-            - keyboard
-            - partition
-            - users
-            - summary
-          - exec:
-            - partition
-            - mount
-            - unpackfs@rootfs
-            - machineid
-            - fstab
-            - locale
-            - keyboard
-            - localecfg
-            - users
-            - removeuser
-            - displaymanager
-            - networkcfg
-            - hwclock
-            - services-systemd
-            - bootloader
-            - umount
-          - show:
-            - finished
-          
-          branding: cybr
-          prompt-install: false
-          dont-chroot: false
-          oem-setup: false
-          disable-cancel: false
-          disable-cancel-during-exec: false
-          hide-back-and-next-during-exec: false
-          quit-at-end: false
-          CAL_SETTINGS_EOF
-          
-          # Create branding configuration
-          mkdir -p /etc/calamares/branding/cybr
-          cat > /etc/calamares/branding/cybr/branding.desc << 'BRAND_DESC_EOF'
-          componentName:  cybr
-          
-          strings:
-              productName:         "Cybr Linux"
-              shortProductName:    "Cybr"
-              version:             "1.0"
-              shortVersion:        "1.0"
-              versionedName:       "Cybr Linux 1.0"
-              shortVersionedName:  "Cybr 1.0"
-              bootloaderEntryName: "Cybr Linux"
-              productUrl:          "https://wolfos.pages.dev/"
-              supportUrl:          "https://wolfos.pages.dev/support"
-              knownIssuesUrl:      "https://wolfos.pages.dev/issues"
-              releaseNotesUrl:     "https://wolfos.pages.dev/releases"
-          
-          images:
-              productLogo:         "logo.png"
-              productIcon:         "logo.png"
-              productWelcome:      "welcome.png"
-          
-          style:
-             sidebarBackground:    "#1d99f3"
-             sidebarText:          "#ffffff"
-             sidebarTextSelect:    "#4d4d4d"
-             sidebarTextCurrent:   "#292929"
-          BRAND_DESC_EOF
-          
-          # Configure display manager module
-          cat > /etc/calamares/modules/displaymanager.conf << 'DM_CONF_EOF'
-          displaymanagers:
-            - sddm
-            - gdm
-            - lightdm
-          
-          basicSetup: false
-          sysconfigSetup: false
-          SDDM_CONFIG_FILE: "/etc/sddm.conf"
-          DM_CONF_EOF
-          
-          # Configure unpackfs module
-          cat > /etc/calamares/modules/unpackfs_rootfs.conf << 'UNPACK_EOF'
-          unpack:
-              -   source: "/run/live/medium/live/filesystem.squashfs"
-                  sourcefs: "squashfs"
-                  destination: ""
-          UNPACK_EOF
-          
-          echo "Calamares configured successfully"
-          CALAMARES_EOF
-          chmod +x config/hooks/normal/0400-calamares.hook.chroot
-          fi
-          
-          # Build the ISO with proper error handling
-          echo "════════════════════════════════════════"
-          echo "        EXECUTING LIVE-BUILD           "
-          echo "════════════════════════════════════════"
-          
-          # Start the build process with timeout protection
-          if timeout 7200 lb build 2>&1 | tee build.log; then
-            echo "Live-build completed successfully"
-          else
-            BUILD_EXIT_CODE=$?
-            echo "Live-build failed with exit code: $BUILD_EXIT_CODE"
-            
-            # Show the last 50 lines of the build log for debugging
-            echo "Last 50 lines of build log:"
-            tail -n 50 build.log || echo "Could not read build log"
-            
-            # Check for common build failures
-            if grep -q "No space left on device" build.log; then
-              echo "ERROR: Build failed due to insufficient disk space"
-            elif grep -q "Package .* has no installation candidate" build.log; then
-              echo "ERROR: Build failed due to missing packages"
-            elif grep -q "404\|Connection refused" build.log; then
-              echo "ERROR: Build failed due to network/repository issues"
-            fi
-            
-            exit 1
-          fi
-          
-          # Find the generated ISO file
-          ISO_PATH=""
-          if [ -f *.iso ]; then
-            ISO_PATH=$(ls -1 *.iso | head -1)
-          elif [ -f live-image-*.iso ]; then
-            ISO_PATH=$(ls -1 live-image-*.iso | head -1)
-          elif [ -f binary.iso ]; then
-            ISO_PATH="binary.iso"
-          fi
-          
-          if [[ -n "$ISO_PATH" && -f "$ISO_PATH" ]]; then
-            echo "Moving ISO from $ISO_PATH to /build/${ISO_NAME}.iso"
-            mv "$ISO_PATH" "/build/${ISO_NAME}.iso"
-            
-            # Verify the ISO file
-            ISO_SIZE=$(stat -c%s "/build/${ISO_NAME}.iso")
-            ISO_SIZE_MB=$((ISO_SIZE / 1024 / 1024))
-            
-            echo "════════════════════════════════════════"
-            echo "          BUILD COMPLETED               "
-            echo "════════════════════════════════════════"
-            echo "ISO File: ${ISO_NAME}.iso"
-            echo "Size: ${ISO_SIZE_MB} MB (${ISO_SIZE} bytes)"
-            echo "Location: /build/${ISO_NAME}.iso"
-            
-            # Generate build summary
-            cat > /build/BUILD_SUMMARY.txt << BUILD_SUMMARY_EOF
-          Cybr NextGen Build Summary
-          ==========================
-          Build Date: $(date -u)
-          Build Variant: $BUILD_VARIANT
-          Build Version: $BUILD_VERSION
-          ISO Name: ${ISO_NAME}.iso
-          ISO Size: ${ISO_SIZE_MB} MB
-          ISO Location: /build/${ISO_NAME}.iso
-          
-          Features Included:
-          - Base: Debian Bookworm
-          - Desktop: KDE Plasma + SDDM
-          - Installer: Calamares
-          - Security: Kali Linux repositories available
-          - Network: NetworkManager + UFW firewall
-          - Custom branding: Cybr NextGen theme
-          
-          Build completed successfully!
-          BUILD_SUMMARY_EOF
-            
-            ls -lah "/build/${ISO_NAME}.iso"
-            echo "Build summary saved to /build/BUILD_SUMMARY.txt"
-            
-          else
-            echo "ERROR: ISO file not found after build completion"
-            echo "Looking for ISO files in current directory:"
-            find . -name "*.iso" -type f -ls || echo "No ISO files found"
-            echo "Directory contents:"
-            ls -la
-            exit 1
-          fi
-          BUILD_EOF
-          chmod +x scripts/build-debian-iso.sh
+            # Disable telemetry services
+            insinto /etc/init
+            newins "${FILESDIR}"/no-telemetry.conf telemetry.override
+        }
+        BEOF
 
-      - name: "Execute ISO Build"
-        run: |
-          echo "Starting Debian-based ISO build process..."
-          
-          docker run --rm \
-            --privileged \
-            -v $PWD:/build \
-            -e BUILD_VARIANT="${{ github.event.inputs.build_variant || 'standard' }}" \
-            -e BUILD_VERSION="${{ env.BUILD_VERSION }}" \
-            -e ISO_NAME="${{ env.ISO_NAME }}" \
-            cybr-debian-builder:${{ needs.validate.outputs.build_hash }} \
-            ./scripts/build-debian-iso.sh
+        # Create dark mode policy file
+        mkdir -p files
+        cat > files/midnight-dark-mode.json << 'BEOF'
+        {
+          "BrowserThemeColor": "#0F0F0F",
+          "PolicyRefreshRate": 3600000,
+          "DefaultBrowserSettingEnabled": false,
+          "AutoDarkModeEnabled": true,
+          "ForceDarkModeEnabled": true,
+          "DarkModeEnabled": true,
+          "NTPCustomBackgroundEnabled": false,
+          "WallpaperImage": "/usr/share/chromeos-assets/wallpapers/midnight-default.jpg"
+        }
+        BEOF
 
-      - name: "Validate ISO Build"
-        id: iso-info
-        run: |
-          ISO_FILE="${{ env.ISO_NAME }}.iso"
-          
-          if [[ ! -f "$ISO_FILE" ]]; then
-            echo "ERROR: ISO file not found: $ISO_FILE"
-            exit 1
-          fi
-          
-          # Get ISO information
-          SIZE=$(stat -c%s "$ISO_FILE")
-          SIZE_MB=$(( SIZE / 1024 / 1024 ))
-          SHA256=$(sha256sum "$ISO_FILE" | cut -d' ' -f1)
-          
-          echo "size=$SIZE" >> $GITHUB_OUTPUT
-          echo "sha256=$SHA256" >> $GITHUB_OUTPUT
-          
-          echo "┌─────────────────────────────────────────┐"
-          echo "│            ISO BUILD SUMMARY            │"
-          echo "├─────────────────────────────────────────┤"
-          echo "│ File:      $ISO_FILE"
-          echo "│ Size:      ${SIZE_MB} MB (${SIZE} bytes)"
-          echo "│ SHA256:    $SHA256"
-          echo "│ Status:    ✅ Build Successful"
-          echo "└─────────────────────────────────────────┘"
+        # Create midnight UI overlay profile
+        mkdir -p src/private-overlays/overlay-midnightos/profiles/base
+        cat > src/private-overlays/overlay-midnightos/profiles/base/make.defaults << 'BEOF'
+        # MidnightOS Profile
+        # Inherit OpenFyde optimizations
+        USE="${USE} openfyde_board-amd64-openfyde"
+        # Hardware support from OpenFyde
+        USE="${USE} intel_graphics intel_audio"
+        # Enhanced UI/UX features
+        USE="${USE} linux_apps android_apps crostini"
+        USE="${USE} dark_mode material_design wayland"
+        USE="${USE} chrome_internal chrome_media vaapi"
+        # Advanced UI features
+        USE="${USE} vulkan opengl compositor blur_effects"
+        USE="${USE} fonts truetype roboto material_icons"
+        # Disable telemetry components
+        USE="${USE} -metrics_collection -crash_reporter -feedback -uma"
+        USE="${USE} -debugd -crash_sender -anomaly_detector"
+        # MidnightOS device ID and branding
+        CHROMEOS_DEVICE_ID="midnightos-amd64"
+        CHROMEOS_METRICS_ENABLED=0
+        MIDNIGHT_THEME=1
+        BEOF
 
-      - name: "Set Build Status"
-        id: build-status
-        run: |
-          if [[ "${{ github.event.inputs.force_fail }}" == "true" ]]; then
-            echo "success=false" >> $GITHUB_OUTPUT
-            echo "⚠️ Build artificially failed due to force_fail=true"
-            exit 1
-          else
-            echo "success=true" >> $GITHUB_OUTPUT
-            echo "✅ Build completed successfully"
-          fi
+        # Create comprehensive build configuration
+        cat > midnight-build.conf << 'BEOF'
+        USE="minimal -debug -test -autotest -cros_host -profiling"
+        # Keep essential services but remove bloat
+        USE="${USE} -cellular -ml_service -arc -android_container_pi"
+        # Enable UI/UX features
+        USE="${USE} chrome chromeos-base/chromeos-chrome midnightos-branding"
+        USE="${USE} dark_mode material_design wayland compositor"
+        USE="${USE} vulkan opengl blur_effects animations"
+        USE="${USE} fonts truetype roboto material_icons"
+        # OpenFyde hardware compatibility
+        USE="${USE} openfyde_board-amd64-openfyde intel_graphics intel_audio"
+        USE="${USE} linux_apps android_apps crostini bluetooth wifi"
+        USE="${USE} drm_atomic intel_hd_graphics baytrail_audio"
+        USE="${USE} vaapi chrome_media v4l2_codec"
+        # Audio/Video enhancements
+        USE="${USE} cras pulseaudio alsa"
+        # Disable telemetry
+        USE="${USE} -metrics_collection -crash_reporter -feedback -uma"
+        USE="${USE} -crash_sender -anomaly_detector -diagnostics"
+        FEATURES="-test"
+        CHROMEOS_VERSION_STRING="MidnightOS"
+        CHROMEOS_VERSION_DESCRIPTION="MidnightOS - Dark ChromeOS with Modern UI (OpenFyde Base)"
+        CHROMEOS_DEVICE_ID="midnightos-amd64"
+        CHROMEOS_METRICS_ENABLED=0
+        CHROMEOS_CRASH_REPORTING=0
+        MIDNIGHT_THEME=1
+        MATERIAL_DESIGN_3=1
+        BEOF
 
-      - name: "Upload ISO Artifact"
-        uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: "${{ env.ISO_NAME }}"
-          path: "${{ env.ISO_NAME }}.iso"
-          retention-days: 7
-          compression-level: 0
+        # Create telemetry override files
+        cat > files/no-telemetry.conf << 'BEOF'
+        # MidnightOS Telemetry Override - Disable all telemetry services
+        description "Disable telemetry services for privacy"
+        author "MidnightOS Project"
 
-  # ============================================================================
-  #                              UPLOAD JOB
-  # ============================================================================
-  upload:
-    name: "Upload to SourceForge"
-    runs-on: ubuntu-latest
-    needs: [validate, build]
-    if: |
-      needs.build.outputs.build_success == 'true' && 
-      github.event.inputs.skip_upload != 'true' &&
-      (github.event_name == 'workflow_dispatch' || github.ref == 'refs/heads/main')
-    timeout-minutes: 30
+        # Override any telemetry-related services
+        manual
+        stop on started boot-services
+        BEOF
 
-    steps:
-      - name: "Download ISO Artifact"
-        uses: actions/download-artifact@v4
-        with:
-          name: "${{ env.ISO_NAME }}"
+        echo "=== Building MidnightOS with Dark UI ==="
+        # Set up build environment with OpenFyde board
+        echo "Setting up build environment with OpenFyde and UI support..."
+        cros_sdk --enter --cmd="setup_board --board=${BOARD} --force" 2>&1 | tee /home/builder/logs/setup-board.log
 
-      - name: "Install Upload Dependencies"
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y sshpass rsync
-
-      - name: "Upload to SourceForge"
-        env:
-          SF_USER: ${{ secrets.SF_USER }}
-          SF_PASS: ${{ secrets.SF_PASS }}
-        run: |
-          if [[ -z "$SF_USER" || -z "$SF_PASS" ]]; then
-            echo "❌ SourceForge credentials not configured"
-            exit 1
-          fi
+        # Build OpenFyde packages first for compatibility
+        echo "Building OpenFyde base packages..."
+        cros_sdk --enter --cmd="
+          export BOARD=${BOARD}
+          export CHROMEOS_DEVICE_ID='midnightos-amd64'
+          export MIDNIGHT_THEME=1
           
-          ISO_FILE="${{ env.ISO_NAME }}.iso"
-          REMOTE_PATH="/home/frs/project/wolfos/$ISO_FILE"
+          # Build OpenFyde base components
+          emerge-${BOARD} --quiet-build chromeos-base/device-appid
+          emerge-${BOARD} --quiet-build chromeos-base/amd64-openfyde-spec || true
+          emerge-${BOARD} --quiet-build media-libs/lpe-support-blacklist || true
           
-          echo "Uploading $ISO_FILE to SourceForge..."
+          # Build UI/theme packages
+          emerge-${BOARD} --quiet-build media-fonts/roboto
+          emerge-${BOARD} --quiet-build x11-themes/gtk-engines || true
+        " 2>&1 | tee /home/builder/logs/build-openfyde-base.log
+
+        # Build packages with dark UI and telemetry disabled
+        echo "Building MidnightOS packages with dark UI and privacy features..."
+        cros_sdk --enter --cmd="
+          export BOARD=${BOARD}
+          export USE='minimal -debug -test -autotest -cros_host -profiling -cellular -ml_service -arc -android_container_pi chrome chromeos-base/chromeos-chrome midnightos-branding dark_mode material_design wayland compositor vulkan opengl blur_effects animations fonts truetype roboto material_icons openfyde_board-amd64-openfyde intel_graphics intel_audio linux_apps android_apps crostini bluetooth wifi drm_atomic intel_hd_graphics baytrail_audio vaapi chrome_media v4l2_codec cras pulseaudio alsa -metrics_collection -crash_reporter -feedback -uma -crash_sender -anomaly_detector -diagnostics'
+          export FEATURES='-test'
+          export CHROMEOS_VERSION_STRING='MidnightOS'
+          export CHROMEOS_VERSION_DESCRIPTION='MidnightOS - Dark ChromeOS with Modern UI (OpenFyde Base)'
+          export CHROMEOS_DEVICE_ID='midnightos-amd64'
+          export CHROMEOS_METRICS_ENABLED=0
+          export CHROMEOS_CRASH_REPORTING=0
+          export MIDNIGHT_THEME=1
+          export MATERIAL_DESIGN_3=1
           
-          for i in {1..3}; do
-            if timeout 1800 sshpass -p "$SF_PASS" \
-              rsync -avP --progress \
-              -e "ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null" \
-              "./$ISO_FILE" \
-              "$SF_USER@frs.sourceforge.net:$REMOTE_PATH"; then
-              echo "✅ Upload completed successfully"
-              break
-            elif [[ $i -eq 3 ]]; then
-              echo "❌ Upload failed after 3 attempts"
-              exit 1
-            else
-              echo "⚠️ Upload attempt $i failed, retrying..."
-              sleep 30
+          emerge-${BOARD} --quiet-build chromeos-base/chromeos-branding
+          build_packages --board=${BOARD} --nowithautotest --nowithtest --nowithfactory
+        " 2>&1 | tee /home/builder/logs/build-packages.log
+
+        # Build system image with dark theme optimizations
+        echo "Building MidnightOS system image with dark UI..."
+        cros_sdk --enter --cmd="
+          export BOARD=${BOARD}
+          export CHROMEOS_METRICS_ENABLED=0
+          export CHROMEOS_CRASH_REPORTING=0
+          export CHROMEOS_DEVICE_ID='midnightos-amd64'
+          export MIDNIGHT_THEME=1
+          build_image --board=${BOARD} --noenable_rootfs_verification --boot_args='cros_secure cros_debug systemd.log_level=warning quiet intel_pstate=disable dark_mode=1' dev
+        " 2>&1 | tee /home/builder/logs/build-image.log
+
+        # Create USB image with dark theme
+        echo "Creating USB installation image with MidnightOS theme..."
+        cros_sdk --enter --cmd="
+          export BOARD=${BOARD}
+          export CHROMEOS_METRICS_ENABLED=0
+          export CHROMEOS_DEVICE_ID='midnightos-amd64'
+          export MIDNIGHT_THEME=1
+          mod_image_for_test.sh --board=${BOARD} --image=../build/images/${BOARD}/latest/chromiumos_image.bin
+          ./build_image --board=${BOARD} --noenable_rootfs_verification --boot_args='cros_secure cros_debug systemd.log_level=warning quiet intel_pstate=disable dark_mode=1' --disk_layout=usb dev
+        " 2>&1 | tee /home/builder/logs/create-usb-image.log
+
+        echo "=== Preparing artifacts ==="
+        BUILD_DIR="src/build/images/${BOARD}/latest"
+
+        if [ -d "${BUILD_DIR}" ]; then
+          # Copy images to artifacts directory
+          cp "${BUILD_DIR}"/*.bin /home/builder/artifacts/ 2>/dev/null || true
+          cp "${BUILD_DIR}"/*.img /home/builder/artifacts/ 2>/dev/null || true
+          
+          # Rename files with MidnightOS prefix
+          cd /home/builder/artifacts
+          for file in *.bin *.img; do
+            if [ -f "$file" ]; then
+              newname="MidnightOS-$(date +%Y.%m.%d)-${file}"
+              mv "$file" "$newname"
+              # Create checksums
+              sha256sum "$newname" > "${newname}.sha256"
+              md5sum "$newname" > "${newname}.md5"
             fi
           done
-
-  # ============================================================================
-  #                            NOTIFICATION JOB
-  # ============================================================================
-  notify:
-    name: "Send Notifications"
-    runs-on: ubuntu-latest
-    needs: [validate, build, upload]
-    if: always()
-    timeout-minutes: 5
-
-    steps:
-      - name: "Determine Overall Status"
-        id: status
-        run: |
-          BUILD_STATUS="${{ needs.build.outputs.build_success }}"
-          UPLOAD_STATUS="${{ needs.upload.result }}"
           
-          if [[ "$BUILD_STATUS" == "true" ]]; then
-            if [[ "$UPLOAD_STATUS" == "success" || "$UPLOAD_STATUS" == "skipped" ]]; then
-              echo "overall_status=success" >> $GITHUB_OUTPUT
-              echo "status_message=Build and upload completed successfully!" >> $GITHUB_OUTPUT
-            else
-              echo "overall_status=partial" >> $GITHUB_OUTPUT
-              echo "status_message=Build succeeded but upload failed" >> $GITHUB_OUTPUT
+          # Create release info
+          cat > release-info.txt << BEOF
+        MidnightOS ChromeOS Distribution - Midnight Edition
+        Version: $(date +%Y.%m.%d)
+        Board: ${BOARD}
+        Build Date: $(date -u +%Y-%m-%dT%H:%M:%SZ)
+        Build Type: Midnight UI - Dark theme with Modern UX (No Telemetry)
+        Base: OpenFyde open-source ChromeOS
+        Description: Dark-themed ChromeOS distribution with modern Material Design 3 UI, extensive visual overhauls, and zero telemetry
+
+        🌙 Midnight UI/UX Features:
+        - Complete dark mode with midnight color scheme
+        - Material Design 3 theming throughout
+        - Custom midnight wallpaper collection
+        - Modern floating shelf with transparency
+        - Enhanced animations and blur effects
+        - Roboto font family integration
+        - Dynamic color theming
+        - Custom boot animation and splash screen
+        - Rounded corners and modern iconography
+        - Force dark mode for all web content
+
+        🚀 OpenFyde Features Included:
+        - Intel HD Graphics support (2011+ CPUs)
+        - Enhanced hardware compatibility
+        - Linux apps support (Crostini)
+        - Android apps container support
+        - Improved driver support for modern PCs
+        - Bay Trail and later Intel Atom support
+        - DRM atomic display support
+        - Audio/Video acceleration (VAAPI)
+
+        🔒 Privacy Features:
+        - Zero telemetry collection
+        - No crash reporting
+        - No usage analytics
+        - No feedback system
+        - No diagnostic data collection
+        - No anomaly detection
+        - Minimal network connections
+        - Privacy-first configuration
+
+        💻 Hardware Compatibility:
+        - Intel 2nd generation Core™ Processors (Sandy Bridge) and later
+        - Intel Atom, Celeron, and Pentium processors (Bay Trail and later)
+        - Integrated Intel HD graphics
+        - x86_64 architecture PCs
+        - Modern audio and video acceleration
+
+        🎨 Visual Enhancements:
+        - Midnight color palette (#0F0F0F, #6366F1, #E5E5E5)
+        - Custom icon set with rounded modern design
+        - Multiple dark wallpapers included
+        - Enhanced Chrome UI with dark theme
+        - System-wide dark mode enforcement
+        - Blur effects and modern animations
+
+        Files:
+        $(ls -la *.bin *.img 2>/dev/null | grep -v "total")
+
+        Checksums available in .sha256 and .md5 files
+        BEOF
+
+          echo "MidnightOS build completed successfully!"
+          ls -la /home/builder/artifacts/
+        else
+          echo "ERROR: Build directory not found!"
+          exit 1
+        fi
+
+        echo "=== Build Summary ==="
+        echo "MidnightOS build completed with dark UI/UX and telemetry disabled"
+        echo "Features: OpenFyde hardware compatibility + MidnightOS dark theme + Privacy"
+        echo "Artifacts ready for extraction"
+        EOF
+
+    - name: Build MidnightOS in Docker
+      run: |
+        cd docker-build
+        
+        # Build the Docker image
+        echo "Building MidnightOS Docker image..."
+        docker build -t midnightos-builder .
+        
+        # Run the build in container with volume mount for artifacts
+        echo "Starting MidnightOS dark UI build in Docker container..."
+        docker run --rm \
+          --name midnightos-build \
+          -v "$(pwd)/../artifacts:/home/builder/artifacts" \
+          -v "$(pwd)/../logs:/home/builder/logs" \
+          -v "$(pwd)/../branding:/home/builder/branding-output" \
+          --tmpfs /tmp:rw,noexec,nosuid,size=6g \
+          --shm-size=6g \
+          midnightos-builder
+        
+        echo "MidnightOS build completed!"
+
+    - name: Extract build results
+      run: |
+        # Copy branding assets from Docker volume
+        if [ -d "branding" ]; then
+          echo "MidnightOS branding assets generated:"
+          ls -la branding/
+        fi
+        
+        # Verify artifacts
+        if [ -d "artifacts" ]; then
+          echo "MidnightOS build artifacts:"
+          ls -la artifacts/
+          
+          # Verify file sizes
+          for file in artifacts/*.bin artifacts/*.img; do
+            if [ -f "$file" ]; then
+              size=$(stat -c%s "$file" 2>/dev/null || echo "0")
+              echo "$(basename "$file"): $((size / 1024 / 1024)) MB"
             fi
-          else
-            echo "overall_status=failure" >> $GITHUB_OUTPUT
-            echo "status_message=Build pipeline failed" >> $GITHUB_OUTPUT
-          fi
+          done
+        fi
+        
+        # Check logs
+        if [ -d "logs" ]; then
+          echo "Build logs available:"
+          ls -la logs/
+        fi
 
-      - name: "Create Job Summary"
-        if: always()
-        run: |
-          cat >> $GITHUB_STEP_SUMMARY << 'SUMMARY_EOF'
-          # Cybr NextGen Build Summary
+    - name: Prepare SourceForge upload
+      if: success() && (github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch')
+      run: |
+        # Install SourceForge CLI tools
+        sudo apt-get update
+        sudo apt-get install -y rsync sshpass
+        
+        # Prepare release directory
+        mkdir -p release-upload
+        
+        if [ -d "artifacts" ] && [ "$(ls -A artifacts/)" ]; then
+          # Copy all artifacts to release directory
+          cp artifacts/* release-upload/
           
-          ## Pipeline Results
+          # Create comprehensive release package
+          cd release-upload
           
-          | Job | Status |
-          |-----|--------|
-          | **Validation** | ${{ (needs.validate.result == 'success' && 'Success') || 'Failed' }} |
-          | **Build** | ${{ (needs.build.result == 'success' && 'Success') || 'Failed' }} |
-          | **Upload** | ${{ (needs.upload.result == 'success' && 'Success') || (needs.upload.result == 'skipped' && 'Skipped') || 'Failed' }} |
+          # Generate build manifest
+          cat > BUILD_MANIFEST.txt << EOF
+        MidnightOS Build Manifest
+        =========================
+        Build Date: $(date -u +"%Y-%m-%d %H:%M:%S UTC")
+        Build ID: ${GITHUB_SHA:0:8}
+        Repository: ${GITHUB_REPOSITORY}
+        Branch: ${GITHUB_REF_NAME}
+        Workflow: ${GITHUB_RUN_NUMBER}
+        
+        Board: ${BOARD}
+        Build Type: ${BUILD_TYPE}
+        
+        Files in this release:
+        $(ls -la *.bin *.img *.sha256 *.md5 2>/dev/null || echo "No build files found")
+        
+        Installation Instructions:
+        1. Download the .img or .bin file
+        2. Flash to USB drive using Rufus, Etcher, or dd
+        3. Boot from USB drive
+        4. Follow on-screen setup instructions
+        
+        MidnightOS Features:
+        - Dark Material Design 3 UI
+        - Privacy-focused (no telemetry)
+        - Intel hardware optimized
+        - Modern ChromeOS experience
+        
+        Support: https://sourceforge.net/projects/midnightos/support
+        EOF
           
-          ## Build Details
+          # Create installation guide
+          cat > INSTALLATION_GUIDE.md << EOF
+        # MidnightOS Installation Guide
+        
+        ## System Requirements
+        - x86_64 CPU (Intel 2nd gen Core or later recommended)
+        - 4GB RAM minimum (8GB recommended)
+        - 32GB storage minimum (64GB recommended)
+        - UEFI boot support
+        - Intel HD Graphics (2011+ recommended)
+        
+        ## Installation Steps
+        
+        ### Method 1: USB Flash Installation
+        1. Download the latest MidnightOS image (.img file)
+        2. Verify integrity using provided SHA256 checksum
+        3. Flash to USB drive using:
+           - **Windows**: Rufus or Win32DiskImager
+           - **macOS**: Balena Etcher or dd command
+           - **Linux**: dd command or GNOME Disks
+        4. Boot from USB drive (enable UEFI boot)
+        5. Follow ChromeOS setup wizard
+        
+        ### Method 2: Direct Installation (.bin file)
+        1. Download the .bin file for advanced users
+        2. Use ChromeOS Recovery Utility or similar tools
+        3. Flash to target device
+        
+        ## First Boot
+        1. Select language and keyboard layout
+        2. Connect to Wi-Fi network
+        3. Sign in with Google account (or create local account)
+        4. Enjoy MidnightOS dark theme experience!
+        
+        ## Features Overview
+        - **Dark Mode**: System-wide dark theme with midnight colors
+        - **Privacy**: Zero telemetry, no crash reporting
+        - **Performance**: Optimized for Intel hardware
+        - **Compatibility**: Linux apps (Crostini) and Android apps support
+        - **Modern UI**: Material Design 3 with blur effects
+        
+        ## Troubleshooting
+        - Boot issues: Ensure UEFI boot is enabled
+        - Graphics issues: MidnightOS works best with Intel HD Graphics
+        - Wi-Fi issues: Most modern Wi-Fi adapters supported
+        
+        ## Support
+        Visit: https://sourceforge.net/projects/midnightos/support
+        EOF
           
-          | Parameter | Value |
-          |-----------|-------|
-          | **Build Number** | `#${{ github.run_number }}` |
-          | **ISO Name** | `${{ env.ISO_NAME }}.iso` |
-          | **Build Variant** | `${{ github.event.inputs.build_variant || 'standard' }}` |
-          | **ISO Size** | `${{ needs.build.outputs.iso_size || 'N/A' }}` bytes |
-          | **SHA256** | `${{ needs.build.outputs.iso_sha256 || 'N/A' }}` |
+          # Create checksums for all files
+          for file in *.bin *.img; do
+            if [ -f "$file" ]; then
+              sha256sum "$file" > "${file}.sha256"
+              md5sum "$file" > "${file}.md5"
+            fi
+          done
           
-          ## Features
-          
-          - Base: Debian Bookworm
-          - Desktop: KDE Plasma with SDDM
-          - Installer: Calamares
-          - Repositories: Kali Linux tools available
-          - Branding: Custom Cybr NextGen theme
-          
-          **Message:** ${{ steps.status.outputs.status_message }}
-          SUMMARY_EOF
+          echo "Release package prepared:"
+          ls -la
+        else
+          echo "ERROR: No build artifacts found!"
+          exit 1
+        fi
 
-      - name: "Final Status Report"
-        if: always()
-        run: |
+    - name: Upload to SourceForge
+      if: success() && (github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch')
+      env:
+        SF_PASS: ${{ secrets.SF_PASS }}
+      run: |
+        if [ -z "$SF_PASS" ]; then
+          echo "WARNING: SF_PASS secret not set, skipping upload"
+          echo "To enable uploads, set SF_PASS secret in repository settings"
+          exit 0
+        fi
+        
+        cd release-upload
+        
+        # Create version directory based on date
+        VERSION_DIR=$(date +%Y.%m.%d)
+        
+        echo "Uploading MidnightOS $VERSION_DIR to SourceForge..."
+        
+        # Upload files to SourceForge
+        sshpass -p "$SF_PASS" rsync -avP -e "ssh -o StrictHostKeyChecking=no" \
+          ./ \
+          ${SF_USER}@frs.sourceforge.net:/home/frs/project/${SF_PROJECT}/${VERSION_DIR}/ || {
+          echo "Upload failed, retrying with different method..."
+          
+          # Alternative upload method using sftp
+          echo "put -r ./* /${VERSION_DIR}/" | sshpass -p "$SF_PASS" sftp -o StrictHostKeyChecking=no \
+            ${SF_USER}@frs.sourceforge.net:/home/frs/project/${SF_PROJECT}/
+        }
+        
+        echo "Upload completed to SourceForge!"
+        echo "Files available at: https://sourceforge.net/projects/${SF_PROJECT}/files/${VERSION_DIR}/"
+
+    - name: Update SourceForge project info
+      if: success() && github.ref == 'refs/heads/main'
+      env:
+        SF_PASS: ${{ secrets.SF_PASS }}
+      run: |
+        if [ -z "$SF_PASS" ]; then
+          echo "Skipping SourceForge project update (no password)"
+          exit 0
+        fi
+        
+        # Update project description and links
+        cat > sf_update.json << EOF
+        {
+          "short_description": "MidnightOS - Dark ChromeOS distribution with modern UI and zero telemetry",
+          "full_description": "MidnightOS is a privacy-focused ChromeOS distribution featuring a complete dark mode interface, Material Design 3 theming, and extensive Intel hardware support. Based on OpenFyde for maximum compatibility, MidnightOS removes all Google telemetry while providing a modern, beautiful ChromeOS experience with midnight-themed UI elements.",
+          "homepage": "https://github.com/${GITHUB_REPOSITORY}",
+          "categories": ["os", "linux", "chromeos", "privacy"],
+          "license": "GPL-2.0",
+          "programming_language": ["Shell", "C++", "JavaScript"],
+          "intended_audience": ["End Users", "System Administrators"],
+          "operating_system": ["Linux", "ChromeOS"],
+          "topics": ["dark-theme", "privacy", "chromeos", "intel-graphics", "material-design"]
+        }
+        EOF
+        
+        echo "Project info prepared for SourceForge update"
+
+    - name: Notify build completion
+      if: always()
+      run: |
+        if [ "${{ job.status }}" == "success" ]; then
+          echo "✅ MidnightOS build completed successfully!"
+          echo "🌙 Dark UI/UX theme applied"
+          echo "🔒 Telemetry disabled for privacy"
+          echo "🚀 Intel hardware optimizations included"
+          echo "📦 Files uploaded to SourceForge"
           echo ""
-          echo "╔════════════════════════════════════════════════════════════════════════╗"
-          echo "║                        🚀 CYBR NEXTGEN BUILD SYSTEM                   ║"
-          echo "║                             EXECUTION COMPLETE                        ║"
-          echo "╠════════════════════════════════════════════════════════════════════════╣"
-          echo "║                                                                        ║"
-          echo "║  Status: ${{ steps.status.outputs.overall_status }}                                                    ║"
-          echo "║  Message: ${{ steps.status.outputs.status_message }}                   "
-          echo "║                                                                        ║"
-          echo "║  Build ID: ${{ github.run_number }}                                                     ║"
-          echo "║  Repository: ${{ github.repository }}                         ║"
-          echo "║  Commit: ${{ github.sha }}              ║"
-          echo "║                                                                        ║"
-          echo "║  Debian + KDE Plasma + Calamares + Kali Repos = Success!              ║"
-          echo "║                                                                        ║"
-          echo "╚════════════════════════════════════════════════════════════════════════╝"
-          echo ""
-          
-          if [[ "${{ steps.status.outputs.overall_status }}" == "failure" ]]; then
-            echo "Pipeline completed with failures"
-            exit 1
-          else
-            echo "Pipeline completed successfully"
-            exit 0
-          fi
+          echo "Download links:"
+          echo "- SourceForge: https://sourceforge.net/projects/${SF_PROJECT}/files/"
+        else
+          echo "❌ MidnightOS build failed"
+          echo "Check the logs above for error details"
+          echo "Common issues:"
+          echo "- Docker build failures (check system resources)"
+          echo "- ChromeOS repo sync issues (network/upstream problems)"
+          echo "- Package build failures (dependency issues)"
+          exit 1
+        fi
 
-# ============================================================================
-#                         SECURITY AND MAINTENANCE
-# ============================================================================
-  security-scan:
-    name: "Security Scan"
-    runs-on: ubuntu-latest
-    needs: build
-    if: |
-      needs.build.outputs.build_success == 'true' && 
-      (github.event_name == 'push' || github.event_name == 'schedule')
-    timeout-minutes: 30
-    continue-on-error: true
+    - name: Archive build logs
+      uses: actions/upload-artifact@v4
+      if: always()
+      with:
+        name: midnightos-build-logs-${{ github.run_number }}
+        path: |
+          logs/
+          docker-build/
+          branding/
+        retention-days: 30
 
-    steps:
-      - name: "Checkout Repository"
-        uses: actions/checkout@v4
-
-      - name: "Run Trivy Security Scan"
-        uses: aquasecurity/trivy-action@master
-        with:
-          scan-type: 'repo'
-          format: 'sarif'
-          output: 'trivy-results.sarif'
-
-      - name: "Upload Security Results"
-        uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: "security-scan-${{ github.run_number }}"
-          path: "trivy-results.sarif"
-
-  cleanup:
-    name: "Cleanup"
-    runs-on: ubuntu-latest
-    needs: [build, upload, notify, security-scan]
-    if: always()
-    timeout-minutes: 10
-
-    steps:
-      - name: "Free Resources"
-        run: |
-          docker system prune -af || true
-          sudo apt-get clean || true
-          df -h
+    - name: Archive release artifacts
+      uses: actions/upload-artifact@v4
+      if: success()
+      with:
+        name: midnightos-release-${{ github.run_number }}
+        path: |
+          release-upload/
+          artifacts/
+        retention-days: 90
