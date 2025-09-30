@@ -132,6 +132,14 @@ jobs:
         mkdir -p $HOME/artifacts
         mkdir -p $HOME/logs
         mkdir -p $HOME/chromeos-build
+        
+        # Ensure logs directory is writable
+        chmod -R u+w $HOME/logs
+        touch $HOME/logs/test.log && rm $HOME/logs/test.log || {
+          echo "ERROR: Cannot write to logs directory"
+          ls -la $HOME/logs
+          exit 1
+        }
 
         echo "=== Generating MidnightOS Dark UI Assets ==="
         cd $HOME/branding
@@ -354,16 +362,43 @@ jobs:
         echo "Initializing ChromiumOS repository..."
         repo init -u https://chromium.googlesource.com/chromiumos/manifest.git \
           --repo-url https://chromium.googlesource.com/external/repo.git \
-          -g minilayout 2>&1 | tee $HOME/logs/repo-init.log || {
-          echo "ERROR: repo init failed"
-          exit 1
-        }
+          -g minilayout > $HOME/logs/repo-init.log 2>&1
+        
+        REPO_INIT_STATUS=$?
+        cat $HOME/logs/repo-init.log
+        
+        if [ $REPO_INIT_STATUS -ne 0 ]; then
+          echo "ERROR: repo init failed with status $REPO_INIT_STATUS"
+          echo "But checking if repo was actually initialized..."
+          if [ -d ".repo" ]; then
+            echo "Repo directory exists, continuing despite error..."
+          else
+            exit 1
+          fi
+        fi
 
         echo "Syncing ChromiumOS source (this will take a while)..."
-        repo sync -c -j$(nproc) --force-sync --no-clone-bundle 2>&1 | tee $HOME/logs/repo-sync.log || {
+        repo sync -c -j$(nproc) --force-sync --no-clone-bundle > $HOME/logs/repo-sync.log 2>&1 &
+        SYNC_PID=$!
+        
+        # Show progress while syncing
+        while kill -0 $SYNC_PID 2>/dev/null; do
+          echo "Still syncing... ($(date +%H:%M:%S))"
+          sleep 60
+        done
+        
+        wait $SYNC_PID
+        REPO_SYNC_STATUS=$?
+        
+        echo "Repo sync completed with status: $REPO_SYNC_STATUS"
+        tail -100 $HOME/logs/repo-sync.log
+        
+        if [ $REPO_SYNC_STATUS -ne 0 ]; then
           echo "ERROR: repo sync failed"
+          echo "Last 200 lines of sync log:"
+          tail -200 $HOME/logs/repo-sync.log
           exit 1
-        }
+        fi
 
         echo "=== Applying MidnightOS UI/UX customizations ==="
         # Create MidnightOS overlay that extends OpenFyde with dark UI
@@ -525,10 +560,13 @@ jobs:
         # Set up build environment with OpenFyde board (running as builder user)
         echo "Setting up build environment with OpenFyde and UI support..."
         cd $HOME/chromeos-build
-        cros_sdk --enter --cmd="setup_board --board=${BOARD} --force" 2>&1 | tee $HOME/logs/setup-board.log || {
+        cros_sdk --enter --cmd="setup_board --board=${BOARD} --force" > $HOME/logs/setup-board.log 2>&1 || {
           echo "ERROR: setup_board failed"
+          echo "Last 100 lines of setup-board log:"
+          tail -100 $HOME/logs/setup-board.log
           exit 1
         }
+        echo "Setup board completed successfully"
 
         # Build OpenFyde packages first for compatibility
         echo "Building OpenFyde base packages..."
@@ -544,9 +582,10 @@ jobs:
           
           # Build UI/theme packages
           emerge-${BOARD} --quiet-build media-fonts/dejavu || true
-        " 2>&1 | tee $HOME/logs/build-openfyde-base.log || {
+        " > $HOME/logs/build-openfyde-base.log 2>&1 || {
           echo "Warning: Some OpenFyde packages failed to build"
         }
+        echo "OpenFyde base packages build completed"
 
         # Build packages with dark UI and telemetry disabled
         echo "Building MidnightOS packages with dark UI and privacy features..."
@@ -564,10 +603,27 @@ jobs:
           
           emerge-${BOARD} --quiet-build chromeos-base/chromeos-branding || true
           build_packages --board=${BOARD} --nowithautotest --nowithtest --nowithfactory
-        " 2>&1 | tee $HOME/logs/build-packages.log || {
-          echo "ERROR: Package build failed"
+        " > $HOME/logs/build-packages.log 2>&1 &
+        
+        BUILD_PID=$!
+        echo "Building packages in background (PID: $BUILD_PID)..."
+        
+        # Show progress
+        while kill -0 $BUILD_PID 2>/dev/null; do
+          echo "Still building packages... ($(date +%H:%M:%S))"
+          sleep 120
+        done
+        
+        wait $BUILD_PID
+        BUILD_STATUS=$?
+        
+        if [ $BUILD_STATUS -ne 0 ]; then
+          echo "ERROR: Package build failed with status $BUILD_STATUS"
+          echo "Last 200 lines of build log:"
+          tail -200 $HOME/logs/build-packages.log
           exit 1
-        }
+        fi
+        echo "Package build completed successfully"
 
         # Build system image with dark theme optimizations
         echo "Building MidnightOS system image with dark UI..."
@@ -578,10 +634,13 @@ jobs:
           export CHROMEOS_DEVICE_ID='midnightos-amd64'
           export MIDNIGHT_THEME=1
           build_image --board=${BOARD} --noenable_rootfs_verification --boot_args='cros_secure cros_debug systemd.log_level=warning quiet intel_pstate=disable dark_mode=1' dev
-        " 2>&1 | tee $HOME/logs/build-image.log || {
+        " > $HOME/logs/build-image.log 2>&1 || {
           echo "ERROR: Image build failed"
+          echo "Last 200 lines of image build log:"
+          tail -200 $HOME/logs/build-image.log
           exit 1
         }
+        echo "System image build completed successfully"
 
         # Create USB image with dark theme
         echo "Creating USB installation image with MidnightOS theme..."
@@ -592,9 +651,11 @@ jobs:
           export MIDNIGHT_THEME=1
           mod_image_for_test.sh --board=${BOARD} --image=../build/images/${BOARD}/latest/chromiumos_image.bin || true
           ./build_image --board=${BOARD} --noenable_rootfs_verification --boot_args='cros_secure cros_debug systemd.log_level=warning quiet intel_pstate=disable dark_mode=1' --disk_layout=usb dev
-        " 2>&1 | tee $HOME/logs/create-usb-image.log || {
+        " > $HOME/logs/create-usb-image.log 2>&1 || {
           echo "Warning: USB image creation had issues, but continuing..."
+          tail -100 $HOME/logs/create-usb-image.log
         }
+        echo "USB image creation completed"
 
         echo "=== Preparing artifacts ==="
         BUILD_DIR="$HOME/chromeos-build/src/build/images/${BOARD}/latest"
