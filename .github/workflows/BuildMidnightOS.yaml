@@ -81,25 +81,14 @@ jobs:
         RUN useradd -m -s /bin/bash -G sudo builder \
             && echo 'builder ALL=(ALL) NOPASSWD:ALL' >> /etc/sudoers
 
-        # Install depot_tools as root, then change ownership
-        RUN git clone https://chromium.googlesource.com/chromium/tools/depot_tools.git /opt/depot_tools \
-            && chown -R builder:builder /opt/depot_tools
+        # Install depot_tools as root
+        RUN git clone https://chromium.googlesource.com/chromium/tools/depot_tools.git /opt/depot_tools
 
-        # Copy and set up build script as root before switching users
+        # Copy and set up build script as root
         COPY build.sh /home/builder/build.sh
-        RUN chmod +x /home/builder/build.sh \
-            && chown builder:builder /home/builder/build.sh
+        RUN chmod +x /home/builder/build.sh
 
-        USER builder
-        WORKDIR /home/builder
-
-        # Set up environment
-        ENV PATH="/opt/depot_tools:$PATH"
-        RUN git config --global user.name "MidnightOS Builder" \
-            && git config --global user.email "christopher.fox@wolfos.uk" \
-            && git config --global color.ui auto
-
-        # Create all working directories with proper ownership
+        # Create all working directories as root
         RUN mkdir -p /home/builder/chromeos-build \
             && mkdir -p /home/builder/artifacts \
             && mkdir -p /home/builder/branding/icons \
@@ -107,6 +96,14 @@ jobs:
             && mkdir -p /home/builder/branding/config \
             && mkdir -p /home/builder/branding/themes \
             && mkdir -p /home/builder/logs
+
+        # Set up environment for root
+        ENV PATH="/opt/depot_tools:$PATH"
+        RUN git config --global user.name "MidnightOS Builder" \
+            && git config --global user.email "christopher.fox@wolfos.uk" \
+            && git config --global color.ui auto
+
+        WORKDIR /home/builder
 
         CMD ["/home/builder/build.sh"]
         EOF
@@ -119,9 +116,13 @@ jobs:
         export BOARD="amd64-generic"
         export PATH="/opt/depot_tools:$PATH"
         
+        # Configure repo to allow running as root
+        export REPO_ALLOW_ROOT=1
+        
         echo "=== MidnightOS Build Starting ==="
         echo "Working directory: $(pwd)"
         echo "User: $(whoami)"
+        echo "UID: $(id -u)"
         
         # Ensure all directories exist
         mkdir -p /home/builder/branding/{icons,wallpapers,config,themes,files}
@@ -518,9 +519,12 @@ jobs:
         BEOF
 
         echo "=== Building MidnightOS with Dark UI ==="
-        # Set up build environment with OpenFyde board
+        # Set up build environment with OpenFyde board (running as root)
         echo "Setting up build environment with OpenFyde and UI support..."
-        cros_sdk --enter --cmd="setup_board --board=${BOARD} --force" 2>&1 | tee /home/builder/logs/setup-board.log
+        cros_sdk --enter --cmd="setup_board --board=${BOARD} --force" 2>&1 | tee /home/builder/logs/setup-board.log || {
+          echo "ERROR: setup_board failed"
+          exit 1
+        }
 
         # Build OpenFyde packages first for compatibility
         echo "Building OpenFyde base packages..."
@@ -530,20 +534,21 @@ jobs:
           export MIDNIGHT_THEME=1
           
           # Build OpenFyde base components
-          emerge-${BOARD} --quiet-build chromeos-base/device-appid
+          emerge-${BOARD} --quiet-build chromeos-base/device-appid || true
           emerge-${BOARD} --quiet-build chromeos-base/amd64-openfyde-spec || true
           emerge-${BOARD} --quiet-build media-libs/lpe-support-blacklist || true
           
           # Build UI/theme packages
-          emerge-${BOARD} --quiet-build media-fonts/roboto
-          emerge-${BOARD} --quiet-build x11-themes/gtk-engines || true
-        " 2>&1 | tee /home/builder/logs/build-openfyde-base.log
+          emerge-${BOARD} --quiet-build media-fonts/dejavu || true
+        " 2>&1 | tee /home/builder/logs/build-openfyde-base.log || {
+          echo "Warning: Some OpenFyde packages failed to build"
+        }
 
         # Build packages with dark UI and telemetry disabled
         echo "Building MidnightOS packages with dark UI and privacy features..."
         cros_sdk --enter --cmd="
           export BOARD=${BOARD}
-          export USE='minimal -debug -test -autotest -cros_host -profiling -cellular -ml_service -arc -android_container_pi chrome chromeos-base/chromeos-chrome midnightos-branding dark_mode material_design wayland compositor vulkan opengl blur_effects animations fonts truetype roboto material_icons openfyde_board-amd64-openfyde intel_graphics intel_audio linux_apps android_apps crostini bluetooth wifi drm_atomic intel_hd_graphics baytrail_audio vaapi chrome_media v4l2_codec cras pulseaudio alsa -metrics_collection -crash_reporter -feedback -uma -crash_sender -anomaly_detector -diagnostics'
+          export USE='minimal -debug -test -autotest -cros_host -profiling -cellular -ml_service -arc -android_container_pi chrome chromeos-base/chromeos-chrome midnightos-branding dark_mode material_design wayland compositor vulkan opengl blur_effects animations fonts truetype dejavu material_icons openfyde_board-amd64-openfyde intel_graphics intel_audio linux_apps android_apps crostini bluetooth wifi drm_atomic intel_hd_graphics baytrail_audio vaapi chrome_media v4l2_codec cras pulseaudio alsa -metrics_collection -crash_reporter -feedback -uma -crash_sender -anomaly_detector -diagnostics'
           export FEATURES='-test'
           export CHROMEOS_VERSION_STRING='MidnightOS'
           export CHROMEOS_VERSION_DESCRIPTION='MidnightOS - Dark ChromeOS with Modern UI (OpenFyde Base)'
@@ -553,9 +558,12 @@ jobs:
           export MIDNIGHT_THEME=1
           export MATERIAL_DESIGN_3=1
           
-          emerge-${BOARD} --quiet-build chromeos-base/chromeos-branding
+          emerge-${BOARD} --quiet-build chromeos-base/chromeos-branding || true
           build_packages --board=${BOARD} --nowithautotest --nowithtest --nowithfactory
-        " 2>&1 | tee /home/builder/logs/build-packages.log
+        " 2>&1 | tee /home/builder/logs/build-packages.log || {
+          echo "ERROR: Package build failed"
+          exit 1
+        }
 
         # Build system image with dark theme optimizations
         echo "Building MidnightOS system image with dark UI..."
@@ -566,7 +574,10 @@ jobs:
           export CHROMEOS_DEVICE_ID='midnightos-amd64'
           export MIDNIGHT_THEME=1
           build_image --board=${BOARD} --noenable_rootfs_verification --boot_args='cros_secure cros_debug systemd.log_level=warning quiet intel_pstate=disable dark_mode=1' dev
-        " 2>&1 | tee /home/builder/logs/build-image.log
+        " 2>&1 | tee /home/builder/logs/build-image.log || {
+          echo "ERROR: Image build failed"
+          exit 1
+        }
 
         # Create USB image with dark theme
         echo "Creating USB installation image with MidnightOS theme..."
@@ -575,9 +586,11 @@ jobs:
           export CHROMEOS_METRICS_ENABLED=0
           export CHROMEOS_DEVICE_ID='midnightos-amd64'
           export MIDNIGHT_THEME=1
-          mod_image_for_test.sh --board=${BOARD} --image=../build/images/${BOARD}/latest/chromiumos_image.bin
+          mod_image_for_test.sh --board=${BOARD} --image=../build/images/${BOARD}/latest/chromiumos_image.bin || true
           ./build_image --board=${BOARD} --noenable_rootfs_verification --boot_args='cros_secure cros_debug systemd.log_level=warning quiet intel_pstate=disable dark_mode=1' --disk_layout=usb dev
-        " 2>&1 | tee /home/builder/logs/create-usb-image.log
+        " 2>&1 | tee /home/builder/logs/create-usb-image.log || {
+          echo "Warning: USB image creation had issues, but continuing..."
+        }
 
         echo "=== Preparing artifacts ==="
         BUILD_DIR="src/build/images/${BOARD}/latest"
