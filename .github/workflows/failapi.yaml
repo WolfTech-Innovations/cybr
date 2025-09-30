@@ -779,9 +779,9 @@ jobs:
     - name: Upload to SourceForge
       if: success() && (github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch')
       env:
-        SF_PASSWORD: ${{ secrets.SF_PASS }}
+        SF_PASS: ${{ secrets.SF_PASS }}
       run: |
-        if [ -z "$SF_PASSWORD" ]; then
+        if [ -z "$SF_PASS" ]; then
           echo "WARNING: SF_PASS secret not set, skipping upload"
           echo "To enable uploads, set SF_PASS secret in repository settings"
           exit 0
@@ -795,13 +795,13 @@ jobs:
         echo "Uploading MidnightOS $VERSION_DIR to SourceForge..."
         
         # Upload files to SourceForge
-        sshpass -p "$SF_PASSWORD" rsync -avP -e "ssh -o StrictHostKeyChecking=no" \
+        sshpass -p "$SF_PASS" rsync -avP -e "ssh -o StrictHostKeyChecking=no" \
           ./ \
           ${SF_USER}@frs.sourceforge.net:/home/frs/project/${SF_PROJECT}/${VERSION_DIR}/ || {
           echo "Upload failed, retrying with different method..."
           
           # Alternative upload method using sftp
-          echo "put -r ./* /${VERSION_DIR}/" | sshpass -p "$SF_PASSWORD" sftp -o StrictHostKeyChecking=no \
+          echo "put -r ./* /${VERSION_DIR}/" | sshpass -p "$SF_PASS" sftp -o StrictHostKeyChecking=no \
             ${SF_USER}@frs.sourceforge.net:/home/frs/project/${SF_PROJECT}/
         }
         
@@ -811,9 +811,9 @@ jobs:
     - name: Update SourceForge project info
       if: success() && github.ref == 'refs/heads/main'
       env:
-        SF_PASSWORD: ${{ secrets.SF_PASS }}
+        SF_PASS: ${{ secrets.SF_PASS }}
       run: |
-        if [ -z "$SF_PASSWORD" ]; then
+        if [ -z "$SF_PASS" ]; then
           echo "Skipping SourceForge project update (no password)"
           exit 0
         fi
