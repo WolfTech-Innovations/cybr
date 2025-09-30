@@ -779,11 +779,11 @@ jobs:
     - name: Upload to SourceForge
       if: success() && (github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch')
       env:
-        SF_PASSWORD: ${{ secrets.SF_PASSWORD }}
+        SF_PASSWORD: ${{ secrets.SF_PASS }}
       run: |
-        if [ -z "$SF_PASS" ]; then
+        if [ -z "$SF_PASSWORD" ]; then
           echo "WARNING: SF_PASS secret not set, skipping upload"
-          echo "To enable uploads, set SF_PASSWORD secret in repository settings"
+          echo "To enable uploads, set SF_PASS secret in repository settings"
           exit 0
         fi
         
@@ -795,80 +795,25 @@ jobs:
         echo "Uploading MidnightOS $VERSION_DIR to SourceForge..."
         
         # Upload files to SourceForge
-        sshpass -p "$SF_PASS" rsync -avP -e "ssh -o StrictHostKeyChecking=no" \
+        sshpass -p "$SF_PASSWORD" rsync -avP -e "ssh -o StrictHostKeyChecking=no" \
           ./ \
           ${SF_USER}@frs.sourceforge.net:/home/frs/project/${SF_PROJECT}/${VERSION_DIR}/ || {
           echo "Upload failed, retrying with different method..."
           
           # Alternative upload method using sftp
-          echo "put -r ./* /${VERSION_DIR}/" | sshpass -p "$SF_PASS" sftp -o StrictHostKeyChecking=no \
+          echo "put -r ./* /${VERSION_DIR}/" | sshpass -p "$SF_PASSWORD" sftp -o StrictHostKeyChecking=no \
             ${SF_USER}@frs.sourceforge.net:/home/frs/project/${SF_PROJECT}/
         }
         
         echo "Upload completed to SourceForge!"
         echo "Files available at: https://sourceforge.net/projects/${SF_PROJECT}/files/${VERSION_DIR}/"
 
-    - name: Create GitHub Release
-      if: success() && github.ref == 'refs/heads/main'
-      uses: softprops/action-gh-release@v1
-      with:
-        tag_name: v$(date +%Y.%m.%d)-${{ github.run_number }}
-        name: MidnightOS $(date +%Y.%m.%d) - Midnight Edition
-        body: |
-          # MidnightOS $(date +%Y.%m.%d) - Dark ChromeOS Distribution
-          
-          ## 🌙 Midnight Edition Features
-          - **Complete Dark Mode**: System-wide midnight theme with Material Design 3
-          - **Privacy-First**: Zero telemetry, no crash reporting, no usage analytics
-          - **Modern UI**: Enhanced animations, blur effects, floating shelf
-          - **Intel Optimized**: Full hardware support for Intel graphics and audio
-          - **App Support**: Linux apps (Crostini) and Android app container
-          
-          ## 🚀 What's New
-          - Custom MidnightOS branding and wallpapers
-          - Material Design 3 dark theme implementation  
-          - Enhanced Intel hardware compatibility via OpenFyde
-          - Disabled all Google telemetry and tracking services
-          - Modern floating UI elements with transparency
-          - Force dark mode for all web content
-          
-          ## 💻 System Requirements
-          - Intel 2nd generation Core™ Processors or later
-          - 4GB RAM minimum (8GB recommended)
-          - 32GB storage minimum (64GB recommended)
-          - UEFI boot support
-          - Intel HD Graphics recommended
-          
-          ## 📥 Installation
-          1. Download the `.img` file below
-          2. Verify with SHA256 checksum
-          3. Flash to USB drive using Rufus/Etcher/dd
-          4. Boot from USB and follow setup wizard
-          
-          ## 🔗 Links
-          - [SourceForge Project](https://sourceforge.net/projects/${SF_PROJECT}/)
-          - [Installation Guide](https://sourceforge.net/projects/${SF_PROJECT}/files/)
-          - [Support Forum](https://sourceforge.net/projects/${SF_PROJECT}/support)
-          
-          **Build Info:**
-          - Build Date: $(date -u +"%Y-%m-%d %H:%M:%S UTC")
-          - Build ID: ${{ github.sha }}
-          - Board: ${BOARD}
-          - Type: ${BUILD_TYPE}
-        files: |
-          release-upload/*
-        draft: false
-        prerelease: false
-        generate_release_notes: false
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
     - name: Update SourceForge project info
       if: success() && github.ref == 'refs/heads/main'
       env:
-        SF_PASS: ${{ secrets.SF_PASS }}
+        SF_PASSWORD: ${{ secrets.SF_PASS }}
       run: |
-        if [ -z "$SF_PASS" ]; then
+        if [ -z "$SF_PASSWORD" ]; then
           echo "Skipping SourceForge project update (no password)"
           exit 0
         fi
@@ -898,11 +843,10 @@ jobs:
           echo "🌙 Dark UI/UX theme applied"
           echo "🔒 Telemetry disabled for privacy"
           echo "🚀 Intel hardware optimizations included"
-          echo "📦 Files uploaded to SourceForge and GitHub"
+          echo "📦 Files uploaded to SourceForge"
           echo ""
           echo "Download links:"
           echo "- SourceForge: https://sourceforge.net/projects/${SF_PROJECT}/files/"
-          echo "- GitHub: https://github.com/${GITHUB_REPOSITORY}/releases"
         else
           echo "❌ MidnightOS build failed"
           echo "Check the logs above for error details"
@@ -914,7 +858,7 @@ jobs:
         fi
 
     - name: Archive build logs
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       if: always()
       with:
         name: midnightos-build-logs-${{ github.run_number }}
@@ -922,14 +866,14 @@ jobs:
           logs/
           docker-build/
           branding/
-        retention-days: 14
+        retention-days: 30
 
     - name: Archive release artifacts
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       if: success()
       with:
         name: midnightos-release-${{ github.run_number }}
         path: |
           release-upload/
           artifacts/
-        retention-days: 21
+        retention-days: 90
