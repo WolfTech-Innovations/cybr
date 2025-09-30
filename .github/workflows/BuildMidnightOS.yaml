@@ -85,6 +85,11 @@ jobs:
         RUN git clone https://chromium.googlesource.com/chromium/tools/depot_tools.git /opt/depot_tools \
             && chown -R builder:builder /opt/depot_tools
 
+        # Copy and set up build script as root before switching users
+        COPY build.sh /home/builder/build.sh
+        RUN chmod +x /home/builder/build.sh \
+            && chown builder:builder /home/builder/build.sh
+
         USER builder
         WORKDIR /home/builder
 
@@ -96,10 +101,6 @@ jobs:
 
         # Create working directories
         RUN mkdir -p /home/builder/{chromeos-build,artifacts,branding,logs,themes}
-
-        # Build script
-        COPY build.sh /home/builder/build.sh
-        RUN chmod +x /home/builder/build.sh
 
         CMD ["/home/builder/build.sh"]
         EOF
