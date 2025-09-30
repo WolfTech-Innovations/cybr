@@ -82,28 +82,33 @@ jobs:
             && echo 'builder ALL=(ALL) NOPASSWD:ALL' >> /etc/sudoers
 
         # Install depot_tools as root
-        RUN git clone https://chromium.googlesource.com/chromium/tools/depot_tools.git /opt/depot_tools
+        RUN git clone https://chromium.googlesource.com/chromium/tools/depot_tools.git /opt/depot_tools \
+            && chown -R builder:builder /opt/depot_tools
 
         # Copy and set up build script as root
         COPY build.sh /home/builder/build.sh
-        RUN chmod +x /home/builder/build.sh
+        RUN chmod +x /home/builder/build.sh \
+            && chown builder:builder /home/builder/build.sh
 
-        # Create all working directories as root
+        # Create all working directories as root then change ownership
         RUN mkdir -p /home/builder/chromeos-build \
             && mkdir -p /home/builder/artifacts \
             && mkdir -p /home/builder/branding/icons \
             && mkdir -p /home/builder/branding/wallpapers \
             && mkdir -p /home/builder/branding/config \
             && mkdir -p /home/builder/branding/themes \
-            && mkdir -p /home/builder/logs
+            && mkdir -p /home/builder/logs \
+            && chown -R builder:builder /home/builder
 
-        # Set up environment for root
+        # Switch to builder user
+        USER builder
+        WORKDIR /home/builder
+
+        # Set up environment for builder
         ENV PATH="/opt/depot_tools:$PATH"
         RUN git config --global user.name "MidnightOS Builder" \
             && git config --global user.email "christopher.fox@wolfos.uk" \
             && git config --global color.ui auto
-
-        WORKDIR /home/builder
 
         CMD ["/home/builder/build.sh"]
         EOF
@@ -116,22 +121,20 @@ jobs:
         export BOARD="amd64-generic"
         export PATH="/opt/depot_tools:$PATH"
         
-        # Configure repo to allow running as root
-        export REPO_ALLOW_ROOT=1
-        
         echo "=== MidnightOS Build Starting ==="
         echo "Working directory: $(pwd)"
         echo "User: $(whoami)"
         echo "UID: $(id -u)"
+        echo "Home: $HOME"
         
-        # Ensure all directories exist
-        mkdir -p /home/builder/branding/{icons,wallpapers,config,themes,files}
-        mkdir -p /home/builder/artifacts
-        mkdir -p /home/builder/logs
-        mkdir -p /home/builder/chromeos-build
+        # Ensure all directories exist with proper ownership
+        mkdir -p $HOME/branding/{icons,wallpapers,config,themes,files}
+        mkdir -p $HOME/artifacts
+        mkdir -p $HOME/logs
+        mkdir -p $HOME/chromeos-build
 
         echo "=== Generating MidnightOS Dark UI Assets ==="
-        cd /home/builder/branding
+        cd $HOME/branding
 
         # Create midnight color scheme
         MIDNIGHT_PRIMARY="#0F0F0F"
@@ -332,7 +335,7 @@ jobs:
         BEOF
 
         echo "=== Setting up OpenFyde overlay ==="
-        cd /home/builder/chromeos-build
+        cd $HOME/chromeos-build
         
         # Clone OpenFyde overlay for amd64
         echo "Cloning OpenFyde overlays..."
@@ -346,18 +349,18 @@ jobs:
         mkdir -p src/private-overlays/overlay-midnight-ui/chromeos-base/chromeos-assets
 
         echo "=== Initializing ChromiumOS repository ==="
-        cd /home/builder/chromeos-build
+        cd $HOME/chromeos-build
 
         echo "Initializing ChromiumOS repository..."
         repo init -u https://chromium.googlesource.com/chromiumos/manifest.git \
           --repo-url https://chromium.googlesource.com/external/repo.git \
-          -g minilayout 2>&1 | tee /home/builder/logs/repo-init.log || {
+          -g minilayout 2>&1 | tee $HOME/logs/repo-init.log || {
           echo "ERROR: repo init failed"
           exit 1
         }
 
         echo "Syncing ChromiumOS source (this will take a while)..."
-        repo sync -c -j$(nproc) --force-sync --no-clone-bundle 2>&1 | tee /home/builder/logs/repo-sync.log || {
+        repo sync -c -j$(nproc) --force-sync --no-clone-bundle 2>&1 | tee $HOME/logs/repo-sync.log || {
           echo "ERROR: repo sync failed"
           exit 1
         }
@@ -368,7 +371,7 @@ jobs:
 
         # Copy branding assets to the overlay
         echo "Copying branding assets to overlay..."
-        cp -r /home/builder/branding/* src/private-overlays/overlay-midnightos/chromeos-base/chromeos-branding/files/ || {
+        cp -r $HOME/branding/* src/private-overlays/overlay-midnightos/chromeos-base/chromeos-branding/files/ || {
           echo "Warning: Could not copy all branding assets"
         }
 
@@ -477,7 +480,7 @@ jobs:
 
         # Create comprehensive build configuration
         echo "Creating build configuration..."
-        cat > /home/builder/chromeos-build/midnight-build.conf << 'BEOF'
+        cat > $HOME/chromeos-build/midnight-build.conf << 'BEOF'
         USE="minimal -debug -test -autotest -cros_host -profiling"
         # Keep essential services but remove bloat
         USE="${USE} -cellular -ml_service -arc -android_container_pi"
@@ -519,9 +522,10 @@ jobs:
         BEOF
 
         echo "=== Building MidnightOS with Dark UI ==="
-        # Set up build environment with OpenFyde board (running as root)
+        # Set up build environment with OpenFyde board (running as builder user)
         echo "Setting up build environment with OpenFyde and UI support..."
-        cros_sdk --enter --cmd="setup_board --board=${BOARD} --force" 2>&1 | tee /home/builder/logs/setup-board.log || {
+        cd $HOME/chromeos-build
+        cros_sdk --enter --cmd="setup_board --board=${BOARD} --force" 2>&1 | tee $HOME/logs/setup-board.log || {
           echo "ERROR: setup_board failed"
           exit 1
         }
@@ -540,7 +544,7 @@ jobs:
           
           # Build UI/theme packages
           emerge-${BOARD} --quiet-build media-fonts/dejavu || true
-        " 2>&1 | tee /home/builder/logs/build-openfyde-base.log || {
+        " 2>&1 | tee $HOME/logs/build-openfyde-base.log || {
           echo "Warning: Some OpenFyde packages failed to build"
         }
 
@@ -560,7 +564,7 @@ jobs:
           
           emerge-${BOARD} --quiet-build chromeos-base/chromeos-branding || true
           build_packages --board=${BOARD} --nowithautotest --nowithtest --nowithfactory
-        " 2>&1 | tee /home/builder/logs/build-packages.log || {
+        " 2>&1 | tee $HOME/logs/build-packages.log || {
           echo "ERROR: Package build failed"
           exit 1
         }
@@ -574,7 +578,7 @@ jobs:
           export CHROMEOS_DEVICE_ID='midnightos-amd64'
           export MIDNIGHT_THEME=1
           build_image --board=${BOARD} --noenable_rootfs_verification --boot_args='cros_secure cros_debug systemd.log_level=warning quiet intel_pstate=disable dark_mode=1' dev
-        " 2>&1 | tee /home/builder/logs/build-image.log || {
+        " 2>&1 | tee $HOME/logs/build-image.log || {
           echo "ERROR: Image build failed"
           exit 1
         }
@@ -588,20 +592,20 @@ jobs:
           export MIDNIGHT_THEME=1
           mod_image_for_test.sh --board=${BOARD} --image=../build/images/${BOARD}/latest/chromiumos_image.bin || true
           ./build_image --board=${BOARD} --noenable_rootfs_verification --boot_args='cros_secure cros_debug systemd.log_level=warning quiet intel_pstate=disable dark_mode=1' --disk_layout=usb dev
-        " 2>&1 | tee /home/builder/logs/create-usb-image.log || {
+        " 2>&1 | tee $HOME/logs/create-usb-image.log || {
           echo "Warning: USB image creation had issues, but continuing..."
         }
 
         echo "=== Preparing artifacts ==="
-        BUILD_DIR="src/build/images/${BOARD}/latest"
+        BUILD_DIR="$HOME/chromeos-build/src/build/images/${BOARD}/latest"
 
         if [ -d "${BUILD_DIR}" ]; then
           # Copy images to artifacts directory
-          cp "${BUILD_DIR}"/*.bin /home/builder/artifacts/ 2>/dev/null || true
-          cp "${BUILD_DIR}"/*.img /home/builder/artifacts/ 2>/dev/null || true
+          cp "${BUILD_DIR}"/*.bin $HOME/artifacts/ 2>/dev/null || true
+          cp "${BUILD_DIR}"/*.img $HOME/artifacts/ 2>/dev/null || true
           
           # Rename files with MidnightOS prefix
-          cd /home/builder/artifacts
+          cd $HOME/artifacts
           for file in *.bin *.img; do
             if [ -f "$file" ]; then
               newname="MidnightOS-$(date +%Y.%m.%d)-${file}"
@@ -628,7 +632,7 @@ jobs:
         - Custom midnight wallpaper collection
         - Modern floating shelf with transparency
         - Enhanced animations and blur effects
-        - Roboto font family integration
+        - DejaVu font family integration
         - Dynamic color theming
         - Custom boot animation and splash screen
         - Rounded corners and modern iconography
@@ -670,22 +674,24 @@ jobs:
         - Blur effects and modern animations
 
         Files:
-        $(ls -la *.bin *.img 2>/dev/null | grep -v "total")
+        $(ls -lh *.bin *.img 2>/dev/null | awk '{print $9, $5}' || echo "No build files found")
 
         Checksums available in .sha256 and .md5 files
         BEOF
 
           echo "MidnightOS build completed successfully!"
-          ls -la /home/builder/artifacts/
+          ls -lh $HOME/artifacts/
         else
-          echo "ERROR: Build directory not found!"
+          echo "ERROR: Build directory not found at: ${BUILD_DIR}"
+          echo "Checking for alternative locations..."
+          find $HOME/chromeos-build -name "*.bin" -o -name "*.img" 2>/dev/null || true
           exit 1
         fi
 
         echo "=== Build Summary ==="
         echo "MidnightOS build completed with dark UI/UX and telemetry disabled"
         echo "Features: OpenFyde hardware compatibility + MidnightOS dark theme + Privacy"
-        echo "Artifacts ready for extraction"
+        echo "Artifacts ready for extraction at: $HOME/artifacts"
         EOF
 
     - name: Build MidnightOS in Docker
