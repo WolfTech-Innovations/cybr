@@ -83,12 +83,12 @@ jobs:
 
         # Install depot_tools as root
         RUN git clone https://chromium.googlesource.com/chromium/tools/depot_tools.git /opt/depot_tools \
-            && chown -R builder:builder /opt/depot_tools
+            && sudo chown -R builder:builder /opt/depot_tools
 
         # Copy and set up build script as root
         COPY build.sh /home/builder/build.sh
-        RUN chmod +x /home/builder/build.sh \
-            && chown builder:builder /home/builder/build.sh
+        RUN sudo chmod +x /home/builder/build.sh \
+            && sudo chown builder:builder /home/builder/build.sh
 
         # Create all working directories as root then change ownership
         RUN mkdir -p /home/builder/chromeos-build \
@@ -134,7 +134,7 @@ jobs:
         mkdir -p $HOME/chromeos-build
         
         # Ensure logs directory is writable
-        chmod -R u+w $HOME/logs
+        sudo chmod -R u+w $HOME/logs
         touch $HOME/logs/test.log && rm $HOME/logs/test.log || {
           echo "ERROR: Cannot write to logs directory"
           ls -la $HOME/logs
