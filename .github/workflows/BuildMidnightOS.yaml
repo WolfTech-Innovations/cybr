@@ -16,11 +16,11 @@ env:
 jobs:
  build:
   runs-on: ubuntu-latest
-   steps:
+  steps:
      # 1. Maximize Disk Space
     - name: Maximize disk space on runner
-       uses: easimon/maximize-build-disk-space@v6
-        with:
+      uses: easimon/maximize-build-disk-space@v6
+      with:
           # This setting removes large pre-installed packages (like Android SDKs, .NET, etc.)
           remove-tool-cache: true
           # This should free up an additional 10-15 GB
