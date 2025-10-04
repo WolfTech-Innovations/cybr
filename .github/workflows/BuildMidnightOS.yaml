@@ -378,7 +378,7 @@ jobs:
         fi
 
         echo "Syncing ChromiumOS source (this will take a while)..."
-        repo sync -c -j$(nproc) --force-sync --no-clone-bundle > $HOME/logs/repo-sync.log 2>&1 &
+        sudo repo sync -c -j$(nproc) --force-sync --no-clone-bundle > $HOME/logs/repo-sync.log 2>&1 &
         SYNC_PID=$!
         
         # Show progress while syncing
@@ -687,7 +687,7 @@ jobs:
         Base: OpenFyde open-source ChromeOS
         Description: Dark-themed ChromeOS distribution with modern Material Design 3 UI, extensive visual overhauls, and zero telemetry
 
-        🌙 Midnight UI/UX Features:
+         Midnight UI/UX Features:
         - Complete dark mode with midnight color scheme
         - Material Design 3 theming throughout
         - Custom midnight wallpaper collection
@@ -699,7 +699,7 @@ jobs:
         - Rounded corners and modern iconography
         - Force dark mode for all web content
 
-        🚀 OpenFyde Features Included:
+         OpenFyde Features Included:
         - Intel HD Graphics support (2011+ CPUs)
         - Enhanced hardware compatibility
         - Linux apps support (Crostini)
@@ -709,7 +709,7 @@ jobs:
         - DRM atomic display support
         - Audio/Video acceleration (VAAPI)
 
-        🔒 Privacy Features:
+         Privacy Features:
         - Zero telemetry collection
         - No crash reporting
         - No usage analytics
@@ -719,14 +719,14 @@ jobs:
         - Minimal network connections
         - Privacy-first configuration
 
-        💻 Hardware Compatibility:
+         Hardware Compatibility:
         - Intel 2nd generation Core™ Processors (Sandy Bridge) and later
         - Intel Atom, Celeron, and Pentium processors (Bay Trail and later)
         - Integrated Intel HD graphics
         - x86_64 architecture PCs
         - Modern audio and video acceleration
 
-        🎨 Visual Enhancements:
+         Visual Enhancements:
         - Midnight color palette (#0F0F0F, #6366F1, #E5E5E5)
         - Custom icon set with rounded modern design
         - Multiple dark wallpapers included
