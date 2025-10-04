@@ -14,15 +14,17 @@ env:
   SF_PROJECT: "MidnightOS"
 
 jobs:
-  build-and-deploy:
-    runs-on: ubuntu-latest
-    timeout-minutes: 480
-
-    steps:
-    - name: Checkout repository
-      uses: actions/checkout@v4
-      with:
-        fetch-depth: 1
+ build:
+  runs-on: ubuntu-latest
+   steps:
+     # 1. Maximize Disk Space
+    - name: Maximize disk space on runner
+       uses: easimon/maximize-build-disk-space@v6
+        with:
+          # This setting removes large pre-installed packages (like Android SDKs, .NET, etc.)
+          remove-tool-cache: true
+          # This should free up an additional 10-15 GB
+          build-mount-path: '/mnt/build' 
 
     - name: Set up Docker Buildx
       uses: docker/setup-buildx-action@v3
