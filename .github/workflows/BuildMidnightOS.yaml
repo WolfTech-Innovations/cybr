@@ -79,9 +79,14 @@ jobs:
         RUN useradd -m -s /bin/bash -G sudo builder \
             && echo 'builder ALL=(ALL) NOPASSWD:ALL' >> /etc/sudoers
 
-        # Install depot_tools as root
+        # Install depot_tools and configure PATH
         RUN git clone https://chromium.googlesource.com/chromium/tools/depot_tools.git /opt/depot_tools \
-            && chown -R builder:builder /opt/depot_tools
+            && chown -R builder:builder /opt/depot_tools \
+            && chmod -R 755 /opt/depot_tools
+
+        # Give builder user permission to run repo as needed
+        RUN echo 'builder ALL=(ALL) NOPASSWD: /opt/depot_tools/repo' >> /etc/sudoers.d/builder-repo \
+            && chmod 0440 /etc/sudoers.d/builder-repo
 
         # Copy and set up build script
         COPY build.sh /home/builder/build.sh
@@ -184,12 +189,26 @@ jobs:
         echo "=== Initializing ChromiumOS with OpenFyde ==="
         cd $HOME/chromeos-build
 
+        # Configure git for repo (required before running repo)
+        git config --global color.ui false
+
         echo "Initializing repo for ${CHROMEOS_RELEASE}..."
-        repo init -u https://chromium.googlesource.com/chromiumos/manifest.git \
+        # Run repo init as root, then fix ownership
+        sudo -E repo init -u https://chromium.googlesource.com/chromiumos/manifest.git \
           --repo-url https://chromium.googlesource.com/external/repo.git \
           -b ${CHROMEOS_RELEASE} \
           -g minilayout \
           --depth=1 > $HOME/logs/repo-init.log 2>&1
+        
+        # Fix ownership of .repo directory
+        sudo chown -R builder:builder .repo
+        
+        # Verify repo is initialized
+        if [ ! -d ".repo" ]; then
+          echo "ERROR: .repo directory not created"
+          cat $HOME/logs/repo-init.log
+          exit 1
+        fi
 
         echo "Setting up OpenFyde local manifests..."
         mkdir -p .repo/local_manifests
@@ -240,10 +259,27 @@ jobs:
         SIZEEOF
 
         echo "Syncing ChromiumOS source (shallow clone for <15GB)..."
-        repo sync -c -j$(nproc) --fail-fast > $HOME/logs/repo-sync.log 2>&1 || {
-          echo "Repo sync completed with warnings, checking size..."
-          du -sh $HOME/chromeos-build
-        }
+        # Run repo sync as root to avoid permission issues
+        sudo -E repo sync -c -j$(nproc) --fail-fast --force-sync > $HOME/logs/repo-sync.log 2>&1 &
+        SYNC_PID=$!
+        
+        # Show progress while syncing
+        while kill -0 $SYNC_PID 2>/dev/null; do
+          echo "Syncing... ($(date +%H:%M:%S)) - Size: $(du -sh $HOME/chromeos-build 2>/dev/null | cut -f1)"
+          sleep 60
+        done
+        
+        wait $SYNC_PID
+        SYNC_STATUS=$?
+        
+        # Fix ownership after sync
+        echo "Fixing ownership of synced files..."
+        sudo chown -R builder:builder $HOME/chromeos-build
+        
+        if [ $SYNC_STATUS -ne 0 ]; then
+          echo "Repo sync completed with status: $SYNC_STATUS"
+          tail -100 $HOME/logs/repo-sync.log
+        fi
 
         echo "Source size: $(du -sh $HOME/chromeos-build | cut -f1)"
 
