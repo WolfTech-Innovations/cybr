@@ -19,7 +19,7 @@ jobs:
   steps:
      # 1. Maximize Disk Space
     - name: Maximize disk space on runner
-      uses: easimon/maximize-build-disk-space@v10
+      uses: easimon/maximize-build-space@fc881a613ad2a34aca9c9624518214ebc21dfc0c
       with:
           # This setting removes large pre-installed packages (like Android SDKs, .NET, etc.)
           remove-tool-cache: true
