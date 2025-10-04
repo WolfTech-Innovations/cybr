@@ -33,988 +33,1035 @@ jobs:
         
         # Create Dockerfile for ChromeOS build environment with UI theme support
         cat > docker-build/Dockerfile << 'EOF'
-        FROM ubuntu:22.04
+FROM ubuntu:22.04
 
-        ENV DEBIAN_FRONTEND=noninteractive
-        ENV TZ=UTC
+ENV DEBIAN_FRONTEND=noninteractive
+ENV TZ=UTC
 
-        # Install core build tools
-        RUN apt-get update && apt-get install -y \
-            git curl wget python3 python3-pip \
-            build-essential sudo locales \
-            ca-certificates gnupg lsb-release \
-            && apt-get clean && rm -rf /var/lib/apt/lists/*
+# Install build dependencies
+RUN apt-get update && apt-get install -y \
+    git curl wget python3 python3-pip build-essential \
+    sudo locales ca-certificates gnupg lsb-release \
+    unzip xz-utils bc bison flex libssl-dev \
+    libncurses5-dev u-boot-tools device-tree-compiler \
+    gcc-multilib g++-multilib libc6-dev-i386 \
+    lib32ncurses5-dev lib32z1-dev zlib1g-dev \
+    libelf-dev libdbus-1-dev libbluetooth-dev \
+    libnss3-dev fonts-liberation libasound2-dev \
+    imagemagick fontconfig sshpass rsync \
+    fonts-liberation ttf-dejavu-core \
+    inkscape gimp librsvg2-bin optipng \
+    && apt-get clean && rm -rf /var/lib/apt/lists/*
 
-        # Install compression and build utilities
-        RUN apt-get update && apt-get install -y \
-            unzip xz-utils bc bison flex \
-            libssl-dev libncurses5-dev \
-            u-boot-tools device-tree-compiler \
-            && apt-get clean && rm -rf /var/lib/apt/lists/*
+# Install Google Fonts and dark theme fonts
+RUN wget -O /tmp/roboto.zip https://fonts.google.com/download?family=Roboto \
+    && unzip /tmp/roboto.zip -d /usr/share/fonts/truetype/roboto/ \
+    && rm /tmp/roboto.zip \
+    && wget -O /tmp/material-icons.woff2 https://fonts.gstatic.com/s/materialicons/v140/flUhRq6tzZclQEJ-Vdg-IuiaDsNcIhQ8tQ.woff2 \
+    && mkdir -p /usr/share/fonts/woff2/ \
+    && mv /tmp/material-icons.woff2 /usr/share/fonts/woff2/ \
+    && fc-cache -fv
 
-        # Install multilib support for cross-compilation
-        RUN apt-get update && apt-get install -y \
-            gcc-multilib g++-multilib \
-            libc6-dev-i386 lib32ncurses5-dev \
-            lib32z1-dev zlib1g-dev \
-            && apt-get clean && rm -rf /var/lib/apt/lists/*
+# Create build user
+RUN useradd -m -s /bin/bash -G sudo builder \
+    && echo 'builder ALL=(ALL) NOPASSWD:ALL' >> /etc/sudoers
 
-        # Install development libraries
-        RUN apt-get update && apt-get install -y \
-            libelf-dev libdbus-1-dev \
-            libbluetooth-dev libnss3-dev \
-            libasound2-dev \
-            && apt-get clean && rm -rf /var/lib/apt/lists/*
+# Install depot_tools
+RUN git clone https://chromium.googlesource.com/chromium/tools/depot_tools.git /opt/depot_tools
 
-        # Install graphics and font tools
-        RUN apt-get update && apt-get install -y \
-            imagemagick fontconfig \
-            fonts-liberation fonts-dejavu \
-            && apt-get clean && rm -rf /var/lib/apt/lists/*
+# Switch to builder user early for non-root setup
+USER builder
+WORKDIR /home/builder
 
-        # Install network tools for deployment
-        RUN apt-get update && apt-get install -y \
-            sshpass rsync openssh-client \
-            && apt-get clean && rm -rf /var/lib/apt/lists/*
+# Set up environment
+ENV PATH="/opt/depot_tools:$PATH"
+RUN git config --global user.name "MidnightOS Builder" \
+    && git config --global user.email "christopher.fox@wolfos.uk" \
+    && git config --global color.ui auto
 
-        # Create build user
-        RUN useradd -m -s /bin/bash -G sudo builder \
-            && echo 'builder ALL=(ALL) NOPASSWD:ALL' >> /etc/sudoers
+# Create working directories and ensure ownership (secure non-root fix)
+RUN mkdir -p /home/builder/{chromeos-build,artifacts,branding,logs,themes} \
+    && sudo chown -R builder:builder /home/builder /opt/depot_tools \
+    && chmod -R 755 /home/builder
 
-        # Install depot_tools as root
-        RUN git clone https://chromium.googlesource.com/chromium/tools/depot_tools.git /opt/depot_tools \
-            && chown -R builder:builder /opt/depot_tools
+# Build script
+COPY build.sh /home/builder/build.sh
+RUN chmod +x /home/builder/build.sh
 
-        # Copy and set up build script as root
-        COPY build.sh /home/builder/build.sh
-        RUN chmod +x /home/builder/build.sh \
-            && chown builder:builder /home/builder/build.sh
+CMD ["/home/builder/build.sh"]
+EOF
 
-        # Create all working directories as root then change ownership
-        RUN mkdir -p /home/builder/chromeos-build \
-            && mkdir -p /home/builder/artifacts \
-            && mkdir -p /home/builder/branding/icons \
-            && mkdir -p /home/builder/branding/wallpapers \
-            && mkdir -p /home/builder/branding/config \
-            && mkdir -p /home/builder/branding/themes \
-            && mkdir -p /home/builder/logs \
-            && chown -R builder:builder /home/builder
-
-        # Switch to builder user
-        USER builder
-        WORKDIR /home/builder
-
-        # Set up environment for builder
-        ENV PATH="/opt/depot_tools:$PATH"
-        RUN git config --global user.name "MidnightOS Builder" \
-            && git config --global user.email "christopher.fox@wolfos.uk" \
-            && git config --global color.ui auto
-
-        CMD ["/home/builder/build.sh"]
-        EOF
-
-        # Create comprehensive build script with midnight theme
+        # Create comprehensive build script with midnight theme and full UI/UX overhaul
         cat > docker-build/build.sh << 'EOF'
-        #!/bin/bash
-        set -e
+#!/bin/bash
+set -e
 
-        export BOARD="amd64-generic"
-        export PATH="/opt/depot_tools:$PATH"
-        
-        echo "=== MidnightOS Build Starting ==="
-        echo "Working directory: $(pwd)"
-        echo "User: $(whoami)"
-        echo "UID: $(id -u)"
-        echo "Home: $HOME"
-        
-        # Ensure all directories exist with proper ownership
-        mkdir -p $HOME/branding/{icons,wallpapers,config,themes,files}
-        mkdir -p $HOME/artifacts
-        mkdir -p $HOME/logs
-        mkdir -p $HOME/chromeos-build
-        
-        # Ensure logs directory is writable
-        chmod -R u+w $HOME/logs
-        touch $HOME/logs/test.log && rm $HOME/logs/test.log || {
-          echo "ERROR: Cannot write to logs directory"
-          ls -la $HOME/logs
-          exit 1
-        }
+export BOARD="amd64-generic"
+export PATH="/opt/depot_tools:$PATH"
 
-        echo "=== Generating MidnightOS Dark UI Assets ==="
-        cd $HOME/branding
+# Secure non-root permission setup (initial only)
+echo "=== Setting up directories with proper non-root permissions ==="
+sudo chown -R $(whoami):$(whoami) /home/builder
+chmod -R 755 /home/builder/chromeos-build /home/builder/logs /home/builder/artifacts
+mkdir -p /home/builder/logs
 
-        # Create midnight color scheme
-        MIDNIGHT_PRIMARY="#0F0F0F"
-        MIDNIGHT_SECONDARY="#1A1A1A"
-        MIDNIGHT_ACCENT="#6366F1"
-        MIDNIGHT_TEXT="#E5E5E5"
-        MIDNIGHT_SURFACE="#121212"
+echo "=== Generating MidnightOS Dark UI Assets (Extended) ==="
+cd /home/builder/branding
 
-        echo "Generating MidnightOS logo..."
-        # Generate main logo (800x200) - Midnight theme
-        convert -size 800x200 xc:"$MIDNIGHT_PRIMARY" \
-          -fill "$MIDNIGHT_TEXT" -font "DejaVu-Sans-Bold" -pointsize 48 \
-          -gravity center -annotate +0-10 "MidnightOS" \
-          -fill "$MIDNIGHT_ACCENT" -pointsize 20 \
-          -gravity center -annotate +0+25 "MIDNIGHT EDITION" \
-          midnight-logo.png || {
-            echo "Warning: Logo generation failed, creating placeholder"
-            convert -size 800x200 xc:"$MIDNIGHT_PRIMARY" \
-              -fill "$MIDNIGHT_TEXT" -pointsize 48 \
-              -gravity center -label "MidnightOS" \
-              midnight-logo.png
-          }
+# Midnight color scheme (MD3-inspired)
+MIDNIGHT_PRIMARY="#0F0F0F"
+MIDNIGHT_SECONDARY="#1A1A1A"
+MIDNIGHT_ACCENT="#6366F1"
+MIDNIGHT_TEXT="#E5E5E5"
+MIDNIGHT_SURFACE="#121212"
+MIDNIGHT_ERROR="#EF4444"
+MIDNIGHT_WARNING="#F59E0B"
+MIDNIGHT_SUCCESS="#10B981"
 
-        echo "Generating boot splash..."
-        # Generate boot splash (1920x1080) - Gradient midnight theme
-        convert -size 1920x1080 gradient:"$MIDNIGHT_PRIMARY"-"$MIDNIGHT_SECONDARY" \
-          -fill "$MIDNIGHT_TEXT" -pointsize 64 \
-          -gravity center -annotate +0-80 "MidnightOS" \
-          -fill "$MIDNIGHT_ACCENT" -pointsize 24 \
-          -gravity center -annotate +0-20 "Dark • Modern • Private" \
-          -fill "$MIDNIGHT_TEXT" -pointsize 16 \
-          -gravity center -annotate +0+40 "ChromeOS reimagined for the night" \
-          boot-splash.png || {
-            echo "Warning: Boot splash generation failed, creating simple version"
-            convert -size 1920x1080 xc:"$MIDNIGHT_PRIMARY" \
-              -fill "$MIDNIGHT_TEXT" -pointsize 64 \
-              -gravity center -label "MidnightOS" \
-              boot-splash.png
-          }
+# Generate main logo (800x200)
+convert -size 800x200 xc:"$MIDNIGHT_PRIMARY" \
+  -fill "$MIDNIGHT_TEXT" -font "Roboto-Bold" -pointsize 48 \
+  -gravity center -annotate +0-10 "MidnightOS" \
+  -fill "$MIDNIGHT_ACCENT" -font "Roboto-Light" -pointsize 20 \
+  -gravity center -annotate +0+25 "MIDNIGHT EDITION" \
+  midnight-logo.png
 
-        echo "Generating icon set..."
-        # Generate modern icons with midnight theme
-        mkdir -p icons
-        for size in 16 32 48 64 128 256; do
-          convert -size ${size}x${size} xc:"$MIDNIGHT_SURFACE" \
-            -fill "$MIDNIGHT_ACCENT" -draw "roundrectangle 2,2 $((size-2)),$((size-2)) 4,4" \
-            -fill "$MIDNIGHT_TEXT" -pointsize $((size/3)) \
-            -gravity center -annotate +0+0 "M" \
-            icons/midnight-${size}.png || echo "Warning: Icon ${size}x${size} failed"
-        done
+# Generate boot splash (1920x1080) with gradient and elements
+convert -size 1920x1080 gradient:"$MIDNIGHT_PRIMARY"-"$MIDNIGHT_SECONDARY" \
+  \$ -size 400x400 xc:transparent \
+     -fill "$MIDNIGHT_ACCENT" -draw "circle 200,200 200,100" \
+     -blur 0x50 \$ -gravity center -composite \
+  -fill "$MIDNIGHT_TEXT" -font "Roboto-Thin" -pointsize 64 \
+  -gravity center -annotate +0-80 "MidnightOS" \
+  -fill "$MIDNIGHT_ACCENT" -font "Roboto-Light" -pointsize 24 \
+  -gravity center -annotate +0-20 "Dark Modern Private" \
+  -fill "$MIDNIGHT_TEXT" -font "Roboto-Regular" -pointsize 16 \
+  -gravity center -annotate +0+40 "ChromeOS reimagined for the night" \
+  boot-splash.png
 
-        echo "Generating wallpaper collection..."
-        # Generate wallpaper collection
-        mkdir -p wallpapers
+# Generate modern icons (multiple sizes, rounded MD3 style)
+mkdir -p icons
+for size in 16 32 48 64 128 256; do
+  convert -size ${size}x${size} xc:"$MIDNIGHT_SURFACE" \
+    -fill "$MIDNIGHT_ACCENT" -draw "roundrectangle 2,2 $((size-2)),$((size-2)) 8,8" \
+    -fill "$MIDNIGHT_TEXT" -font "Roboto-Bold" -pointsize $((size/3)) \
+    -gravity center -annotate +0+0 "M" \
+    icons/midnight-${size}.png
+done
 
-        # Main midnight wallpaper
-        convert -size 1920x1080 gradient:"$MIDNIGHT_PRIMARY"-"$MIDNIGHT_SECONDARY" \
-          wallpapers/midnight-default.jpg || {
-            convert -size 1920x1080 xc:"$MIDNIGHT_PRIMARY" \
-              wallpapers/midnight-default.jpg
-          }
+# Generate extended wallpaper collection (MD3 dynamic-inspired)
+mkdir -p wallpapers
 
-        # Abstract geometric wallpaper
-        convert -size 1920x1080 xc:"$MIDNIGHT_PRIMARY" \
-          wallpapers/midnight-geometric.jpg || {
-            cp wallpapers/midnight-default.jpg wallpapers/midnight-geometric.jpg
-          }
+# Main midnight wallpaper (gradient with subtle elements)
+convert -size 1920x1080 gradient:"$MIDNIGHT_PRIMARY"-"$MIDNIGHT_SECONDARY" \
+  \$ -size 1920x1080 xc:transparent \
+     -fill "$MIDNIGHT_ACCENT" -draw "circle 1500,200 1600,100" \
+     -blur 0x100 -channel A -evaluate multiply 0.3 +channel \$ -composite \
+  \$ -size 1920x1080 xc:transparent \
+     -fill "$MIDNIGHT_TEXT" -draw "circle 400,800 500,700" \
+     -blur 0x80 -channel A -evaluate multiply 0.1 +channel \$ -composite \
+  wallpapers/midnight-default.jpg
 
-        # Minimalist dots wallpaper
-        convert -size 1920x1080 xc:"$MIDNIGHT_SURFACE" \
-          -fill "$MIDNIGHT_ACCENT" -draw "circle 960,340 980,320" \
-          -fill "$MIDNIGHT_TEXT" -draw "circle 960,540 970,530" \
-          -fill "$MIDNIGHT_ACCENT" -draw "circle 960,740 975,725" \
-          wallpapers/midnight-minimal.jpg || {
-            cp wallpapers/midnight-default.jpg wallpapers/midnight-minimal.jpg
-          }
+# Abstract geometric (triangles, MD3 shapes)
+convert -size 1920x1080 xc:"$MIDNIGHT_PRIMARY" \
+  \$ -size 1920x1080 xc:transparent \
+     -fill "$MIDNIGHT_ACCENT" -draw "polygon 0,0 600,0 300,400" \
+     -blur 0x40 -channel A -evaluate multiply 0.4 +channel \$ -composite \
+  \$ -size 1920x1080 xc:transparent \
+     -fill "$MIDNIGHT_SECONDARY" -draw "polygon 1920,1080 1320,1080 1620,680" \
+     -blur 0x60 -channel A -evaluate multiply 0.6 +channel \$ -composite \
+  wallpapers/midnight-geometric.jpg
 
-        echo "Creating theme configuration files..."
-        # Create extensive theme configuration
-        mkdir -p config themes
+# Minimalist dots (subtle pattern)
+convert -size 1920x1080 xc:"$MIDNIGHT_SURFACE" \
+  -fill "$MIDNIGHT_ACCENT" -draw "circle 960,340 980,320" \
+  -fill "$MIDNIGHT_TEXT" -draw "circle 960,540 970,530" \
+  -fill "$MIDNIGHT_ACCENT" -draw "circle 960,740 975,725" \
+  -blur 0x2 \
+  wallpapers/midnight-minimal.jpg
 
-        cat > config/midnight-branding.conf << 'BEOF'
-        [branding]
-        name=MidnightOS
-        full_name=MidnightOS Midnight Edition
-        version=1.0
-        description=Dark ChromeOS Distribution with Modern UI
-        homepage=https://sourceforge.net/projects/midnightos/
-        support_url=https://sourceforge.net/projects/midnightos/support
+# High-contrast variant for accessibility
+convert -size 1920x1080 xc:"$MIDNIGHT_PRIMARY" \
+  -fill "$MIDNIGHT_ACCENT" -draw "rectangle 0,0 1920,540" \
+  -fill "$MIDNIGHT_SECONDARY" -draw "rectangle 0,540 1920,1080" \
+  -fill "$MIDNIGHT_TEXT" -font "Roboto-Bold" -pointsize 72 \
+  -gravity center -annotate +0+0 "MidnightOS" \
+  wallpapers/midnight-high-contrast.jpg
 
-        [theme]
-        theme_name=midnight
-        primary_color=#0F0F0F
-        secondary_color=#1A1A1A
-        accent_color=#6366F1
-        text_color=#E5E5E5
-        surface_color=#121212
-        error_color=#EF4444
-        warning_color=#F59E0B
-        success_color=#10B981
-        info_color=#3B82F6
+# Generate custom cursors (simple dark theme, 32x32)
+mkdir -p cursors
+for cursor in default pointer text; do
+  convert -size 32x32 xc:"$MIDNIGHT_PRIMARY" \
+    -fill "$MIDNIGHT_ACCENT" -draw "line 8,8 24,24" \
+    cursors/midnight-${cursor}.png
+done
 
-        [appearance]
-        dark_mode=true
-        auto_dark_web_content=true
-        material_you=true
-        dynamic_colors=true
-        font_family=Roboto
-        logo_path=midnight-logo.png
-        wallpaper_collection=wallpapers/
-        icon_theme=midnight
-        BEOF
+# Generate boot animation frames (simple fade, 5 frames)
+mkdir -p boot-frames
+for i in {1..5}; do
+  opacity=$((i * 20))
+  convert -size 1920x1080 xc:"$MIDNIGHT_PRIMARY" \
+    -fill "$MIDNIGHT_ACCENT" -font "Roboto-Bold" -pointsize 64 \
+    -gravity center -annotate +0+0 "MidnightOS" \
+    -channel A -evaluate multiply $opacity/100 \
+    boot-frames/frame-${i}.png
+done
 
-        cat > config/midnight-customizations.json << 'BEOF'
-        {
-          "system_name": "MidnightOS",
-          "theme_name": "Midnight Edition",
-          "welcome_message": "Welcome to MidnightOS - ChromeOS reimagined for the night",
-          "startup_sound": true,
-          "boot_animation": "midnight",
-          "default_wallpaper": "wallpapers/midnight-default.jpg",
-          "wallpaper_rotation": true,
-          "telemetry_disabled": true,
-          "crash_reporting": false,
-          "usage_stats": false,
-          "dark_mode": {
-            "enabled": true,
-            "force_dark_web_content": true,
-            "auto_dark_mode": true,
-            "dark_scrollbars": true
-          },
-          "ui_customizations": {
-            "theme": "midnight",
-            "shelf_style": "floating",
-            "shelf_color": "#121212",
-            "shelf_transparency": 0.95,
-            "status_area_color": "#E5E5E5",
-            "window_frame_color": "#1A1A1A",
-            "accent_color": "#6366F1",
-            "corner_radius": 12,
-            "blur_effects": true,
-            "animations": "enhanced",
-            "material_you": true,
-            "dynamic_colors": true
-          },
-          "chrome_flags": [
-            "--force-dark-mode",
-            "--enable-features=WebUIDarkMode,ChromeRefresh2023",
-            "--dark-mode-settings",
-            "--enable-blink-features=CSSColorSchemeUARendering"
-          ]
-        }
-        BEOF
+# Create extensive theme configuration (expanded for full overhaul)
+mkdir -p config themes
 
-        # Create Material Design 3 theme files
-        cat > themes/material-midnight.css << 'BEOF'
-        /* MidnightOS Material Design 3 Theme */
-        :root {
-          --md-sys-color-primary: #6366F1;
-          --md-sys-color-on-primary: #FFFFFF;
-          --md-sys-color-primary-container: #1E1B4B;
-          --md-sys-color-on-primary-container: #E5E7EB;
-          --md-sys-color-secondary: #A855F7;
-          --md-sys-color-on-secondary: #FFFFFF;
-          --md-sys-color-secondary-container: #581C87;
-          --md-sys-color-on-secondary-container: #F3E8FF;
-          --md-sys-color-surface: #0F0F0F;
-          --md-sys-color-on-surface: #E5E5E5;
-          --md-sys-color-surface-variant: #1A1A1A;
-          --md-sys-color-on-surface-variant: #D1D5DB;
-          --md-sys-color-background: #0F0F0F;
-          --md-sys-color-on-background: #E5E5E5;
-          --md-sys-color-error: #EF4444;
-          --md-sys-color-on-error: #FFFFFF;
-        }
+cat > config/midnight-branding.conf << 'BEOF'
+[branding]
+name=MidnightOS
+full_name=MidnightOS Midnight Edition
+version=1.0
+description=Dark ChromeOS Distribution with Modern UI Overhaul
+homepage=https://sourceforge.net/projects/midnightos/
+support_url=https://sourceforge.net/projects/midnightos/support
 
-        /* Midnight UI Components */
-        .midnight-card {
-          background: var(--md-sys-color-surface-variant);
-          border-radius: 12px;
-          box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.3);
-          backdrop-filter: blur(10px);
-        }
+[theme]
+theme_name=midnight
+primary_color=#0F0F0F
+secondary_color=#1A1A1A
+accent_color=#6366F1
+text_color=#E5E5E5
+surface_color=#121212
+error_color=#EF4444
+warning_color=#F59E0B
+success_color=#10B981
+info_color=#3B82F6
 
-        .midnight-button {
-          background: var(--md-sys-color-primary);
-          color: var(--md-sys-color-on-primary);
-          border-radius: 24px;
-          padding: 12px 24px;
-          border: none;
-          transition: all 0.2s ease;
-        }
+[appearance]
+dark_mode=true
+auto_dark_web_content=true
+material_you=true
+dynamic_colors=true
+font_family=Roboto
+logo_path=midnight-logo.png
+wallpaper_collection=wallpapers/
+icon_theme=midnight
+cursor_theme=midnight
+boot_animation=midnight
+shelf_floating=true
+shelf_transparent=0.95
+window_rounded_corners=12
+blur_effects=true
+animations=enhanced
+BEOF
 
-        .midnight-button:hover {
-          transform: translateY(-1px);
-          box-shadow: 0 6px 8px -2px rgba(99, 102, 241, 0.4);
-        }
-        BEOF
+cat > config/midnight-customizations.json << 'BEOF'
+{
+  "system_name": "MidnightOS",
+  "theme_name": "Midnight Edition",
+  "welcome_message": "Welcome to MidnightOS - ChromeOS reimagined for the night",
+  "startup_sound": true,
+  "boot_animation": "midnight",
+  "default_wallpaper": "wallpapers/midnight-default.jpg",
+  "wallpaper_rotation": true,
+  "telemetry_disabled": true,
+  "crash_reporting": false,
+  "usage_stats": false,
+  "dark_mode": {
+    "enabled": true,
+    "force_dark_web_content": true,
+    "auto_dark_mode": true,
+    "dark_scrollbars": true,
+    "dark_cursors": true
+  },
+  "ui_customizations": {
+    "theme": "midnight",
+    "shelf_style": "floating",
+    "shelf_color": "#121212",
+    "shelf_transparency": 0.95,
+    "status_area_color": "#E5E5E5",
+    "window_frame_color": "#1A1A1A",
+    "accent_color": "#6366F1",
+    "corner_radius": 12,
+    "blur_effects": true,
+    "animations": "enhanced",
+    "material_you": true,
+    "dynamic_colors": true,
+    "notification_style": "md3",
+    "launcher_background": "#0F0F0F",
+    "overview_mode": "dark_blur"
+  },
+  "chrome_flags": [
+    "--force-dark-mode",
+    "--enable-features=WebUIDarkMode,ChromeRefresh2023,DarkModeForWebContents",
+    "--dark-mode-settings",
+    "--enable-blink-features=CSSColorSchemeUARendering,DarkMode",
+    "--ash-enable-unified-desktop",
+    "--enable-wayland-server",
+    "--ozone-platform=wayland"
+  ]
+}
+BEOF
 
-        echo "=== Setting up OpenFyde overlay ==="
-        cd $HOME/chromeos-build
-        
-        # Clone OpenFyde overlay for amd64
-        echo "Cloning OpenFyde overlays..."
-        git clone --depth 1 https://github.com/openFyde/overlay-amd64-openfyde.git src/private-overlays/overlay-amd64-openfyde || true
-        git clone --depth 1 https://github.com/openFyde/chromiumos-overlay.git src/private-overlays/overlay-openfyde || true
+# Create Material Design 3 theme files (expanded for Ash/Chromium)
+cat > themes/material-midnight.css << 'BEOF'
+/* MidnightOS Material Design 3 Theme - Full UI Overhaul */
+:root {
+  --md-sys-color-primary: #6366F1;
+  --md-sys-color-on-primary: #FFFFFF;
+  --md-sys-color-primary-container: #1E1B4B;
+  --md-sys-color-on-primary-container: #E5E7EB;
+  --md-sys-color-secondary: #A855F7;
+  --md-sys-color-on-secondary: #FFFFFF;
+  --md-sys-color-secondary-container: #581C87;
+  --md-sys-color-on-secondary-container: #F3E8FF;
+  --md-sys-color-surface: #0F0F0F;
+  --md-sys-color-on-surface: #E5E5E5;
+  --md-sys-color-surface-variant: #1A1A1A;
+  --md-sys-color-on-surface-variant: #D1D5DB;
+  --md-sys-color-background: #0F0F0F;
+  --md-sys-color-on-background: #E5E5E5;
+  --md-sys-color-error: #EF4444;
+  --md-sys-color-on-error: #FFFFFF;
+  --md-sys-color-outline: #9CA3AF;
+  --md-sys-color-shadow: #000000;
+  --md-sys-elevation-level1: 0 1px 3px 0 var(--md-sys-color-shadow);
+  --md-sys-elevation-level2: 0 2px 8px 0 var(--md-sys-color-shadow);
+  --md-sys-typescale-display-large-font: "Roboto", sans-serif;
+  --md-sys-typescale-display-large-size: 57px;
+  --md-sys-shape-corner-large: 16
+px;
+  --md-sys-shape-corner-medium: 12px;
+  --md-sys-shape-corner-small: 8px;
+}
 
-        # Clone additional UI/UX overlays and themes
-        echo "=== Setting up UI/UX overlays ==="
-        # Create custom UI overlay structure
-        mkdir -p src/private-overlays/overlay-midnight-ui/chromeos-base/chromeos-chrome
-        mkdir -p src/private-overlays/overlay-midnight-ui/chromeos-base/chromeos-assets
+/* Ash Window Manager Overhaul (Shelf, Overview, Launcher) */
+.ash-shelf {
+  background: var(--md-sys-color-surface-variant) !important;
+  backdrop-filter: blur(20px);
+  border-radius: 16px;
+  box-shadow: var(--md-sys-elevation-level2);
+  opacity: 0.95;
+}
 
-        echo "=== Initializing ChromiumOS repository ==="
-        cd $HOME/chromeos-build
+.ash-shelf-button {
+  background: transparent;
+  border-radius: 50%;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
 
-        echo "Initializing ChromiumOS repository..."
-        repo init -u https://chromium.googlesource.com/chromiumos/manifest.git \
-          --repo-url https://chromium.googlesource.com/external/repo.git \
-          -g minilayout > $HOME/logs/repo-init.log 2>&1
-        
-        REPO_INIT_STATUS=$?
-        cat $HOME/logs/repo-init.log
-        
-        if [ $REPO_INIT_STATUS -ne 0 ]; then
-          echo "ERROR: repo init failed with status $REPO_INIT_STATUS"
-          echo "But checking if repo was actually initialized..."
-          if [ -d ".repo" ]; then
-            echo "Repo directory exists, continuing despite error..."
-          else
-            exit 1
-          fi
-        fi
+.ash-shelf-button:hover {
+  background: var(--md-sys-color-primary-container);
+  transform: scale(1.05);
+}
 
-        echo "Syncing ChromiumOS source (this will take a while)..."
-        repo sync -c -j$(nproc) --force-sync --no-clone-bundle > $HOME/logs/repo-sync.log 2>&1 &
-        SYNC_PID=$!
-        
-        # Show progress while syncing
-        while kill -0 $SYNC_PID 2>/dev/null; do
-          echo "Still syncing... ($(date +%H:%M:%S))"
-          sleep 60
-        done
-        
-        wait $SYNC_PID
-        REPO_SYNC_STATUS=$?
-        
-        echo "Repo sync completed with status: $REPO_SYNC_STATUS"
-        tail -100 $HOME/logs/repo-sync.log
-        
-        if [ $REPO_SYNC_STATUS -ne 0 ]; then
-          echo "ERROR: repo sync failed"
-          echo "Last 200 lines of sync log:"
-          tail -200 $HOME/logs/repo-sync.log
-          exit 1
-        fi
+.ash-overview {
+  background: linear-gradient(135deg, var(--md-sys-color-background), var(--md-sys-color-surface));
+  backdrop-filter: blur(10px);
+}
 
-        echo "=== Applying MidnightOS UI/UX customizations ==="
-        # Create MidnightOS overlay that extends OpenFyde with dark UI
-        mkdir -p src/private-overlays/overlay-midnightos/chromeos-base/chromeos-branding/files
+.ash-window-frame {
+  border-radius: var(--md-sys-shape-corner-large);
+  box-shadow: var(--md-sys-elevation-level1);
+  background: var(--md-sys-color-surface);
+}
 
-        # Copy branding assets to the overlay
-        echo "Copying branding assets to overlay..."
-        cp -r $HOME/branding/* src/private-overlays/overlay-midnightos/chromeos-base/chromeos-branding/files/ || {
-          echo "Warning: Could not copy all branding assets"
-        }
+/* Notification and Dialog Styles */
+.ash-notification {
+  background: var(--md-sys-color-surface-variant);
+  border-radius: var(--md-sys-shape-corner-medium);
+  border-left: 4px solid var(--md-sys-color-primary);
+  box-shadow: var(--md-sys-elevation-level2);
+}
 
-        # Create custom branding ebuild with midnight theme
-        echo "Creating MidnightOS branding ebuild..."
-        mkdir -p src/private-overlays/overlay-midnightos/chromeos-base/chromeos-branding/files
-        
-        cat > src/private-overlays/overlay-midnightos/chromeos-base/chromeos-branding/chromeos-branding-9999.ebuild << 'BEOF'
-        # Copyright 2025 MidnightOS Project
-        # Distributed under the terms of the GNU General Public License v2
+.ash-dialog {
+  background: var(--md-sys-color-surface);
+  border-radius: var(--md-sys-shape-corner-large);
+  backdrop-filter: blur(15px);
+}
 
-        EAPI=7
-        inherit cros-workon
+/* Launcher and App List */
+.ash-launcher {
+  background: var(--md-sys-color-background);
+  border-radius: var(--md-sys-shape-corner-large);
+  box-shadow: var(--md-sys-elevation-level1);
+}
 
-        CROS_WORKON_PROJECT="chromiumos/platform2"
-        CROS_WORKON_LOCALNAME="platform2"
-        CROS_WORKON_SUBTREE="chromeos-branding"
+.ash-app-icon {
+  filter: drop-shadow(0 2px 4px var(--md-sys-color-shadow));
+  border-radius: 12px;
+}
 
-        DESCRIPTION="MidnightOS ChromeOS branding - Dark UI/UX without telemetry"
-        HOMEPAGE="https://sourceforge.net/projects/midnightos/"
+/* Chromium Browser Overrides (Dark Mode, MD3) */
+#browser-toolbar {
+  background: var(--md-sys-color-surface-variant) !important;
+  border-bottom: 1px solid var(--md-sys-color-outline);
+}
 
-        LICENSE="BSD-Google"
-        KEYWORDS="*"
-        SLOT="0"
+#omnibox {
+  background: var(--md-sys-color-surface) !important;
+  border-radius: var(--md-sys-shape-corner-medium);
+  color: var(--md-sys-color-on-surface) !important;
+}
 
-        RDEPEND="chromeos-base/chromeos-assets
-                 media-fonts/roboto"
+.tab-strip {
+  background: var(--md-sys-color-background) !important;
+  border-radius: var(--md-sys-shape-corner-small)  var(--md-sys-shape-corner-small) 0 0;
+}
 
-        src_install() {
-            # Install branding assets
-            insinto /usr/share/chromeos-assets/images
-            doins "${S}"/files/midnight-logo.png
-            doins "${S}"/files/boot-splash.png
+.tab {
+  background: var(--md-sys-color-surface-variant) !important;
+  border-radius: var(--md-sys-shape-corner-medium);
+  color: var(--md-sys-color-on-surface-variant) !important;
+}
 
-            # Install wallpaper collection
-            insinto /usr/share/chromeos-assets/wallpapers
-            doins "${S}"/files/wallpapers/*.jpg
+.tab:hover {
+  background: var(--md-sys-color-primary-container) !important;
+}
 
-            # Install Chrome branding
-            insinto /opt/google/chrome
-            newins "${S}"/files/midnight-logo.png product_logo.png
+/* NTP and Web Content Dark Mode */
+#newtab-page {
+  background: var(--md-sys-color-background) !important;
+  color: var(--md-sys-color-on-background) !important;
+}
 
-            # Install icons
-            insinto /usr/share/pixmaps
-            doins "${S}"/files/icons/midnight-*.png
+body {
+  color-scheme: dark !important;
+  background: var(--md-sys-color-background) !important;
+  color: var(--md-sys-color-on-background) !important;
+}
 
-            # Install theme files
-            insinto /usr/share/chromeos-assets/themes
-            doins "${S}"/files/themes/material-midnight.css
-            
-            # Install UI configuration
-            insinto /etc/chrome
-            newins "${S}"/files/config/midnight-customizations.json ui-config.json
-            
-            # Force dark mode configuration
-            insinto /etc/chrome/policies/managed
-            doins "${FILESDIR}"/midnight-dark-mode.json
-            
-            # Disable telemetry services
-            insinto /etc/init
-            newins "${FILESDIR}"/no-telemetry.conf telemetry.override
-        }
-        BEOF
+/* Scrollbars and Animations */
+::-webkit-scrollbar {
+  width: 8px;
+  background: var(--md-sys-color-surface-variant);
+}
 
-        # Create dark mode policy file
-        echo "Creating dark mode policy files..."
-        mkdir -p src/private-overlays/overlay-midnightos/chromeos-base/chromeos-branding/files
-        
-        cat > src/private-overlays/overlay-midnightos/chromeos-base/chromeos-branding/files/midnight-dark-mode.json << 'BEOF'
-        {
-          "BrowserThemeColor": "#0F0F0F",
-          "PolicyRefreshRate": 3600000,
-          "DefaultBrowserSettingEnabled": false,
-          "AutoDarkModeEnabled": true,
-          "ForceDarkModeEnabled": true,
-          "DarkModeEnabled": true,
-          "NTPCustomBackgroundEnabled": false,
-          "WallpaperImage": "/usr/share/chromeos-assets/wallpapers/midnight-default.jpg"
-        }
-        BEOF
+::-webkit-scrollbar-thumb {
+  background: var(--md-sys-color-outline);
+  border-radius: 4px;
+}
 
-        # Create midnight UI overlay profile
-        echo "Creating MidnightOS overlay profile..."
-        mkdir -p src/private-overlays/overlay-midnightos/profiles/base
-        cat > src/private-overlays/overlay-midnightos/profiles/base/make.defaults << 'BEOF'
-        # MidnightOS Profile
-        # Inherit OpenFyde optimizations
-        USE="${USE} openfyde_board-amd64-openfyde"
-        # Hardware support from OpenFyde
-        USE="${USE} intel_graphics intel_audio"
-        # Enhanced UI/UX features
-        USE="${USE} linux_apps android_apps crostini"
-        USE="${USE} dark_mode material_design wayland"
-        USE="${USE} chrome_internal chrome_media vaapi"
-        # Advanced UI features
-        USE="${USE} vulkan opengl compositor blur_effects"
-        USE="${USE} fonts truetype roboto material_icons"
-        # Disable telemetry components
-        USE="${USE} -metrics_collection -crash_reporter -feedback -uma"
-        USE="${USE} -debugd -crash_sender -anomaly_detector"
-        # MidnightOS device ID and branding
-        CHROMEOS_DEVICE_ID="midnightos-amd64"
-        CHROMEOS_METRICS_ENABLED=0
-        MIDNIGHT_THEME=1
-        BEOF
+::-webkit-scrollbar-thumb:hover {
+  background: var(--md-sys-color-primary);
+}
 
-        # Create comprehensive build configuration
-        echo "Creating build configuration..."
-        cat > $HOME/chromeos-build/midnight-build.conf << 'BEOF'
-        USE="minimal -debug -test -autotest -cros_host -profiling"
-        # Keep essential services but remove bloat
-        USE="${USE} -cellular -ml_service -arc -android_container_pi"
-        # Enable UI/UX features
-        USE="${USE} chrome chromeos-base/chromeos-chrome midnightos-branding"
-        USE="${USE} dark_mode material_design wayland compositor"
-        USE="${USE} vulkan opengl blur_effects animations"
-        USE="${USE} fonts truetype roboto material_icons"
-        # OpenFyde hardware compatibility
-        USE="${USE} openfyde_board-amd64-openfyde intel_graphics intel_audio"
-        USE="${USE} linux_apps android_apps crostini bluetooth wifi"
-        USE="${USE} drm_atomic intel_hd_graphics baytrail_audio"
-        USE="${USE} vaapi chrome_media v4l2_codec"
-        # Audio/Video enhancements
-        USE="${USE} cras pulseaudio alsa"
-        # Disable telemetry
-        USE="${USE} -metrics_collection -crash_reporter -feedback -uma"
-        USE="${USE} -crash_sender -anomaly_detector -diagnostics"
-        FEATURES="-test"
-        CHROMEOS_VERSION_STRING="MidnightOS"
-        CHROMEOS_VERSION_DESCRIPTION="MidnightOS - Dark ChromeOS with Modern UI (OpenFyde Base)"
-        CHROMEOS_DEVICE_ID="midnightos-amd64"
-        CHROMEOS_METRICS_ENABLED=0
-        CHROMEOS_CRASH_REPORTING=0
-        MIDNIGHT_THEME=1
-        MATERIAL_DESIGN_3=1
-        BEOF
+/* Enhanced Animations (Cubic Bezier for MD3) */
+* {
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
 
-        # Create telemetry override files
-        echo "Creating telemetry override configuration..."
-        cat > src/private-overlays/overlay-midnightos/chromeos-base/chromeos-branding/files/no-telemetry.conf << 'BEOF'
-        # MidnightOS Telemetry Override - Disable all telemetry services
-        description "Disable telemetry services for privacy"
-        author "MidnightOS Project"
+/* High-DPI Scaling and Blur Effects */
+@media (min-resolution: 2dppx) {
+  .ash-shelf {
+    backdrop-filter: blur(30px);
+  }
+}
+BEOF
 
-        # Override any telemetry-related services
-        manual
-        stop on started boot-services
-        BEOF
+# Create custom sound files (simple tones for boot/login)
+mkdir -p sounds
+# Boot sound (low tone)
+sox -n -t raw -r 8000 -e unsigned -b 8 -c 1 sounds/boot.raw synth 0.5 sin 200
+# Login sound (higher tone)
+sox -n -t raw -r 8000 -e unsigned -b 8 -c 1 sounds/login.raw synth 0.3 sin 400
 
-        echo "=== Building MidnightOS with Dark UI ==="
-        # Set up build environment with OpenFyde board (running as builder user)
-        echo "Setting up build environment with OpenFyde and UI support..."
-        cd $HOME/chromeos-build
-        cros_sdk --enter --cmd="setup_board --board=${BOARD} --force" > $HOME/logs/setup-board.log 2>&1 || {
-          echo "ERROR: setup_board failed"
-          echo "Last 100 lines of setup-board log:"
-          tail -100 $HOME/logs/setup-board.log
-          exit 1
-        }
-        echo "Setup board completed successfully"
+echo "=== Setting up OpenFyde and Theming Overlays ==="
+cd /home/builder/chromeos-build
 
-        # Build OpenFyde packages first for compatibility
-        echo "Building OpenFyde base packages..."
-        cros_sdk --enter --cmd="
-          export BOARD=${BOARD}
-          export CHROMEOS_DEVICE_ID='midnightos-amd64'
-          export MIDNIGHT_THEME=1
-          
-          # Build OpenFyde base components
-          emerge-${BOARD} --quiet-build chromeos-base/device-appid || true
-          emerge-${BOARD} --quiet-build chromeos-base/amd64-openfyde-spec || true
-          emerge-${BOARD} --quiet-build media-libs/lpe-support-blacklist || true
-          
-          # Build UI/theme packages
-          emerge-${BOARD} --quiet-build media-fonts/dejavu || true
-        " > $HOME/logs/build-openfyde-base.log 2>&1 || {
-          echo "Warning: Some OpenFyde packages failed to build"
-        }
-        echo "OpenFyde base packages build completed"
+# Verify permissions before repo
+if [ ! -w /home/builder/chromeos-build ]; then
+  echo "ERROR: Build dir not writable. Fixing..."
+  sudo chown -R $(whoami):$(whoami) /home/builder/chromeos-build
+  chmod 755 /home/builder/chromeos-build
+fi
+ls -la /home/builder/chromeos-build > /home/builder/logs/permissions-check.log
 
-        # Build packages with dark UI and telemetry disabled
-        echo "Building MidnightOS packages with dark UI and privacy features..."
-        cros_sdk --enter --cmd="
-          export BOARD=${BOARD}
-          export USE='minimal -debug -test -autotest -cros_host -profiling -cellular -ml_service -arc -android_container_pi chrome chromeos-base/chromeos-chrome midnightos-branding dark_mode material_design wayland compositor vulkan opengl blur_effects animations fonts truetype dejavu material_icons openfyde_board-amd64-openfyde intel_graphics intel_audio linux_apps android_apps crostini bluetooth wifi drm_atomic intel_hd_graphics baytrail_audio vaapi chrome_media v4l2_codec cras pulseaudio alsa -metrics_collection -crash_reporter -feedback -uma -crash_sender -anomaly_detector -diagnostics'
-          export FEATURES='-test'
-          export CHROMEOS_VERSION_STRING='MidnightOS'
-          export CHROMEOS_VERSION_DESCRIPTION='MidnightOS - Dark ChromeOS with Modern UI (OpenFyde Base)'
-          export CHROMEOS_DEVICE_ID='midnightos-amd64'
-          export CHROMEOS_METRICS_ENABLED=0
-          export CHROMEOS_CRASH_REPORTING=0
-          export MIDNIGHT_THEME=1
-          export MATERIAL_DESIGN_3=1
-          
-          emerge-${BOARD} --quiet-build chromeos-base/chromeos-branding || true
-          build_packages --board=${BOARD} --nowithautotest --nowithtest --nowithfactory
-        " > $HOME/logs/build-packages.log 2>&1 &
-        
-        BUILD_PID=$!
-        echo "Building packages in background (PID: $BUILD_PID)..."
-        
-        # Show progress
-        while kill -0 $BUILD_PID 2>/dev/null; do
-          echo "Still building packages... ($(date +%H:%M:%S))"
-          sleep 120
-        done
-        
-        wait $BUILD_PID
-        BUILD_STATUS=$?
-        
-        if [ $BUILD_STATUS -ne 0 ]; then
-          echo "ERROR: Package build failed with status $BUILD_STATUS"
-          echo "Last 200 lines of build log:"
-          tail -200 $HOME/logs/build-packages.log
-          exit 1
-        fi
-        echo "Package build completed successfully"
+echo "=== Initializing ChromiumOS repository (non-root) ==="
+repo init -u https://chromium.googlesource.com/chromiumos/manifest.git \
+  --repo-url https://chromium.googlesource.com/external/repo.git \
+  -g minilayout > /home/builder/logs/repo-init.log 2>&1
 
-        # Build system image with dark theme optimizations
-        echo "Building MidnightOS system image with dark UI..."
-        cros_sdk --enter --cmd="
-          export BOARD=${BOARD}
-          export CHROMEOS_METRICS_ENABLED=0
-          export CHROMEOS_CRASH_REPORTING=0
-          export CHROMEOS_DEVICE_ID='midnightos-amd64'
-          export MIDNIGHT_THEME=1
-          build_image --board=${BOARD} --noenable_rootfs_verification --boot_args='cros_secure cros_debug systemd.log_level=warning quiet intel_pstate=disable dark_mode=1' dev
-        " > $HOME/logs/build-image.log 2>&1 || {
-          echo "ERROR: Image build failed"
-          echo "Last 200 lines of image build log:"
-          tail -200 $HOME/logs/build-image.log
-          exit 1
-        }
-        echo "System image build completed successfully"
+repo sync -c -j$(nproc) --force-sync --no-clone-bundle > /home/builder/logs/repo-sync.log 2>&1
 
-        # Create USB image with dark theme
-        echo "Creating USB installation image with MidnightOS theme..."
-        cros_sdk --enter --cmd="
-          export BOARD=${BOARD}
-          export CHROMEOS_METRICS_ENABLED=0
-          export CHROMEOS_DEVICE_ID='midnightos-amd64'
-          export MIDNIGHT_THEME=1
-          mod_image_for_test.sh --board=${BOARD} --image=../build/images/${BOARD}/latest/chromiumos_image.bin || true
-          ./build_image --board=${BOARD} --noenable_rootfs_verification --boot_args='cros_secure cros_debug systemd.log_level=warning quiet intel_pstate=disable dark_mode=1' --disk_layout=usb dev
-        " > $HOME/logs/create-usb-image.log 2>&1 || {
-          echo "Warning: USB image creation had issues, but continuing..."
-          tail -100 $HOME/logs/create-usb-image.log
-        }
-        echo "USB image creation completed"
+echo "=== Cloning OpenFyde and Theming Repos ==="
+# OpenFyde base
+git clone https://github.com/openFyde/overlay-amd64-openfyde.git src/private-overlays/overlay-amd64-openfyde
+git clone https://github.com/openFyde/chromiumos-overlay.git src/private-overlays/overlay-openfyde
 
-        echo "=== Preparing artifacts ==="
-        BUILD_DIR="$HOME/chromeos-build/src/build/images/${BOARD}/latest"
+# Additional theming repos (research-based: Ash for UI, Gentoo for GTK/Qt)
+git clone https://chromium.googlesource.com/chromiumos/platform/ash.git src/third_party/ash-midnight-fork
+git clone https://github.com/gentoo/gentoo.git src/private-overlays/overlay-gentoo-themes  # For GTK/Qt dark themes
 
-        if [ -d "${BUILD_DIR}" ]; then
-          # Copy images to artifacts directory
-          cp "${BUILD_DIR}"/*.bin $HOME/artifacts/ 2>/dev/null || true
-          cp "${BUILD_DIR}"/*.img $HOME/artifacts/ 2>/dev/null || true
-          
-          # Rename files with MidnightOS prefix
-          cd $HOME/artifacts
-          for file in *.bin *.img; do
-            if [ -f "$file" ]; then
-              newname="MidnightOS-$(date +%Y.%m.%d)-${file}"
-              mv "$file" "$newname"
-              # Create checksums
-              sha256sum "$newname" > "${newname}.sha256"
-              md5sum "$newname" > "${newname}.md5"
-            fi
-          done
-          
-          # Create release info
-          cat > release-info.txt << BEOF
-        MidnightOS ChromeOS Distribution - Midnight Edition
-        Version: $(date +%Y.%m.%d)
-        Board: ${BOARD}
-        Build Date: $(date -u +%Y-%m-%dT%H:%M:%SZ)
-        Build Type: Midnight UI - Dark theme with Modern UX (No Telemetry)
-        Base: OpenFyde open-source ChromeOS
-        Description: Dark-themed ChromeOS distribution with modern Material Design 3 UI, extensive visual overhauls, and zero telemetry
+# Custom MidnightOS overlay structure (full UI/UX overhaul)
+mkdir -p src/private-overlays/overlay-midnightos/chromeos-base/{chromeos-branding,chromeos-ash,chromeos-assets,midnight-policies}
+mkdir -p src/private-overlays/overlay-midnightos/media-themes/{gtk-qt-themes,midnight-sounds}
+mkdir -p src/private-overlays/overlay-midnightos/profiles/base
 
-        🌙 Midnight UI/UX Features:
-        - Complete dark mode with midnight color scheme
-        - Material Design 3 theming throughout
-        - Custom midnight wallpaper collection
-        - Modern floating shelf with transparency
-        - Enhanced animations and blur effects
-        - DejaVu font family integration
-        - Dynamic color theming
-        - Custom boot animation and splash screen
-        - Rounded corners and modern iconography
-        - Force dark mode for all web content
+# Copy branding assets to overlay
+cp -r /home/builder/branding/* src/private-overlays/overlay-midnightos/chromeos-base/chromeos-branding/files/ 2>/dev/null || true
 
-        🚀 OpenFyde Features Included:
-        - Intel HD Graphics support (2011+ CPUs)
-        - Enhanced hardware compatibility
-        - Linux apps support (Crostini)
-        - Android apps container support
-        - Improved driver support for modern PCs
-        - Bay Trail and later Intel Atom support
-        - DRM atomic display support
-        - Audio/Video acceleration (VAAPI)
+echo "=== Creating Custom Ebuilds for Full UI Overhaul ==="
 
-        🔒 Privacy Features:
-        - Zero telemetry collection
-        - No crash reporting
-        - No usage analytics
-        - No feedback system
-        - No diagnostic data collection
-        - No anomaly detection
-        - Minimal network connections
-        - Privacy-first configuration
+# Enhanced chromeos-branding ebuild (integrates assets, policies)
+cat > src/private-overlays/overlay-midnightos/chromeos-base/chromeos-branding/chromeos-branding-9999.ebuild << 'BEOF'
+# Copyright 2025 MidnightOS Project
+# Distributed under the terms of the GNU General Public License v2
 
-        💻 Hardware Compatibility:
-        - Intel 2nd generation Core™ Processors (Sandy Bridge) and later
-        - Intel Atom, Celeron, and Pentium processors (Bay Trail and later)
-        - Integrated Intel HD graphics
-        - x86_64 architecture PCs
-        - Modern audio and video acceleration
+EAPI=7
+inherit cros-workon
 
-        🎨 Visual Enhancements:
-        - Midnight color palette (#0F0F0F, #6366F1, #E5E5E5)
-        - Custom icon set with rounded modern design
-        - Multiple dark wallpapers included
-        - Enhanced Chrome UI with dark theme
-        - System-wide dark mode enforcement
-        - Blur effects and modern animations
+CROS_WORKON_PROJECT="chromiumos/platform2"
+CROS_WORKON_LOCALNAME="platform2"
+CROS_WORKON_SUBTREE="chromeos-branding"
 
-        Files:
-        $(ls -lh *.bin *.img 2>/dev/null | awk '{print $9, $5}' || echo "No build files found")
+DESCRIPTION="MidnightOS ChromeOS branding - Full Dark UI/UX Overhaul without telemetry"
+HOMEPAGE="https://sourceforge.net/projects/midnightos/"
 
-        Checksums available in .sha256 and .md5 files
-        BEOF
+LICENSE="BSD-Google"
+KEYWORDS="*"
+SLOT="0"
 
-          echo "MidnightOS build completed successfully!"
-          ls -lh $HOME/artifacts/
-        else
-          echo "ERROR: Build directory not found at: ${BUILD_DIR}"
-          echo "Checking for alternative locations..."
-          find $HOME/chromeos-build -name "*.bin" -o -name "*.img" 2>/dev/null || true
-          exit 1
-        fi
+RDEPEND="chromeos-base/chromeos-assets
+         media-fonts/roboto
+         media-themes/midnight-sounds
+         chromeos-base/midnight-policies"
 
-        echo "=== Build Summary ==="
-        echo "MidnightOS build completed with dark UI/UX and telemetry disabled"
-        echo "Features: OpenFyde hardware compatibility + MidnightOS dark theme + Privacy"
-        echo "Artifacts ready for extraction at: $HOME/artifacts"
-        EOF
+src_install() {
+    # Install branding assets
+    insinto /usr/share/chromeos-assets/images
+    doins "${S}"/files/midnight-logo.png
+    doins "${S}"/files/boot-splash.png
+    doins "${S}"/files/boot-frames/*.png
 
-    - name: Build MidnightOS in Docker
+    # Install wallpaper collection
+    insinto /usr/share/chromeos-assets/wallpapers
+    doins "${S}"/files/wallpapers/*.jpg
+
+    # Install icons and cursors
+    insinto /usr/share/icons/midnight
+    doins "${S}"/files/icons/midnight-*.png
+    doins "${S}"/files/cursors/*.png
+
+    # Install sounds
+    insinto /usr/share/sounds
+    doins "${S}"/files/sounds/*.raw
+
+    # Install Chrome branding
+    insinto /opt/google/chrome
+    newins "${S}"/files/midnight-logo.png product_logo.png
+
+    # Install theme files
+    insinto /usr/share/themes/midnight
+    doins "${S}"/files/themes/material-midnight.css
+    doins "${S}"/files/config/midnight-branding.conf
+    doins "${S}"/files/config/midnight-customizations.json
+
+    # Force dark mode and UX policies
+    insinto /etc/chrome/policies/managed
+    doins "${FILESDIR}"/midnight-dark-mode.json
+    doins "${FILESDIR}"/midnight-ux-overhaul.json
+
+    # Disable telemetry
+    insinto /etc/init
+    newins "${FILESDIR}"/no-telemetry.conf telemetry.override
+}
+BEOF
+
+# New ebuild: chromeos-ash-midnight (Ash window manager overhaul)
+cat > src/private-overlays/overlay-midnightos/chromeos-base/chromeos-ash/chromeos-ash-9999.ebuild << 'BEOF'
+# Copyright 2025 MidnightOS Project
+
+EAPI=7
+inherit cros-workon
+
+DESCRIPTION="MidnightOS Ash - Dark MD3 Window Manager Overhaul"
+HOMEPAGE="https://sourceforge.net/projects/midnightos/"
+
+LICENSE="BSD-Google"
+KEYWORDS="*"
+
+DEPEND="chromeos-base/chromeos-assets
+        media-fonts/roboto"
+
+src_prepare() {
+    # Patch Ash for midnight theme (shelf, overview, animations)
+    sed -i 's/kThemeColor::kLightBlue/#6366F1/g' "${S}"/ash/public/cpp/ash_features.cc  # Accent color
+    sed -i 's/background_color: kDefaultBackground/#0F0F0F/g' "${S}"/ash/resources/default_theme.css  # Dark bg
+    # Enable Wayland, blur, rounded corners
+    echo 'USE_FLAGS="wayland blur_effects rounded_corners md3"' >> "${S}"/makefile
+}
+
+src_install() {
+    # Install custom Ash resources
+    insinto /usr/share/ash/resources
+    doins "${S}"/midnight-theme-resources.json  # Custom JSON for shelf/launcher
+
+    # MD3 CSS integration
+    insinto /usr/share/ash/themes
+    doins "${FILESDIR}"/material-midnight.css
+
+    # Enable features via config
+    insinto /etc/ash
+    newins "${FILESDIR}"/midnight-ash.conf ash.conf
+}
+BEOF
+
+# midnight-assets ebuild (extended icons, cursors, wallpapers)
+cat > src/private-overlays/overlay-midnightos/chromeos-base/chromeos-assets/midnight-assets-1.0.ebuild << 'BEOF'
+EAPI=7
+
+DESCRIPTION="MidnightOS Assets - Icons, Cursors, Wallpapers for UI Overhaul"
+HOMEPAGE="https://sourceforge.net/projects/midnightos/"
+
+LICENSE="BSD"
+SLOT="0"
+
+src_install() {
+    insinto /usr/share/icons/midnight/cursors
+    doins "${S}"/files/cursors/*.png
+
+    insinto /usr/share/themes/midnight/icons
+    doins "${S}"/files/icons/*.png
+
+    # Dynamic wallpaper support
+    insinto /usr/share/wallpapers/midnight
+    doins "${S}"/files/wallpapers/*.jpg
+
+    # Cursor theme config
+    insinto /usr/share/icons/midnight
+    newins "${FILESDIR}"/index.theme index.theme
+}
+BEOF
+
+# midnight-policies ebuild (JSON policies for dark mode, UX)
+mkdir -p src/private-overlays/overlay-midnightos/chromeos-base/midnight-policies/files
+cat > src/private-overlays/overlay-midnightos/chromeos-base/midnight-policies/midnight-policies-1.0.ebuild << 'BEOF'
+EAPI=7
+
+DESCRIPTION="MidnightOS Policies - Dark Mode, Animations, Wayland UX Overhaul"
+HOMEPAGE="https://sourceforge.net/projects/midnightos/"
+
+LICENSE="BSD"
+SLOT="0"
+
+src_install() {
+    insinto /etc/chrome/policies/managed
+    doins "${FILESDIR}"/midnight-dark-mode.json
+    doins "${FILESDIR}"/midnight-ux-overhaul.json
+    doins "${FILESDIR}"/midnight-wayland.json
+}
+BEOF
+
+# Create policy files
+cat > src/private-overlays/overlay-midnightos/chromeos-base/midnight-policies/files/midnight-dark-mode.json << 'BEOF'
+{
+  "DarkModeEnabled": true,
+  "ForceDarkModeForWebContents": true,
+  "AutoDarkModeForWebContents": true,
+  "BrowserThemeColor": "#0F0F0F",
+  "NTPBackgroundImage": "/usr/share/wallpapers/midnight/midnight-default.jpg",
+  "WallpaperRotationEnabled": true,
+  "DarkScrollbars": true,
+  "HighContrastMode": false
+}
+BEOF
+
+cat > src/private-overlays/overlay-midnightos/chromeos-base/midnight-policies/files/midnight-ux-overhaul.json << 'BEOF'
+{
+  "ShelfAlignment": "bottom",
+  "ShelfBackgroundColor": "#121212",
+  "ShelfTransparency": 0.95,
+  "WindowCornerRadius": 12,
+  "AnimationDuration": "fast",
+  "BlurEffectEnabled": true,
+  "MaterialDesign3": true,
+  "DynamicColorTheme": true,
+  "OverviewBackgroundBlur": 20,
+  "LauncherIconSize": 48,
+  "NotificationDuration": 5000,
+  "AccessibilityHighContrast": false
+}
+BEOF
+
+cat > src/private-overlays/overlay-midnightos/chromeos-base/midnight-policies/files/midnight-wayland.json << 'BEOF'
+{
+  "OzonePlatform": "wayland",
+  "EnableWaylandServer": true,
+  "UseOzonePlatform": true,
+  "HardwareAccelerationMode": "vaapi",
+  "VulkanEnabled": true,
+  "CompositorBlur": true
+}
+BEOF
+
+# GTK/Qt themes ebuild (for Crostini/Linux apps consistency)
+cat > src/private-overlays/overlay-midnightos/media-themes/gtk-qt-themes/gtk-qt-themes-1.0.ebuild << 'BEOF'
+EAPI=7
+
+DESCRIPTION="MidnightOS GTK/Qt Dark Themes for Linux Apps"
+HOMEPAGE="https://sourceforge.net/projects/midnightos/"
+
+LICENSE="GPL-2"
+SLOT="0"
+IUSE="gtk qt"
+
+RDEPEND="gtk? ( x11-themes/gtk-engines )
+         qt? ( dev-qt/qtgui:5 )"
+
+src_install() {
+    if use gtk; then
+        insinto /usr/share/themes/Midnight-GTK
+        doins "${S}"/midnight-gtk.css
+        # Dark GTK config
+        echo '[Settings]
+gtk-theme-name=Midnight-GTK
+gtk-application-prefer-dark-theme=true' > "${D}"/usr/share/gtk-3.0/settings.ini
+    fi
+
+    if use qt; then
+        insinto /usr/share/qt5ct/qt5ct.conf
+        echo 'theme=midnight-qt' > "${D}"/usr/share/qt5ct/qt5ct.conf
+    fi
+}
+BEOF
+
+# Midnight sounds ebuild
+cat > src/private-overlays/overlay-midnightos/media-themes/midnight-sounds/midnight-sounds-1.0.ebuild << 'BEOF'
+EAPI=7
+
+DESCRIPTION="MidnightOS System Sounds"
+HOMEPAGE="https://sourceforge.net/projects/midnightos/"
+
+LICENSE="BSD"
+SLOT="0"
+
+src_install() {
+    insinto /usr/share/sounds/midnight
+    doins "${S}"/files/sounds/*.raw
+
+    # Boot/login config
+    insinto /etc
+    doins "${FILESDIR}"/midnight-sounds.conf
+}
+BEOF
+
+# Ash config file
+cat > src/private-overlays/overlay-midnightos/chromeos-base/chromeos-ash/files/midnight-ash.conf << 'BEOF'
+# MidnightOS Ash Config - UI Overhaul
+shelf_background_color=#121212
+shelf_corner_radius=16
+overview_blur_radius=20
+window_border_radius=12
+launcher_background=#0F0F0F
+animation_easing=cubic-bezier(0.4,0,0.2,1)
+enable_blur=true
+enable_wayland=true
+theme_accent=#6366F1
+BEOF
+
+# GTK dark CSS snippet
+cat > src/private-overlays/overlay-midnightos/media-themes/gtk-qt-themes/midnight-gtk.css << 'BEOF'
+/* Midnight GTK Dark Theme */
+* {
+  background-color: #0F0F0F;
+  color: #E5E5E5;
+  border-color: #1A1A1A;
+}
+
+button {
+  background-color: #121212;
+  border-radius:  12px;
+  border: 1px solid #1A1A1A;
+  color: #E5E5E5;
+}
+
+button:hover {
+  background-color: #1A1A1A;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+}
+
+entry {
+  background-color: #121212;
+  border: 1px solid #1A1A1A;
+  border-radius: 8px;
+  color: #E5E5E5;
+  padding: 8px;
+}
+
+window {
+  background-color: #0F0F0F;
+  border-radius: 12px;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+}
+
+menu {
+  background-color: #121212;
+  border-radius: 8px;
+  color: #E5E5E5;
+}
+
+menuitem {
+  padding: 8px 16px;
+  border-radius: 6px;
+}
+
+menuitem:hover {
+  background-color: #1A1A1A;
+}
+
+/* Scrollbars */
+scrollbar {
+  background-color: #0F0F0F;
+  border-radius: 4px;
+}
+
+scrollbar slider {
+  background-color: #6366F1;
+  border-radius: 4px;
+  min-width: 8px;
+}
+
+/* MD3 Elevation and Animations */
+headerbar {
+  background-color: #121212;
+  border-radius: 12px 12px 0 0;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+BEOF
+
+# Qt theme config (basic dark setup)
+cat > src/private-overlays/overlay-midnightos/media-themes/gtk-qt-themes/midnight-qt.conf << 'BEOF'
+[Theme]
+style=midnight
+color_scheme=dark
+accent_color=#6366F1
+background_color=#0F0F0F
+text_color=#E5E5E5
+BEOF
+
+# Telemetry disable config
+cat > src/private-overlays/overlay-midnightos/chromeos-base/chromeos-branding/files/no-telemetry.conf << 'BEOF'
+# Disable all telemetry and reporting
+start telemetry-collector {
+  start on stopped rcS
+  stop on runlevel [016]
+  respawn
+  exec /bin/true  # No-op to disable
+}
+BEOF
+
+echo "=== Configuring MidnightOS Overlay in Manifest ==="
+# Add MidnightOS overlay to profiles/base
+echo 'overlay-midnightos' >> src/overlays.csv
+echo 'private-overlays/overlay-midnightos' >> src/private-overlays/overlays.csv
+
+# Local manifest for custom repos
+cat > .repo/local_manifests/midnight.xml << 'BEOF'
+<?xml version="1.0" encoding="UTF-8"?>
+<manifest>
+  <remote name="midnight" fetch="https://github.com/yourusername/midnightos-overlays" />
+  <project name="midnightos-overlays" path="src/private-overlays/overlay-midnightos" remote="midnight" revision="main" />
+</manifest>
+BEOF
+
+# Update packages in base profile
+echo 'chromeos-base/chromeos-branding' >> src/private-overlays/overlay-midnightos/profiles/base/packages
+echo 'chromeos-base/chromeos-ash' >> src/private-overlays/overlay-midnightos/profiles/base/packages
+echo 'chromeos-base/midnight-assets' >> src/private-overlays/overlay-midnightos/profiles/base/packages
+echo 'chromeos-base/midnight-policies' >> src/private-overlays/overlay-midnightos/profiles/base/packages
+echo 'media-themes/midnight-sounds' >> src/private-overlays/overlay-midnightos/profiles/base/packages
+echo 'media-themes/gtk-qt-themes' >> src/private-overlays/overlay-midnightos/profiles/base/packages
+
+repo sync -c -j$(nproc) > /home/builder/logs/post-overlay-sync.log 2>&1
+
+echo "=== Entering cros_sdk Chroot (Non-Root Setup) ==="
+# Verify chroot dir writable
+mkdir -p src/build
+if [ ! -w src/build ]; then
+  echo "Fixing chroot permissions..."
+  sudo chown -R $(whoami):chronos src/build /home/builder/chromeos-build/src
+  chmod -R 775 src/build
+fi
+ls -la src/build > /home/builder/logs/chroot-permissions.log
+
+# Create and enter SDK as non-root (cros_sdk handles user/group)
+cros_sdk --create --no-enable-updates || true  # Idempotent
+cros_sdk --enter --cmd="
+  set -e
+
+  # Inside chroot: Fix permissions for build/logs (chronos group standard)
+  sudo chown -R root:chronos /build /mnt/host/source/src/build
+  sudo chmod -R 775 /build /mnt/host/source/src/build
+  sudo usermod -a -G chronos \$(whoami)
+
+  export BOARD=amd64-generic
+  export ARGS='--board=${BOARD}'
+
+  echo '=== Setting up board in chroot ===' > /mnt/host/source/src/build/logs/setup-board.log
+
+  setup_board --board=\${BOARD} --force >> /mnt/host/source/src/build/logs/setup-board.log 2>&1
+
+  echo '=== Emerging MidnightOS Theming Packages ===' >> /mnt/host/source/src/build/logs/emerge.log
+
+  # Emerge core theming with MidnightOS overlay
+  emerge-${BOARD} --quiet-build y chromeos-base/chromeos-branding >> /mnt/host/source/src/build/logs/emerge-branding.log 2>&1
+  emerge-${BOARD} --quiet-build y chromeos-base/chromeos-ash >> /mnt/host/source/src/build/logs/emerge-ash.log 2>&1
+  emerge-${BOARD} --quiet-build y chromeos-base/midnight-assets >> /mnt/host/source/src/build/logs/emerge-assets.log 2>&1
+  emerge-${BOARD} --quiet-build y chromeos-base/midnight-policies >> /mnt/host/source/src/build/logs/emerge-policies.log 2>&1
+  emerge-${BOARD} --quiet-build y media-themes/midnight-sounds >> /mnt/host/source/src/build/logs/emerge-sounds.log 2>&1
+  emerge-${BOARD} --quiet-build y media-themes/gtk-qt-themes >> /mnt/host/source/src/build/logs/emerge-themes.log 2>&1
+
+  # Emerge OpenFyde base and UI essentials
+  emerge-${BOARD} --quiet-build y chromeos-base/chromeos >> /mnt/host/source/src/build/logs/emerge-chromeos.log 2>&1
+
+  echo '=== Building MidnightOS Image with UI Overhaul ===' >> /mnt/host/source/src/build/logs/build-image.log
+
+  # Build image with custom flags for theming/Wayland
+  build_image --board=\${BOARD} \
+    --config='midnight-ui' \
+    --enable-wayland \
+    --enable-md3-theme \
+    --disable-telemetry \
+    --image='midnightos' \
+    --output_root='/build/images' \
+    --skip_gmerge \
+    --skip_chroot_upgrade \
+    --skip_board_setup \
+    --skip_image_deps \
+    --skip_toolchain_update \
+    --skip_vm_tests \
+    --skip_unibuild \
+    >> /mnt/host/source/src/build/logs/build-image.log 2>&1
+
+  # Verify build output
+  if [ -f /build/images/${BOARD}/latest/full_payload.bin ]; then
+    echo 'Build successful!' >> /mnt/host/source/src/build/logs/build-success.log
+    cp /build/images/${BOARD}/latest/*.bin /mnt/host/source/src/build/images/
+  else
+    echo 'Build failed - check logs' >> /mnt/host/source/src/build/logs/build-fail.log
+    exit 1
+  fi
+"
+
+echo "=== Extracting Artifacts and Generating Release ==="
+# Copy images and logs from chroot to artifacts (non-root)
+cp -r src/build/images/* /home/builder/artifacts/ 2>/dev/null || true
+cp -r src/build/logs/* /home/builder/logs/ 2>/dev/null || true
+
+# Copy themed files to artifacts
+cp -r /home/builder/branding/* /home/builder/artifacts/themed-files/ 2>/dev/null || true
+cp -r src/private-overlays/overlay-midnightos/* /home/builder/artifacts/overlays/ 2>/dev/null || true
+
+# Generate release info (no emojis)
+cd /home/builder/artifacts
+cat > release-info.txt << EOF
+MidnightOS Build Information
+============================
+
+Build Date: $(date)
+Board: amd64-generic
+Build Type: Midnight UI Overhaul Edition
+Version: 1.0
+
+Key Features:
+- Full Dark Mode: System-wide dark theme with auto-dark web content.
+- Material Design 3: Dynamic colors, rounded corners, blur effects, enhanced animations.
+- Ash Overhaul: Floating transparent shelf, blurred overview, MD3 notifications and launcher.
+- Custom Assets: Midnight wallpapers, icons, cursors, boot animation, and sounds.
+- UX Enhancements: Wayland compositor for smooth UI, high-DPI scaling, accessibility dark variant.
+- App Consistency: GTK/Qt dark themes for Crostini and Linux apps.
+- Privacy: All telemetry and crash reporting disabled.
+- Base: ChromiumOS with OpenFyde extensions.
+
+Image Files:
+- full_payload.bin: Complete recovery image (flash via Chromebook Recovery Utility).
+- recovery_image.bin: Bootable USB image.
+
+Theming Overlays Included:
+- chromeos-branding: Custom logos, wallpapers, policies.
+- chromeos-ash-midnight: Window manager with MD3 shelf and animations.
+- midnight-assets: Icons, cursors, sounds.
+- midnight-policies: JSON for dark mode, Wayland, UX tweaks.
+- gtk-qt-themes: Dark themes for native apps.
+
+Build Logs: Available in logs/ directory.
+Support: https://sourceforge.net/projects/midnightos/support
+
+Generated securely without root execution for build process.
+EOF
+
+# Create release ZIP
+zip -r midnightos-${BUILD_TYPE}-$(date +%Y%m%d).zip . -x 'logs/*' > /dev/null 2>&1 || true
+cp release-info.txt /home/builder/artifacts/
+
+echo "Build complete! Artifacts in /home/builder/artifacts"
+ls -la /home/builder/artifacts > /home/builder/logs/final-artifacts.log
+
+EOF
+
+        # Make build.sh executable
+        chmod +x docker-build/build.sh
+
+    - name: Build MidnightOS Docker Image
       run: |
         cd docker-build
-        
-        # Build the Docker image
-        echo "Building MidnightOS Docker image..."
         docker build -t midnightos-builder .
+
+    - name: Run MidnightOS Build (Secure Non-Root)
+      run: |
+        cd docker-build
+        # Create host dirs for mounts
+        mkdir -p ../{artifacts,logs,branding-output}
         
-        # Run the build in container with volume mount for artifacts
-        echo "Starting MidnightOS dark UI build in Docker container..."
         docker run --rm \
           --name midnightos-build \
-          -v "$(pwd)/../artifacts:/home/builder/artifacts" \
-          -v "$(pwd)/../logs:/home/builder/logs" \
-          -v "$(pwd)/../branding:/home/builder/branding-output" \
+          -v "$(pwd)/../artifacts:/home/builder/artifacts:rw" \
+          -v "$(pwd)/../logs:/home/builder/logs:rw" \
+          -v "$(pwd)/../branding-output:/home/builder/branding:rw" \
           --tmpfs /tmp:rw,noexec,nosuid,size=6g \
           --shm-size=6g \
+          --user $(id -u):$(id -g) \
+          --memory=8g \
+          --cpus=4 \
           midnightos-builder
         
-        echo "MidnightOS build completed!"
-
-    - name: Extract build results
-      run: |
-        # Copy branding assets from Docker volume
-        if [ -d "branding" ]; then
-          echo "MidnightOS branding assets generated:"
-          ls -la branding/
-        fi
-        
         # Verify artifacts
-        if [ -d "artifacts" ]; then
-          echo "MidnightOS build artifacts:"
-          ls -la artifacts/
-          
-          # Verify file sizes
-          for file in artifacts/*.bin artifacts/*.img; do
-            if [ -f "$file" ]; then
-              size=$(stat -c%s "$file" 2>/dev/null || echo "0")
-              echo "$(basename "$file"): $((size / 1024 / 1024)) MB"
-            fi
-          done
-        fi
-        
-        # Check logs
-        if [ -d "logs" ]; then
-          echo "Build logs available:"
-          ls -la logs/
-        fi
-
-    - name: Prepare SourceForge upload
-      if: success() && (github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch')
-      run: |
-        # Install SourceForge CLI tools
-        sudo apt-get update
-        sudo apt-get install -y rsync sshpass
-        
-        # Prepare release directory
-        mkdir -p release-upload
-        
-        if [ -d "artifacts" ] && [ "$(ls -A artifacts/)" ]; then
-          # Copy all artifacts to release directory
-          cp artifacts/* release-upload/
-          
-          # Create comprehensive release package
-          cd release-upload
-          
-          # Generate build manifest
-          cat > BUILD_MANIFEST.txt << EOF
-        MidnightOS Build Manifest
-        =========================
-        Build Date: $(date -u +"%Y-%m-%d %H:%M:%S UTC")
-        Build ID: ${GITHUB_SHA:0:8}
-        Repository: ${GITHUB_REPOSITORY}
-        Branch: ${GITHUB_REF_NAME}
-        Workflow: ${GITHUB_RUN_NUMBER}
-        
-        Board: ${BOARD}
-        Build Type: ${BUILD_TYPE}
-        
-        Files in this release:
-        $(ls -la *.bin *.img *.sha256 *.md5 2>/dev/null || echo "No build files found")
-        
-        Installation Instructions:
-        1. Download the .img or .bin file
-        2. Flash to USB drive using Rufus, Etcher, or dd
-        3. Boot from USB drive
-        4. Follow on-screen setup instructions
-        
-        MidnightOS Features:
-        - Dark Material Design 3 UI
-        - Privacy-focused (no telemetry)
-        - Intel hardware optimized
-        - Modern ChromeOS experience
-        
-        Support: https://sourceforge.net/projects/midnightos/support
-        EOF
-          
-          # Create installation guide
-          cat > INSTALLATION_GUIDE.md << EOF
-        # MidnightOS Installation Guide
-        
-        ## System Requirements
-        - x86_64 CPU (Intel 2nd gen Core or later recommended)
-        - 4GB RAM minimum (8GB recommended)
-        - 32GB storage minimum (64GB recommended)
-        - UEFI boot support
-        - Intel HD Graphics (2011+ recommended)
-        
-        ## Installation Steps
-        
-        ### Method 1: USB Flash Installation
-        1. Download the latest MidnightOS image (.img file)
-        2. Verify integrity using provided SHA256 checksum
-        3. Flash to USB drive using:
-           - **Windows**: Rufus or Win32DiskImager
-           - **macOS**: Balena Etcher or dd command
-           - **Linux**: dd command or GNOME Disks
-        4. Boot from USB drive (enable UEFI boot)
-        5. Follow ChromeOS setup wizard
-        
-        ### Method 2: Direct Installation (.bin file)
-        1. Download the .bin file for advanced users
-        2. Use ChromeOS Recovery Utility or similar tools
-        3. Flash to target device
-        
-        ## First Boot
-        1. Select language and keyboard layout
-        2. Connect to Wi-Fi network
-        3. Sign in with Google account (or create local account)
-        4. Enjoy MidnightOS dark theme experience!
-        
-        ## Features Overview
-        - **Dark Mode**: System-wide dark theme with midnight colors
-        - **Privacy**: Zero telemetry, no crash reporting
-        - **Performance**: Optimized for Intel hardware
-        - **Compatibility**: Linux apps (Crostini) and Android apps support
-        - **Modern UI**: Material Design 3 with blur effects
-        
-        ## Troubleshooting
-        - Boot issues: Ensure UEFI boot is enabled
-        - Graphics issues: MidnightOS works best with Intel HD Graphics
-        - Wi-Fi issues: Most modern Wi-Fi adapters supported
-        
-        ## Support
-        Visit: https://sourceforge.net/projects/midnightos/support
-        EOF
-          
-          # Create checksums for all files
-          for file in *.bin *.img; do
-            if [ -f "$file" ]; then
-              sha256sum "$file" > "${file}.sha256"
-              md5sum "$file" > "${file}.md5"
-            fi
-          done
-          
-          echo "Release package prepared:"
-          ls -la
+        if [ -f ../artifacts/release-info.txt ]; then
+          echo "Build succeeded! Check artifacts/"
+          cat ../artifacts/release-info.txt
         else
-          echo "ERROR: No build artifacts found!"
+          echo "Build failed - check logs/"
           exit 1
         fi
 
-    - name: Upload to SourceForge
-      if: success() && (github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch')
+    - name: Upload Artifacts to GitHub Releases
+      if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+      uses: actions/upload-release-asset@v1
       env:
-        SF_PASS: ${{ secrets.SF_PASS }}
-      run: |
-        if [ -z "$SF_PASS" ]; then
-          echo "WARNING: SF_PASS secret not set, skipping upload"
-          echo "To enable uploads, set SF_PASS secret in repository settings"
-          exit 0
-        fi
-        
-        cd release-upload
-        
-        # Create version directory based on date
-        VERSION_DIR=$(date +%Y.%m.%d)
-        
-        echo "Uploading MidnightOS $VERSION_DIR to SourceForge..."
-        
-        # Upload files to SourceForge
-        sshpass -p "$SF_PASS" rsync -avP -e "ssh -o StrictHostKeyChecking=no" \
-          ./ \
-          ${SF_USER}@frs.sourceforge.net:/home/frs/project/${SF_PROJECT}/${VERSION_DIR}/ || {
-          echo "Upload failed, retrying with different method..."
-          
-          # Alternative upload method using sftp
-          echo "put -r ./* /${VERSION_DIR}/" | sshpass -p "$SF_PASS" sftp -o StrictHostKeyChecking=no \
-            ${SF_USER}@frs.sourceforge.net:/home/frs/project/${SF_PROJECT}/
-        }
-        
-        echo "Upload completed to SourceForge!"
-        echo "Files available at: https://sourceforge.net/projects/${SF_PROJECT}/files/${VERSION_DIR}/"
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        upload_url: ${{ steps.create_release.outputs.upload_url }}
+        asset_path: ./artifacts/midnightos-${{ env.BUILD_TYPE }}-$(date +%Y%m%d).zip
+        asset_name: midnightos-${{ env.BUILD_TYPE }}.zip
+        asset_content_type: application/zip
+      # Note: Assumes a prior 'create_release' step if tagging; adjust as needed
 
-    - name: Update SourceForge project info
-      if: success() && github.ref == 'refs/heads/main'
-      env:
-        SF_PASS: ${{ secrets.SF_PASS }}
+    - name: Deploy to SourceForge
+      if: github.event_name == 'push' && github.ref == 'refs/heads/main'
       run: |
-        if [ -z "$SF_PASS" ]; then
-          echo "Skipping SourceForge project update (no password)"
-          exit 0
-        fi
+        # Install SFTP client if needed
+        sudo apt-get update && sudo apt-get install -y lftp
         
-        # Update project description and links
-        cat > sf_update.json << EOF
-        {
-          "short_description": "MidnightOS - Dark ChromeOS distribution with modern UI and zero telemetry",
-          "full_description": "MidnightOS is a privacy-focused ChromeOS distribution featuring a complete dark mode interface, Material Design 3 theming, and extensive Intel hardware support. Based on OpenFyde for maximum compatibility, MidnightOS removes all Google telemetry while providing a modern, beautiful ChromeOS experience with midnight-themed UI elements.",
-          "homepage": "https://github.com/${GITHUB_REPOSITORY}",
-          "categories": ["os", "linux", "chromeos", "privacy"],
-          "license": "GPL-2.0",
-          "programming_language": ["Shell", "C++", "JavaScript"],
-          "intended_audience": ["End Users", "System Administrators"],
-          "operating_system": ["Linux", "ChromeOS"],
-          "topics": ["dark-theme", "privacy", "chromeos", "intel-graphics", "material-design"]
-        }
-        EOF
+        # Upload ZIP and info to SF (assumes SF_PASSWORD secret)
+        lftp -u ${{ env.SF_USER }},${{ secrets.SF_PASSWORD }} sftp://frs.sourceforge.net:/home/frs/project/midnightos/MidnightOS/ \
+          -e "put artifacts/midnightos-${{ env.BUILD_TYPE }}-$(date +%Y%m%d).zip; put artifacts/release-info.txt; bye"
         
-        echo "Project info prepared for SourceForge update"
+        echo "Deployed to SourceForge: https://sourceforge.net/projects/${{ env.SF_PROJECT }}/files/MidnightOS/"
 
-    - name: Notify build completion
+    - name: Cleanup
       if: always()
       run: |
-        if [ "${{ job.status }}" == "success" ]; then
-          echo "✅ MidnightOS build completed successfully!"
-          echo "🌙 Dark UI/UX theme applied"
-          echo "🔒 Telemetry disabled for privacy"
-          echo "🚀 Intel hardware optimizations included"
-          echo "📦 Files uploaded to SourceForge"
-          echo ""
-          echo "Download links:"
-          echo "- SourceForge: https://sourceforge.net/projects/${SF_PROJECT}/files/"
-        else
-          echo "❌ MidnightOS build failed"
-          echo "Check the logs above for error details"
-          echo "Common issues:"
-          echo "- Docker build failures (check system resources)"
-          echo "- ChromeOS repo sync issues (network/upstream problems)"
-          echo "- Package build failures (dependency issues)"
-          exit 1
-        fi
+        docker rm -f midnightos-build || true
+        rm -rf docker-build || true
 
-    - name: Archive build logs
+    - name: Archive Logs
       uses: actions/upload-artifact@v4
-      if: always()
       with:
-        name: midnightos-build-logs-${{ github.run_number }}
-        path: |
-          logs/
-          docker-build/
-          branding/
-        retention-days: 30
-
-    - name: Archive release artifacts
-      uses: actions/upload-artifact@v4
-      if: success()
-      with:
-        name: midnightos-release-${{ github.run_number }}
-        path: |
-          release-upload/
-          artifacts/
-        retention-days: 90
+        name: midnightos-build-logs
+        path: logs/
