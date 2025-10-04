@@ -134,7 +134,7 @@ jobs:
         mkdir -p $HOME/chromeos-build
         
         # Ensure logs directory is writable
-        sudo chmod -R u+w 800 $HOME/logs
+        sudo chmod 777 $HOME/logs
         sudo touch $HOME/logs/test.log && rm $HOME/logs/test.log || {
           echo "ERROR: Cannot write to logs directory"
           ls -la $HOME/logs
