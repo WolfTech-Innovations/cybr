@@ -201,7 +201,7 @@ jobs:
           --repo-url https://chromium.googlesource.com/external/repo.git \
           -b ${CHROMEOS_RELEASE} \
           -g minilayout \
-          --depth=1 > $HOME/logs/repo-init.log 2>&1
+          --depth=1 2>&1
         
         # Fix ownership of .repo directory
         sudo chown -R builder:builder .repo
@@ -257,7 +257,7 @@ jobs:
         SIZEEOF
 
         echo "→ Syncing ChromiumOS source (optimized for <15GB)..."
-        sudo -E /opt/depot_tools/repo sync -c -j$(nproc) --fail-fast --force-sync > $HOME/logs/repo-sync.log 2>&1 &
+        sudo -E /opt/depot_tools/repo sync -c -j$(nproc) --fail-fast --force-sync 2>&1 &
         SYNC_PID=$!
         
         while kill -0 $SYNC_PID 2>/dev/null; do
