@@ -247,7 +247,10 @@ jobs:
         echo "→ Syncing ChromiumOS source (optimized for <15GB)..."
         sudo -E /opt/depot_tools/repo sync -c -j$(nproc) --fail-fast --force-sync 2>&1 &
         SYNC_PID=$!
-        
+        # This ensures the directory exists and the running user can write to it.
+        mkdir -p /home/builder/logs
+        chmod -R 777 /home/builder/logs
+
         while kill -0 $SYNC_PID 2>/dev/null; do
           SIZE=$(du -sh $HOME/chromeos-build 2>/dev/null | cut -f1)
           echo "  Syncing... $(date +%H:%M:%S) - Size: $SIZE"
