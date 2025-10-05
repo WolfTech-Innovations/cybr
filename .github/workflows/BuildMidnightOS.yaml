@@ -262,7 +262,7 @@ jobs:
         
         if [ $SYNC_STATUS -ne 0 ]; then
           echo "⚠ Sync completed with warnings"
-          tail -100 $HOME/logs/repo-sync.log
+          
         fi
 
         FINAL_SIZE=$(du -sh $HOME/chromeos-build 2>/dev/null | cut -f1)
@@ -407,7 +407,7 @@ jobs:
         
         wait $BUILD_PID || {
           echo "⚠ Package build completed with warnings"
-          tail -100 $HOME/logs/build-packages.log
+          
         }
 
         echo ""
@@ -423,7 +423,7 @@ jobs:
             dev
         " > $HOME/logs/build-image.log 2>&1 || {
           echo "⚠ Image build completed with warnings"
-          tail -100 $HOME/logs/build-image.log
+          
         }
 
         echo ""
