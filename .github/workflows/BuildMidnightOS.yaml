@@ -232,10 +232,6 @@ jobs:
                    remote="openfyde"
                    revision="refs/heads/r102-dev" />
           
-          <project path="src/third_party/kernel/v5.15"
-                   name="chromiumos/third_party/kernel"
-                   revision="refs/heads/chromeos-5.15"
-                   clone-depth="1" />
           
           <project path="src/third_party/coreboot"
                    name="chromiumos/third_party/coreboot"
