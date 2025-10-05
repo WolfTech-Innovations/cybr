@@ -194,7 +194,7 @@ jobs:
 
         echo "Initializing repo for ${CHROMEOS_RELEASE}..."
         # Run repo init as root, then fix ownership
-        sudo -E repo init -u https://chromium.googlesource.com/chromiumos/manifest.git \
+        sudo -E /opt/depot_tools/repo init -u https://chromium.googlesource.com/chromiumos/manifest.git \
           --repo-url https://chromium.googlesource.com/external/repo.git \
           -b ${CHROMEOS_RELEASE} \
           -g minilayout \
@@ -260,7 +260,7 @@ jobs:
 
         echo "Syncing ChromiumOS source (shallow clone for <15GB)..."
         # Run repo sync as root to avoid permission issues
-        sudo -E repo sync -c -j$(nproc) --fail-fast --force-sync > $HOME/logs/repo-sync.log 2>&1 &
+        sudo -E /opt/depot_tools/repo sync -c -j$(nproc) --fail-fast --force-sync > $HOME/logs/repo-sync.log 2>&1 &
         SYNC_PID=$!
         
         # Show progress while syncing
