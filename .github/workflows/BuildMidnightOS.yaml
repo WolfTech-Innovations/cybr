@@ -371,7 +371,6 @@ jobs:
         echo "→ Entering ChromeOS SDK..."
         cros_sdk --enter --cmd="setup_board --board=${BOARD}" > $HOME/logs/setup-board.log 2>&1 || {
           echo "⚠ Setup board completed with warnings"
-          tail -50 $HOME/logs/setup-board.log
         }
 
         echo "→ Installing dependencies..."
