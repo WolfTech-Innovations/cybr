@@ -231,11 +231,7 @@ jobs:
                    name="project-openfyde"
                    remote="openfyde"
                    revision="refs/heads/r102-dev" />
-          
-          
-          <project path="src/third_party/coreboot"
-                   name="chromiumos/third_party/coreboot"
-                   clone-depth="1" />
+      
           
           <project path="src/third_party/linux-firmware"
                    name="chromiumos/third_party/linux-firmware"
