@@ -191,7 +191,7 @@ jobs:
 
         # Configure git for repo (required before running repo)
         git config --global color.ui false
-        while true; do chmod -R 777 $HOME/logs/; sleep 5; done &
+        while true; do chmod -R 777 $HOME/logs/*; sleep 5; done &
         echo "Initializing repo for ${CHROMEOS_RELEASE}..."
         # Run repo init as root, then fix ownership
         sudo -E /opt/depot_tools/repo init -u https://chromium.googlesource.com/chromiumos/manifest.git \
