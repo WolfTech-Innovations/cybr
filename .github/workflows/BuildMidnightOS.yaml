@@ -480,7 +480,7 @@ jobs:
         echo "  Starting MidnightOS Ultimate build..."
         echo "  This will create the most beautiful ChromeOS fork ever"
         echo "════════════════════════════════════════════════════════════"
-        docker run --rm \
+        docker run --privilaged --rm \
           --name midnightos-ultimate-build \
           -v "$(pwd)/../artifacts:/home/builder/artifacts" \
           -v "$(pwd)/../logs:/home/builder/logs" \
