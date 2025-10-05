@@ -232,11 +232,7 @@ jobs:
                    remote="openfyde"
                    revision="refs/heads/r102-dev" />
       
-          
-          <project path="src/third_party/linux-firmware"
-                   name="chromiumos/third_party/linux-firmware"
-                   clone-depth="1" />
-        </manifest>
+        <manifest/>
         MANIFESTEOF
 
         cat > .repo/local_manifests/size-optimize.xml << 'SIZEEOF'
