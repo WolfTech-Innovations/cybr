@@ -21,8 +21,10 @@ jobs:
      # 1. Maximize Disk Space
     - name: Maximize disk space on runner
       uses: mkorje/free-disk-space-action@2e7c9816aad6f9d3394a8a5224cebe6622dd7600
+    
     - name: Double space freed 
     - uses: pexcn/maximize-disk-space@59cf0266acd2974782e225501a0807b7d9a4304a
+    
     - name: Set up Docker Buildx
       uses: docker/setup-buildx-action@v3
 
