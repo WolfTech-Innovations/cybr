@@ -435,9 +435,12 @@ jobs:
         echo "════════════════════════════════════════════════════════════"
         
         BUILD_DIR="$HOME/chromeos-build/src/build/images/$BOARD/latest/"
-          
+        ARTIFACTS_DIR="$HOME/artifacts"
+        mkdir -p "${ARTIFACTS_DIR}"
+
         if [ -d "${BUILD_DIR}" ]; then
           echo "→ Copying build artifacts..."
+          shopt -s nullglob
           cp "${BUILD_DIR}"/*.bin $HOME/artifacts/ 2>/dev/null || true
           cp "${BUILD_DIR}"/*.img $HOME/artifacts/ 2>/dev/null || true
           
