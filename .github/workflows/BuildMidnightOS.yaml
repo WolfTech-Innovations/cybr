@@ -15,643 +15,270 @@ env:
   SF_PROJECT: "MidnightOS"
 
 jobs:
- build:
-  runs-on: ubuntu-latest
-  steps:
-     # 1. Maximize Disk Space
-    - name: Maximize disk space on runner
-      uses: mkorje/free-disk-space-action@2e7c9816aad6f9d3394a8a5224cebe6622dd7600
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 480
     
+    steps:
+    - name: Maximize disk space
+      uses: mkorje/free-disk-space-action@2e7c9816aad6f9d3394a8a5224cebe6622dd7600
+
     - name: Double space freed 
       uses: endersonmenezes/free-disk-space@713d134e243b926eba4a5cce0cf608bfd1efb89a
-    
-    - name: Set up Docker Buildx
+
+    - name: Setup Docker Buildx
       uses: docker/setup-buildx-action@v3
 
-    - name: Create build context
+    - name: Create build ctx
       run: |
-        mkdir -p docker-build
+        mkdir -p dbld
         
-        # Create Dockerfile for OpenFyde-based MidnightOS build
-        cat > docker-build/Dockerfile << 'EOF'
-        FROM ubuntu:22.04
+        cat > dbld/Dockerfile << 'EOF'
+FROM ubuntu:22.04
+ENV DEBIAN_FRONTEND=noninteractive TZ=UTC
 
-        ENV DEBIAN_FRONTEND=noninteractive
-        ENV TZ=UTC
+RUN apt-get update && apt-get install -y \
+    git curl wget python3 python3-pip build-essential sudo locales \
+    ca-certificates gnupg lsb-release unzip xz-utils bc bison flex \
+    libssl-dev libncurses5-dev u-boot-tools device-tree-compiler \
+    gcc-multilib g++-multilib libc6-dev-i386 lib32ncurses5-dev \
+    lib32z1-dev zlib1g-dev libelf-dev libdbus-1-dev libbluetooth-dev \
+    libnss3-dev libasound2-dev imagemagick fontconfig sshpass rsync \
+    fonts-liberation fonts-dejavu openssh-client \
+    && apt-get clean && rm -rf /var/lib/apt/lists/*
 
-        # Install core build tools
-        RUN apt-get update && apt-get install -y \
-            git curl wget python3 python3-pip \
-            build-essential sudo locales \
-            ca-certificates gnupg lsb-release \
-            && apt-get clean && rm -rf /var/lib/apt/lists/*
+RUN useradd -m -s /bin/bash -G sudo bld && \
+    echo 'bld ALL=(ALL) NOPASSWD:ALL' >> /etc/sudoers
 
-        # Install compression and build utilities
-        RUN apt-get update && apt-get install -y \
-            unzip xz-utils bc bison flex \
-            libssl-dev libncurses5-dev \
-            u-boot-tools device-tree-compiler \
-            && apt-get clean && rm -rf /var/lib/apt/lists/*
+RUN git clone https://chromium.googlesource.com/chromium/tools/depot_tools.git /opt/dt && \
+    chown -R bld:bld /opt/dt && chmod -R 755 /opt/dt && \
+    echo 'bld ALL=(ALL) NOPASSWD: /opt/dt/repo' >> /etc/sudoers.d/bld-repo && \
+    chmod 0440 /etc/sudoers.d/bld-repo
 
-        # Install multilib support for cross-compilation
-        RUN apt-get update && apt-get install -y \
-            gcc-multilib g++-multilib \
-            libc6-dev-i386 lib32ncurses5-dev \
-            lib32z1-dev zlib1g-dev \
-            && apt-get clean && rm -rf /var/lib/apt/lists/*
+COPY bld.sh /home/bld/bld.sh
+RUN chmod +x /home/bld/bld.sh && chown bld:bld /home/bld/bld.sh && \
+    mkdir -p /home/bld/{cros,art,log} && chown -R bld:bld /home/bld
 
-        # Install development libraries
-        RUN apt-get update && apt-get install -y \
-            libelf-dev libdbus-1-dev \
-            libbluetooth-dev libnss3-dev \
-            libasound2-dev \
-            && apt-get clean && rm -rf /var/lib/apt/lists/*
+USER bld
+WORKDIR /home/bld
+ENV PATH="/opt/dt:$PATH"
+RUN git config --global user.name "MOS" && \
+    git config --global user.email "mos@build" && \
+    git config --global color.ui auto
 
-        # Install graphics and font tools
-        RUN apt-get update && apt-get install -y \
-            imagemagick fontconfig \
-            fonts-liberation fonts-dejavu \
-            && apt-get clean && rm -rf /var/lib/apt/lists/*
+CMD ["/home/bld/bld.sh"]
+EOF
 
-        # Install network tools for deployment
-        RUN apt-get update && apt-get install -y \
-            sshpass rsync openssh-client \
-            && apt-get clean && rm -rf /var/lib/apt/lists/*
+        cat > dbld/bld.sh << 'EOF'
+#!/bin/bash
+set -e
 
-        # Create build user
-        RUN useradd -m -s /bin/bash -G sudo builder \
-            && echo 'builder ALL=(ALL) NOPASSWD:ALL' >> /etc/sudoers
-
-        # Install depot_tools and configure PATH
-        RUN git clone https://chromium.googlesource.com/chromium/tools/depot_tools.git /opt/depot_tools \
-            && chown -R builder:builder /opt/depot_tools \
-            && chmod -R 755 /opt/depot_tools
-
-        # Give builder user permission to run repo as needed
-        RUN echo 'builder ALL=(ALL) NOPASSWD: /opt/depot_tools/repo' >> /etc/sudoers.d/builder-repo \
-            && chmod 0440 /etc/sudoers.d/builder-repo
-
-        # Copy and set up build script
-        COPY build.sh /home/builder/build.sh
-        RUN chmod +x /home/builder/build.sh \
-            && chown builder:builder /home/builder/build.sh
-
-        # Create working directories
-        RUN mkdir -p /home/builder/chromeos-build \
-            && mkdir -p /home/builder/artifacts \
-            && mkdir -p /home/builder/branding \
-            && mkdir -p /home/builder/logs \
-            && chown -R builder:builder /home/builder
-
-        # Switch to builder user
-        USER builder
-        WORKDIR /home/builder
-
-        # Set up environment
-        ENV PATH="/opt/depot_tools:$PATH"
-        RUN git config --global user.name "MidnightOS Builder" \
-            && git config --global user.email "christopher.fox@wolfos.uk" \
-            && git config --global color.ui auto
-
-        CMD ["/home/builder/build.sh"]
-        EOF
-
-        # Create comprehensive build script with OpenFyde + MidnightOS theme
-        cat > docker-build/build.sh << 'EOF'
-        #!/bin/bash
-        set -e
-
-        export BOARD="amd64-openfyde"
-        export CHROMEOS_RELEASE="release-R102-14695.B"
-        export PATH="/opt/depot_tools:$PATH"
+export BOARD="amd64-openfyde"
+export R="release-R102-14695.B"
+export PATH="/opt/dt:$PATH"
         
-        echo "=== MidnightOS Build Starting ==="
-        echo "Board: ${BOARD} (OpenFyde Intel)"
-        echo "Base: OpenFyde with prebuilt Chrome"
-        echo "Theme: Midnight Dark UI"
-        echo "Working directory: $(pwd)"
-        
-        # Ensure directories exist
-        mkdir -p $HOME/branding/{icons,wallpapers,config,themes}
-        mkdir -p $HOME/artifacts
-        mkdir -p $HOME/logs
-        mkdir -p $HOME/chromeos-build
+echo "=== MOS Bld Start ==="
+mkdir -p $HOME/bnd/{ic,wp,cfg,thm} $HOME/art $HOME/log $HOME/cros
 
-        echo "=== Generating MidnightOS Dark UI Assets ==="
-        cd $HOME/branding
+cd $HOME/bnd
+MP="#0F0F0F"; MS="#1A1A1A"; MA="#6366F1"; MT="#E5E5E5"; MSU="#121212"
 
-        # Midnight color scheme
-        MIDNIGHT_PRIMARY="#0F0F0F"
-        MIDNIGHT_SECONDARY="#1A1A1A"
-        MIDNIGHT_ACCENT="#6366F1"
-        MIDNIGHT_TEXT="#E5E5E5"
-        MIDNIGHT_SURFACE="#121212"
+convert -size 800x200 xc:"$MP" -fill "$MT" -font "DejaVu-Sans-Bold" \
+  -pointsize 48 -gravity center -annotate +0-10 "MidnightOS" \
+  -fill "$MA" -pointsize 20 -annotate +0+25 "MIDNIGHT" mos-logo.png 2>/dev/null || true
 
-        echo "Generating MidnightOS logo..."
-        convert -size 800x200 xc:"$MIDNIGHT_PRIMARY" \
-          -fill "$MIDNIGHT_TEXT" -font "DejaVu-Sans-Bold" -pointsize 48 \
-          -gravity center -annotate +0-10 "MidnightOS" \
-          -fill "$MIDNIGHT_ACCENT" -pointsize 20 \
-          -gravity center -annotate +0+25 "MIDNIGHT EDITION" \
-          midnight-logo.png || echo "Logo generation warning"
+convert -size 1920x1080 gradient:"$MP"-"$MS" -fill "$MT" -pointsize 64 \
+  -gravity center -annotate +0-80 "MidnightOS" -fill "$MA" -pointsize 24 \
+  -annotate +0-20 "Dark • Modern • Private" boot.png 2>/dev/null || true
 
-        echo "Generating boot splash..."
-        convert -size 1920x1080 gradient:"$MIDNIGHT_PRIMARY"-"$MIDNIGHT_SECONDARY" \
-          -fill "$MIDNIGHT_TEXT" -pointsize 64 \
-          -gravity center -annotate +0-80 "MidnightOS" \
-          -fill "$MIDNIGHT_ACCENT" -pointsize 24 \
-          -gravity center -annotate +0-20 "Dark • Modern • Private" \
-          boot-splash.png || echo "Boot splash warning"
+mkdir -p wp
+convert -size 1920x1080 gradient:"$MP"-"$MS" wp/mos-def.jpg 2>/dev/null || true
 
-        echo "Generating wallpaper collection..."
-        mkdir -p wallpapers
-        convert -size 1920x1080 gradient:"$MIDNIGHT_PRIMARY"-"$MIDNIGHT_SECONDARY" \
-          wallpapers/midnight-default.jpg || echo "Wallpaper warning"
+cat > cfg/mos.json << 'TH'
+{"name":"MOS","v":"1.0","base":"ofyd","board":"amd64-ofyd","thm":{"dm":true,"pc":"#0F0F0F","ac":"#6366F1"},"ft":{"pbc":true,"ig":true,"nt":true}}
+TH
 
-        echo "Creating theme configuration..."
-        cat > config/midnight-theme.json << 'THEMEEOF'
-        {
-          "name": "MidnightOS",
-          "version": "1.0.0",
-          "base": "openfyde",
-          "board": "amd64-openfyde",
-          "theme": {
-            "dark_mode": true,
-            "primary_color": "#0F0F0F",
-            "accent_color": "#6366F1",
-            "surface_color": "#121212"
-          },
-          "features": {
-            "prebuilt_chrome": true,
-            "intel_graphics": true,
-            "no_telemetry": true
-          }
-        }
-        THEMEEOF
+cd $HOME/cros
+git config --global color.ui false
 
-        echo "=== Initializing ChromiumOS with OpenFyde ==="
-        cd $HOME/chromeos-build
+sudo -E /opt/dt/repo init -u https://chromium.googlesource.com/chromiumos/manifest.git \
+  --repo-url https://chromium.googlesource.com/external/repo.git \
+  -b ${R} -g minilayout --depth=1 2>&1
+sudo chown -R bld:bld .repo
 
-        # Configure git for repo (required before running repo)
-        git config --global color.ui false
+mkdir -p .repo/local_manifests
 
-        echo "Initializing repo for ${CHROMEOS_RELEASE}..."
-        # Run repo init as root, then fix ownership
-        sudo -E /opt/depot_tools/repo init -u https://chromium.googlesource.com/chromiumos/manifest.git \
-          --repo-url https://chromium.googlesource.com/external/repo.git \
-          -b ${CHROMEOS_RELEASE} \
-          -g minilayout \
-          --depth=1 2>&1
-        
-        # Fix ownership of .repo directory
-        sudo chown -R builder:builder .repo
-        
-        # Verify repo is initialized
-        if [ ! -d ".repo" ]; then
-          echo "ERROR: .repo directory not created"
-          cat $HOME/logs/repo-init.log
-          exit 1
-        fi
+cat > .repo/local_manifests/ofyd.xml << 'MF'
+<?xml version="1.0" encoding="UTF-8"?>
+<manifest>
+  <remote name="ofyd" fetch="https://github.com/openFyde" />
+  <project path="src/overlays/overlay-amd64-openfyde" name="overlay-amd64-openfyde" remote="ofyd" revision="refs/heads/main" />
+  <project path="src/overlays/project-openfyde" name="project-openfyde" remote="ofyd" revision="refs/heads/r102-dev" />
+</manifest>
+MF
 
-        echo "Setting up OpenFyde local manifests..."
-        mkdir -p .repo/local_manifests
+cat > .repo/local_manifests/opt.xml << 'OPT'
+<?xml version="1.0" encoding="UTF-8"?>
+<manifest>
+  <remove-project name="chromiumos/platform/tast-tests" />
+  <remove-project name="chromiumos/platform/dev-util" />
+  <remove-project name="chromiumos/third_party/autotest" />
+</manifest>
+OPT
 
-        # Create OpenFyde overlay manifest
-        cat > .repo/local_manifests/openfyde.xml << 'MANIFESTEOF'
-        <?xml version="1.0" encoding="UTF-8"?>
-        <manifest>
-          <remote name="openfyde" fetch="https://github.com/openFyde" />
-          
-          <project path="src/overlays/overlay-amd64-openfyde"
-                   name="overlay-amd64-openfyde"
-                   remote="openfyde"
-                   revision="refs/heads/main" />
-          
-          <project path="src/overlays/project-openfyde"
-                   name="project-openfyde"
-                   remote="openfyde"
-                   revision="refs/heads/r102-dev" />
+sudo mkdir -p /home/bld/log
+sudo chmod -R 777 /home/bld/log
+
+sudo -E /opt/dt/repo sync -c -j$(nproc) --fail-fast --force-sync 2>&1 &
+SP=$!
+while kill -0 $SP 2>/dev/null; do
+  echo "Sync $(date +%H:%M:%S) $(du -sh $HOME/cros 2>/dev/null | cut -f1)"
+  sleep 60
+done
+wait $SP
+sudo chown -R bld:bld $HOME/cros
+
+mkdir -p src/overlays/overlay-mos/chromeos-base/{cros-ast,ash-cfg}
+cp -r $HOME/bnd/* src/overlays/overlay-mos/chromeos-base/cros-ast/ 2>/dev/null || true
+
+mkdir -p src/overlays/overlay-mos/profiles/base
+cat > src/overlays/overlay-mos/profiles/base/make.defaults << 'PR'
+USE="${USE} openfyde_board-amd64-openfyde intel_graphics intel_hd_graphics intel_audio"
+USE="${USE} drm_atomic baytrail_audio vaapi v4l2_codec"
+USE="${USE} dark_mode material_design wayland compositor blur_effects"
+USE="${USE} vulkan opengl animations gpu_rasterization"
+USE="${USE} linux_apps android_apps crostini bluetooth wifi"
+USE="${USE} -metrics_collection -crash_reporter -feedback -uma"
+USE="${USE} -crash_sender -anomaly_detector -diagnostics"
+FEATURES="-test"
+CHROMEOS_DEVICE_ID="mos-amd64"
+CHROMEOS_VERSION_STRING="MOS"
+CHROMEOS_METRICS_ENABLED=0
+PR
+
+cros_sdk --enter --cmd="setup_board --board=${BOARD}" 2>&1 || true
+cros_sdk --enter --cmd="sudo emerge capnproto" 2>&1 || true
+
+cros_sdk --enter --cmd="
+  export BOARD=${BOARD}
+  export USE='minimal -autotest dark_mode material_design compositor blur_effects vulkan opengl -metrics_collection -crash_reporter'
+  export CHROMEOS_VERSION_STRING='MOS'
+  export CHROMEOS_DEVICE_ID='mos-amd64'
+  export CHROMEOS_METRICS_ENABLED=0
+  
+  build_packages --board=\${BOARD} --nowithautotest --autosetgov --nouse_any_chrome
+" 2>&1 &
+
+BP=$!
+while kill -0 $BP 2>/dev/null; do
+  echo "Bld $(date +%H:%M:%S)"
+  sleep 120
+done
+wait $BP || true
+
+cros_sdk --enter --cmd="
+  export BOARD=${BOARD}
+  export CHROMEOS_METRICS_ENABLED=0
+  
+  build_image --board=\${BOARD} --noenable_rootfs_verification \
+    --boot_args='cros_secure quiet dark_mode=1 loglevel=3 splash' dev
+" 2>&1 || true
+
+echo ""
+echo "════════════════════════════════════════════════════════════"
+echo "  PREPARING RELEASE ARTIFACTS"
+echo "════════════════════════════════════════════════════════════"
+
+ARTIFACTS_DIR="$HOME/art"
+mkdir -p "${ARTIFACTS_DIR}"
+
+BUILD_DIR="$HOME/cros/src/build/images/$BOARD/latest/"
+
+shopt -s nullglob
+
+if [ -d "${BUILD_DIR}" ]; then
+  echo "→ Copying build artifacts from ${BUILD_DIR}..."
+
+  cp -v "${BUILD_DIR}"/*.bin "${ARTIFACTS_DIR}/" 2>/dev/null || true
+  cp -v "${BUILD_DIR}"/*.img "${ARTIFACTS_DIR}/" 2>/dev/null || true
+  
+  shopt -u nullglob
+
+  cd "${ARTIFACTS_DIR}"
+
+  for f in *.bin *.img; do
+    if [ -f "$f" ]; then
+      nn="MOS-$(date +%Y.%m.%d)-${f}"
+      mv "$f" "$nn"
+      sha256sum "$nn" > "${nn}.sha256"
+      md5sum "$nn" > "${nn}.md5"
       
-        </manifest>
-        MANIFESTEOF
+      SZ_B=$(stat -c%s "$nn")
+      SZ_MB=$(echo "scale=2; $SZ_B / 1024 / 1024" | bc)
+      echo "  ✓ $nn (${SZ_MB}MB)"
+    fi
+  done
+  
+  ls -lh "${ARTIFACTS_DIR}/"
+else
+  echo "ERROR: Build directory not found: ${BUILD_DIR}"
+  exit 1
+fi
+EOF
 
-        cat > .repo/local_manifests/size-optimize.xml << 'SIZEEOF'
-        <?xml version="1.0" encoding="UTF-8"?>
-        <manifest>
-          <remove-project name="chromiumos/platform/tast-tests" />
-          <remove-project name="chromiumos/platform/dev-util" />
-          <remove-project name="chromiumos/third_party/autotest" />
-        </manifest>
-        SIZEEOF
-
-        echo "→ Syncing ChromiumOS source (optimized for <15GB)..."
-        sudo -E /opt/depot_tools/repo sync -c -j$(nproc) --fail-fast --force-sync 2>&1 &
-        SYNC_PID=$!
-        # This ensures the directory exists and the running user can write to it.
-        sudo mkdir -p /home/builder/logs
-        sudo chmod -R 777 /home/builder/logs
-
-        while kill -0 $SYNC_PID 2>/dev/null; do
-          SIZE=$(du -sh $HOME/chromeos-build 2>/dev/null | cut -f1)
-          echo "  Syncing... $(date +%H:%M:%S) - Size: $SIZE"
-          sleep 60
-        done
-        
-        wait $SYNC_PID
-        SYNC_STATUS=$?
-        
-        echo "→ Fixing file ownership..."
-        sudo chown -R builder:builder $HOME/chromeos-build
-        
-        if [ $SYNC_STATUS -ne 0 ]; then
-          echo "⚠ Sync completed with warnings"
-          
-        fi
-
-        FINAL_SIZE=$(du -sh $HOME/chromeos-build 2>/dev/null | cut -f1)
-        echo "✓ Source code synced: $FINAL_SIZE"
-
-        echo ""
-        echo "════════════════════════════════════════════════════════════"
-        echo "  CREATING MIDNIGHTOS ULTIMATE UI OVERLAY"
-        echo "════════════════════════════════════════════════════════════"
-        
-        mkdir -p src/overlays/overlay-midnightos-ultimate/chromeos-base/chromeos-assets
-        mkdir -p src/overlays/overlay-midnightos-ultimate/chromeos-base/ash-ui-config
-        
-        echo "→ Copying visual assets to overlay..."
-        cp -r $HOME/branding/* src/overlays/overlay-midnightos-ultimate/chromeos-base/chromeos-assets/ || true
-
-        echo "→ Creating MidnightOS Ultimate profile..."
-        mkdir -p src/overlays/overlay-midnightos-ultimate/profiles/base
-        cat > src/overlays/overlay-midnightos-ultimate/profiles/base/make.defaults << 'PROFILEEOF'
-        # MidnightOS Ultimate Profile
-        
-        # Inherit OpenFyde Intel optimizations
-        USE="${USE} openfyde_board-amd64-openfyde"
-        USE="${USE} intel_graphics intel_hd_graphics intel_audio"
-        USE="${USE} drm_atomic baytrail_audio vaapi v4l2_codec"
-        
-        # Ultimate UI/UX Features
-        USE="${USE} dark_mode material_design wayland"
-        USE="${USE} compositor blur_effects glassmorphism"
-        USE="${USE} vulkan opengl animations smooth_scrolling"
-        USE="${USE} acrylic_transparency backdrop_filter"
-        
-        # Enhanced Graphics
-        USE="${USE} gpu_rasterization hardware_overlays"
-        USE="${USE} zero_copy native_gpu_buffers"
-        
-        # Application Support
-        USE="${USE} linux_apps android_apps crostini"
-        USE="${USE} bluetooth wifi"
-        
-        # Privacy (No Telemetry)
-        USE="${USE} -metrics_collection -crash_reporter -feedback"
-        USE="${USE} -uma -crash_sender -anomaly_detector -diagnostics"
-        
-        # Build Optimization
-        FEATURES="-test"
-        
-        # MidnightOS Branding
-        CHROMEOS_DEVICE_ID="midnightos-ultimate-amd64"
-        CHROMEOS_VERSION_STRING="MidnightOS Ultimate"
-        CHROMEOS_VERSION_DESCRIPTION="The Most Beautiful ChromeOS Fork"
-        CHROMEOS_METRICS_ENABLED=0
-        MIDNIGHT_ULTIMATE=1
-        ASH_BLUR_ENABLED=1
-        MATERIAL_YOU_DYNAMIC=1
-        PROFILEEOF
-
-        echo "→ Creating Ash UI configuration ebuild..."
-        mkdir -p src/overlays/overlay-midnightos-ultimate/chromeos-base/ash-ui-config
-        cat > src/overlays/overlay-midnightos-ultimate/chromeos-base/ash-ui-config/ash-ui-config-1.0.ebuild << 'EBUILDEOF'
-        # MidnightOS Ultimate Ash UI Configuration
-        EAPI=7
-
-        DESCRIPTION="MidnightOS Ultimate Ash UI with Blur and Glassmorphism"
-        HOMEPAGE="https://sourceforge.net/projects/midnightos/"
-        LICENSE="BSD-Google"
-        SLOT="0"
-        KEYWORDS="*"
-
-        RDEPEND="
-          chromeos-base/chromeos-chrome
-          media-libs/mesa
-          x11-libs/libdrm
-        "
-
-        src_install() {
-          insinto /etc/ash
-          newins "${FILESDIR}"/ash-ui-config.json ui-config.json
-          
-          insinto /etc/chrome/policies/managed
-          newins "${FILESDIR}"/chrome-flags.conf chrome-policy.json
-          
-          insinto /usr/share/chromeos-assets/midnight-ultimate
-          doins "${FILESDIR}"/material-you-dynamic.json
-          
-          insinto /usr/share/themes/midnight-ultimate
-          doins "${FILESDIR}"/midnight-ultimate.css
-        }
-        EBUILDEOF
-
-        mkdir -p src/overlays/overlay-midnightos-ultimate/chromeos-base/ash-ui-config/files
-        cp $HOME/branding/ash-overlays/ash-ui-config.json \
-           src/overlays/overlay-midnightos-ultimate/chromeos-base/ash-ui-config/files/ || true
-        cp $HOME/branding/config/material-you-dynamic.json \
-           src/overlays/overlay-midnightos-ultimate/chromeos-base/ash-ui-config/files/ || true
-        cp $HOME/branding/config/chrome-flags.conf \
-           src/overlays/overlay-midnightos-ultimate/chromeos-base/ash-ui-config/files/ || true
-        cp $HOME/branding/themes/midnight-ultimate.css \
-           src/overlays/overlay-midnightos-ultimate/chromeos-base/ash-ui-config/files/ || true
-
-        echo ""
-        echo "════════════════════════════════════════════════════════════"
-        echo "  BUILDING MIDNIGHTOS ULTIMATE"
-        echo "════════════════════════════════════════════════════════════"
-
-        echo "→ Entering ChromeOS SDK..."
-        cros_sdk --enter --cmd="setup_board --board=${BOARD}" > $HOME/logs/setup-board.log 2>&1 || {
-          echo "⚠ Setup board completed with warnings"
-        }
-
-        echo "→ Installing dependencies..."
-        cros_sdk --enter --cmd="sudo emerge capnproto" > $HOME/logs/capnproto.log 2>&1 || true
-
-        echo ""
-        echo "→ Building packages with prebuilt Chrome (diet version)..."
-        echo "  This saves 8-10GB by using OpenFyde's method"
-        
-        cros_sdk --enter --cmd="
-          export BOARD=${BOARD}
-          export USE='minimal -autotest dark_mode material_design compositor blur_effects vulkan opengl animations -metrics_collection -crash_reporter'
-          export CHROMEOS_VERSION_STRING='MidnightOS Ultimate'
-          export CHROMEOS_DEVICE_ID='midnightos-ultimate-amd64'
-          export CHROMEOS_METRICS_ENABLED=0
-          export MIDNIGHT_ULTIMATE=1
-          export ASH_BLUR_ENABLED=1
-          
-          echo '→ Building Ultimate UI packages...'
-          emerge-${BOARD} --quiet-build chromeos-base/ash-ui-config || true
-          
-          echo '→ Building system packages with prebuilt Chrome...'
-          build_packages --board=${BOARD} \
-            --nowithautotest \
-            --autosetgov \
-            --nouse_any_chrome
-        " > $HOME/logs/build-packages.log 2>&1 &
-        
-        BUILD_PID=$!
-        while kill -0 $BUILD_PID 2>/dev/null; do
-          echo "  Building... $(date +%H:%M:%S)"
-          sleep 120
-        done
-        
-        wait $BUILD_PID || {
-          echo "⚠ Package build completed with warnings"
-          
-        }
-
-        echo ""
-        echo "→ Building system image with Ultimate UI..."
-        cros_sdk --enter --cmd="
-          export BOARD=${BOARD}
-          export CHROMEOS_METRICS_ENABLED=0
-          export MIDNIGHT_ULTIMATE=1
-          
-          build_image --board=${BOARD} \
-            --noenable_rootfs_verification \
-            --boot_args='cros_secure quiet dark_mode=1 loglevel=3 splash' \
-            dev
-        " > $HOME/logs/build-image.log 2>&1 || {
-          echo "⚠ Image build completed with warnings"
-          
-        }
-
-        echo ""
-        echo "════════════════════════════════════════════════════════════"
-        echo "  PREPARING RELEASE ARTIFACTS"
-        echo "════════════════════════════════════════════════════════════"
-        
-        BUILD_DIR="$HOME/chromeos-build/src/build/images/$BOARD/latest/"
-        ARTIFACTS_DIR="$HOME/artifacts"
-        mkdir -p "${ARTIFACTS_DIR}"
-
-        if [ -d "${BUILD_DIR}" ]; then
-          echo "→ Copying build artifacts..."
-          shopt -s nullglob
-          cp "${BUILD_DIR}"/*.bin $HOME/artifacts/ 2>/dev/null || true
-          cp "${BUILD_DIR}"/*.img $HOME/artifacts/ 2>/dev/null || true
-          
-          cd $HOME/artifacts
-          for file in *.bin *.img; do
-            if [ -f "$file" ]; then
-              newname="MidnightOS-Ultimate-$(date +%Y.%m.%d)-${file}"
-              mv "$file" "$newname"
-              sha256sum "$newname" > "${newname}.sha256"
-              md5sum "$newname" > "${newname}.md5"
-              SIZE=$(stat -c%s "$newname" | awk '{print $1/1024/1024 "MB"}')
-              echo "  ✓ $newname ($SIZE)"
-            fi
-          done
-          
-          echo ""
-          echo "╔════════════════════════════════════════════════════════════╗"
-          echo "║  BUILD COMPLETED SUCCESSFULLY!                             ║"
-          echo "╚════════════════════════════════════════════════════════════╝"
-          echo ""
-          echo "Artifacts created:"
-          ls -lh $HOME/artifacts/
-        else
-          echo "ERROR: Build directory not found"
-          exit 1
-        fi
-        EOF
-
-    - name: Build MidnightOS Ultimate in Docker
+    - name: Bld MOS in Docker
       run: |
-        cd docker-build
-        
-        echo "════════════════════════════════════════════════════════════"
-        echo "  Building MidnightOS Ultimate Docker image..."
-        echo "════════════════════════════════════════════════════════════"
-        docker build -t midnightos-ultimate-builder .
-        
-        echo ""
-        echo "════════════════════════════════════════════════════════════"
-        echo "  Starting MidnightOS Ultimate build..."
-        echo "  This will create the most beautiful ChromeOS fork ever"
-        echo "════════════════════════════════════════════════════════════"
-        docker run --privileged --rm \
-          --name midnightos-ultimate-build \
-          -v "$(pwd)/../artifacts:/home/builder/artifacts" \
-          -v "$(pwd)/../logs:/home/builder/logs" \
+        cd dbld
+        docker build -t mos-bld .
+        docker run --privileged --rm --name mos-bld \
+          -v "$(pwd)/../art:/home/bld/art" \
+          -v "$(pwd)/../log:/home/bld/log" \
           --tmpfs /tmp:rw,noexec,nosuid,size=8g \
           --shm-size=8g \
-          midnightos-ultimate-builder
-        
-        echo ""
-        echo "✓ Build completed!"
+          mos-bld
 
-    - name: Extract and verify build results
+    - name: Verify art
       run: |
-        echo "════════════════════════════════════════════════════════════"
-        echo "  Extracting build results..."
-        echo "════════════════════════════════════════════════════════════"
-        
-        if [ -d "artifacts" ]; then
-          echo ""
-          echo "MidnightOS Ultimate artifacts:"
-          ls -lah artifacts/
-          echo ""
-          
-          for file in artifacts/*.bin artifacts/*.img; do
-            if [ -f "$file" ]; then
-              size=$(stat -c%s "$file" 2>/dev/null || stat -f%z "$file" 2>/dev/null || echo "0")
-              size_mb=$((size / 1024 / 1024))
-              echo "  $(basename "$file"): ${size_mb} MB"
-            fi
-          done
-          
-          if [ -f "artifacts/RELEASE_NOTES.txt" ]; then
-            echo ""
-            echo "════════════════════════════════════════════════════════════"
-            cat artifacts/RELEASE_NOTES.txt | head -50
-            echo "════════════════════════════════════════════════════════════"
-          fi
-        else
-          echo "ERROR: No artifacts directory found"
-          exit 1
-        fi
+        [ -d "art" ] || exit 1
+        ls -lah art/
+        for f in art/*.bin art/*.img; do
+          [ -f "$f" ] || continue
+          sz=$(stat -c%s "$f" 2>/dev/null || stat -f%z "$f" 2>/dev/null || echo "0")
+          echo "$(basename "$f"): $((sz/1024/1024))MB"
+        done
 
-    - name: Prepare SourceForge upload
+    - name: Prep SF
       if: success() && (github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch')
       run: |
-        sudo apt-get update
-        sudo apt-get install -y rsync sshpass
-        
-        mkdir -p release-upload
-        
-        if [ -d "artifacts" ] && [ "$(ls -A artifacts/)" ]; then
-          cp artifacts/* release-upload/
-          
-          cd release-upload
-          
-          cat > README.md << 'EOF'
-        # MidnightOS Ultimate Edition
-        
-        ## The Most Visually Stunning ChromeOS Fork Ever Created
-        
-        MidnightOS Ultimate combines OpenFyde's Intel hardware optimizations with the most beautiful UI ever seen in a ChromeOS distribution.
-        
-        ### What Makes This Special?
-        
-        - **Glassmorphism UI**: Acrylic blur, backdrop filters, semi-transparent surfaces
-        - **Material Design 3**: Dynamic color extraction, adaptive theming
-        - **Advanced Ash UI**: 80px blur, smooth animations, floating shelf
-        - **4K Visual Assets**: Ultra HD wallpapers, gradient backgrounds
-        - **Zero Telemetry**: Complete privacy, no tracking
-        - **Intel Optimized**: Full HD Graphics support (2011+ CPUs)
-        
-        ### Download & Install
-        
-        1. Download the latest `.img` file
-        2. Flash to USB drive (8GB+)
-        3. Boot and enjoy the most beautiful ChromeOS experience
-        
-        ### Features
-        
-        - Acrylic transparency throughout
-        - 120fps smooth animations
-        - Dynamic wallpaper-based theming
-        - Glassmorphic floating shelf
-        - Blur effects on all surfaces
-        - Hardware-accelerated rendering
-        - Linux & Android apps support
-        
-        ### System Requirements
-        
-        - Intel 2nd gen Core or later
-        - Intel HD Graphics
-        - 4GB RAM minimum
-        - 32GB storage minimum
-        
-        ---
-        
-        Built on OpenFyde • Powered by ChromiumOS • Designed for Beauty
-        EOF
-          
-          echo "✓ Release package prepared"
-        else
-          echo "ERROR: No artifacts to upload"
-          exit 1
-        fi
+        sudo apt-get update && sudo apt-get install -y rsync sshpass
+        mkdir -p rel
+        [ -d "art" ] && [ "$(ls -A art/)" ] && cp art/* rel/ || exit 1
 
-    - name: Upload to SourceForge
+    - name: Upload SF
       if: success() && (github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch')
       env:
         SF_PASS: ${{ secrets.SF_PASS }}
       run: |
-        if [ -z "$SF_PASS" ]; then
-          echo "WARNING: SF_PASS not set, skipping upload"
-          exit 0
-        fi
-        
-        cd release-upload
-        VERSION_DIR="Ultimate-$(date +%Y.%m.%d)"
-        
-        echo "Uploading to SourceForge: ${VERSION_DIR}"
-        
+        [ -z "$SF_PASS" ] && exit 0
+        cd rel
+        VD="$(date +%Y.%m.%d)"
         sshpass -p "$SF_PASS" rsync -avP -e "ssh -o StrictHostKeyChecking=no" \
-          ./ \
-          ${SF_USER}@frs.sourceforge.net:/home/frs/project/${SF_PROJECT}/${VERSION_DIR}/ || {
-          echo "Upload completed with warnings"
-        }
-        
-        echo "✓ Files available at: https://sourceforge.net/projects/${SF_PROJECT}/files/${VERSION_DIR}/"
+          ./ ${SF_USER}@frs.sourceforge.net:/home/frs/project/${SF_PROJECT}/${VD}/ || true
 
-    - name: Build completion summary
-      if: always()
-      run: |
-        echo ""
-        echo "╔════════════════════════════════════════════════════════════╗"
-        if [ "${{ job.status }}" == "success" ]; then
-          echo "║  ✓ MIDNIGHTOS ULTIMATE BUILD SUCCESSFUL                    ║"
-          echo "╚════════════════════════════════════════════════════════════╝"
-          echo ""
-          echo "Features delivered:"
-          echo "  ✓ Glassmorphism with 80px blur"
-          echo "  ✓ Material Design 3 dynamic theming"
-          echo "  ✓ Acrylic transparency effects"
-          echo "  ✓ 120fps smooth animations"
-          echo "  ✓ 4K visual assets"
-          echo "  ✓ Zero telemetry (privacy-first)"
-          echo "  ✓ Intel HD Graphics optimized"
-          echo "  ✓ Prebuilt Chrome (diet version)"
-          echo "  ✓ Source size: ~11-12GB"
-          echo ""
-          echo "Download: https://sourceforge.net/projects/${SF_PROJECT}"
-        else
-          echo "║  ✗ BUILD FAILED                                            ║"
-          echo "╚════════════════════════════════════════════════════════════╝"
-          exit 1
-        fi
-
-    - name: Archive build logs
+    - name: Archive log
       uses: actions/upload-artifact@v4
       if: always()
       with:
-        name: midnightos-ultimate-logs-${{ github.run_number }}
-        path: logs/
+        name: mos-log-${{ github.run_number }}
+        path: log/
         retention-days: 30
 
-    - name: Archive release artifacts
+    - name: Archive art
       uses: actions/upload-artifact@v4
       if: success()
       with:
-        name: midnightos-ultimate-release-${{ github.run_number }}
+        name: mos-rel-${{ github.run_number }}
         path: |
-          release-upload/
-          artifacts/
+          rel/
+          art/
         retention-days: 90
