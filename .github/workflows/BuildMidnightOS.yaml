@@ -45,10 +45,18 @@ RUN apt-get update && apt-get install -y \
     lib32z1-dev zlib1g-dev libelf-dev libdbus-1-dev libbluetooth-dev \
     libnss3-dev libasound2-dev imagemagick fontconfig sshpass rsync \
     fonts-liberation fonts-dejavu openssh-client \
+    python-pkg-resources python-virtualenv python-oauth2client \
+    lvm2 thin-provisioning-tools \
     && apt-get clean && rm -rf /var/lib/apt/lists/*
 
+# Configure locales
+RUN locale-gen en_US.UTF-8
+ENV LANG=en_US.UTF-8 LANGUAGE=en_US:en LC_ALL=en_US.UTF-8
+
 RUN useradd -m -s /bin/bash -G sudo bld && \
-    echo 'bld ALL=(ALL) NOPASSWD:ALL' >> /etc/sudoers
+    echo 'bld ALL=(ALL) NOPASSWD:ALL' >> /etc/sudoers && \
+    echo 'Defaults !tty_tickets' >> /etc/sudoers.d/notty && \
+    chmod 0440 /etc/sudoers.d/notty
 
 RUN git clone https://chromium.googlesource.com/chromium/tools/depot_tools.git /opt/dt && \
     chown -R bld:bld /opt/dt && chmod -R 755 /opt/dt && \
@@ -64,7 +72,8 @@ WORKDIR /home/bld
 ENV PATH="/opt/dt:$PATH"
 RUN git config --global user.name "MOS" && \
     git config --global user.email "mos@build" && \
-    git config --global color.ui auto
+    git config --global color.ui auto && \
+    umask 022
 
 CMD ["/home/bld/bld.sh"]
 EOF
@@ -78,8 +87,12 @@ export R="release-R102-14695.B"
 export PATH="/opt/dt:$PATH"
         
 echo "=== MOS Bld Start ==="
-mkdir -p $HOME/bnd/{ic,wp,cfg,thm} $HOME/art $HOME/log $HOME/cros
 
+# Ensure branding directory exists and has proper permissions
+mkdir -p $HOME/bnd/{ic,wp,cfg,thm}
+chmod -R 755 $HOME/bnd
+
+# Create branding assets
 cd $HOME/bnd
 MP="#0F0F0F"; MS="#1A1A1A"; MA="#6366F1"; MT="#E5E5E5"; MSU="#121212"
 
@@ -98,12 +111,28 @@ cat > cfg/mos.json << 'TH'
 {"name":"MOS","v":"1.0","base":"ofyd","board":"amd64-ofyd","thm":{"dm":true,"pc":"#0F0F0F","ac":"#6366F1"},"ft":{"pbc":true,"ig":true,"nt":true}}
 TH
 
+# Verify branding assets were created
+echo "Branding assets created:"
+ls -lah $HOME/bnd/
+[ -f "$HOME/bnd/mos-logo.png" ] && echo "✓ Logo exists" || echo "⚠ Logo missing"
+[ -f "$HOME/bnd/boot.png" ] && echo "✓ Boot splash exists" || echo "⚠ Boot splash missing"
+
+# Initialize other directories
+mkdir -p $HOME/art $HOME/log $HOME/cros
+
 cd $HOME/cros
 git config --global color.ui false
 
+echo "Initializing repo..."
 sudo -E /opt/dt/repo init -u https://chromium.googlesource.com/chromiumos/manifest.git \
   --repo-url https://chromium.googlesource.com/external/repo.git \
-  -b ${R} -g minilayout --depth=1 2>&1
+  -b ${R} -g minilayout --depth=1 2>&1 | tee $HOME/log/repo-init.log
+
+if [ ! -d ".repo" ]; then
+  echo "ERROR: repo init failed"
+  exit 1
+fi
+
 sudo chown -R bld:bld .repo
 
 mkdir -p .repo/local_manifests
@@ -136,10 +165,23 @@ while kill -0 $SP 2>/dev/null; do
   sleep 60
 done
 wait $SP
-sudo chown -R bld:bld $HOME/cros
 
 mkdir -p src/overlays/overlay-mos/chromeos-base/{cros-ast,ash-cfg}
-cp -r $HOME/bnd/* src/overlays/overlay-mos/chromeos-base/cros-ast/ 2>/dev/null || true
+
+# Copy branding with verification
+echo "Copying branding assets to overlay..."
+if [ -d "$HOME/bnd" ] && [ "$(ls -A $HOME/bnd 2>/dev/null)" ]; then
+  cp -rv $HOME/bnd/* src/overlays/overlay-mos/chromeos-base/cros-ast/ 2>&1 || echo "⚠ Branding copy warning"
+  
+  # Verify copy
+  if [ -f "src/overlays/overlay-mos/chromeos-base/cros-ast/mos-logo.png" ]; then
+    echo "✓ Branding successfully copied to overlay"
+  else
+    echo "⚠ Branding files not found in overlay"
+  fi
+else
+  echo "⚠ Branding source directory empty or missing"
+fi
 
 mkdir -p src/overlays/overlay-mos/profiles/base
 cat > src/overlays/overlay-mos/profiles/base/make.defaults << 'PR'
@@ -156,9 +198,21 @@ CHROMEOS_VERSION_STRING="MOS"
 CHROMEOS_METRICS_ENABLED=0
 PR
 
-cros_sdk --enter --cmd="setup_board --board=${BOARD}" 2>&1 || true
-cros_sdk --enter --cmd="sudo emerge capnproto" 2>&1 || true
+echo "Setting up board..."
+cros_sdk --enter --cmd="setup_board --board=${BOARD} --force" > $HOME/log/sb.log 2>&1
 
+if [ $? -ne 0 ]; then
+  echo "ERROR: setup_board failed"
+  cat $HOME/log/sb.log | tail -50
+  exit 1
+fi
+
+echo "Installing capnproto..."
+cros_sdk --enter --cmd="sudo emerge capnproto" > $HOME/log/cp.log 2>&1 || {
+  echo "⚠ capnproto install warning"
+}
+
+echo "Building packages..."
 cros_sdk --enter --cmd="
   export BOARD=${BOARD}
   export USE='minimal -autotest dark_mode material_design compositor blur_effects vulkan opengl -metrics_collection -crash_reporter'
@@ -167,22 +221,45 @@ cros_sdk --enter --cmd="
   export CHROMEOS_METRICS_ENABLED=0
   
   build_packages --board=\${BOARD} --nowithautotest --autosetgov --nouse_any_chrome
-" 2>&1 &
+" > $HOME/log/bp.log 2>&1 &
 
 BP=$!
 while kill -0 $BP 2>/dev/null; do
   echo "Bld $(date +%H:%M:%S)"
   sleep 120
 done
-wait $BP || true
+wait $BP
+BP_RC=$?
 
+if [ $BP_RC -ne 0 ]; then
+  echo "ERROR: build_packages failed with exit code $BP_RC"
+  echo "Last 100 lines of build log:"
+  tail -100 $HOME/log/bp.log
+  
+  # Check for common errors
+  if grep -q "ERROR.*emerge" $HOME/log/bp.log; then
+    echo "Emerge errors detected. Check portage logs:"
+    echo "  /build/${BOARD}/tmp/portage/logs/"
+  fi
+  exit 1
+fi
+
+echo "Building system image..."
 cros_sdk --enter --cmd="
   export BOARD=${BOARD}
   export CHROMEOS_METRICS_ENABLED=0
   
   build_image --board=\${BOARD} --noenable_rootfs_verification \
     --boot_args='cros_secure quiet dark_mode=1 loglevel=3 splash' dev
-" 2>&1 || true
+" > $HOME/log/bi.log 2>&1
+
+BI_RC=$?
+if [ $BI_RC -ne 0 ]; then
+  echo "ERROR: build_image failed with exit code $BI_RC"
+  echo "Last 50 lines of image build log:"
+  tail -50 $HOME/log/bi.log
+  exit 1
+fi
 
 echo ""
 echo "════════════════════════════════════════════════════════════"
@@ -199,12 +276,28 @@ shopt -s nullglob
 if [ -d "${BUILD_DIR}" ]; then
   echo "→ Copying build artifacts from ${BUILD_DIR}..."
 
-  cp -v "${BUILD_DIR}"/*.bin "${ARTIFACTS_DIR}/" 2>/dev/null || true
-  cp -v "${BUILD_DIR}"/*.img "${ARTIFACTS_DIR}/" 2>/dev/null || true
+  # Check if any files exist before copying
+  if ls "${BUILD_DIR}"/*.bin >/dev/null 2>&1 || ls "${BUILD_DIR}"/*.img >/dev/null 2>&1; then
+    cp -v "${BUILD_DIR}"/*.bin "${ARTIFACTS_DIR}/" 2>/dev/null || true
+    cp -v "${BUILD_DIR}"/*.img "${ARTIFACTS_DIR}/" 2>/dev/null || true
+  else
+    echo "⚠ WARNING: No .bin or .img files found in ${BUILD_DIR}"
+    echo "Contents of build directory:"
+    ls -lah "${BUILD_DIR}" || echo "Directory listing failed"
+  fi
   
   shopt -u nullglob
 
   cd "${ARTIFACTS_DIR}"
+
+  # Check if we actually copied any files
+  if ! ls *.bin >/dev/null 2>&1 && ! ls *.img >/dev/null 2>&1; then
+    echo "🚨 ERROR: No image files were copied to artifacts directory"
+    echo "This might indicate a build failure. Check logs:"
+    echo "  - $HOME/log/bi.log"
+    echo "  - $HOME/log/bp.log"
+    exit 1
+  fi
 
   for f in *.bin *.img; do
     if [ -f "$f" ]; then
@@ -212,16 +305,18 @@ if [ -d "${BUILD_DIR}" ]; then
       mv "$f" "$nn"
       sha256sum "$nn" > "${nn}.sha256"
       md5sum "$nn" > "${nn}.md5"
-      
-      SZ_B=$(stat -c%s "$nn")
-      SZ_MB=$(echo "scale=2; $SZ_B / 1024 / 1024" | bc)
+      SZ_B=$(stat -c%s "$nn" 2>/dev/null || stat -f%z "$nn" 2>/dev/null)
+      SZ_MB=$(echo "scale=2; $SZ_B / 1024 / 1024" | bc -l 2>/dev/null || echo "0")
       echo "  ✓ $nn (${SZ_MB}MB)"
     fi
   done
   
+  echo ""
+  echo "Final artifacts:"
   ls -lh "${ARTIFACTS_DIR}/"
 else
-  echo "ERROR: Build directory not found: ${BUILD_DIR}"
+  echo "🚨 ERROR: Build directory not found: ${BUILD_DIR}"
+  echo "Build likely failed. Check logs at $HOME/log/"
   exit 1
 fi
 EOF
@@ -233,19 +328,28 @@ EOF
         docker run --privileged --rm --name mos-bld \
           -v "$(pwd)/../art:/home/bld/art" \
           -v "$(pwd)/../log:/home/bld/log" \
+          -v "$(pwd)/../bnd:/home/bld/bnd" \
           --tmpfs /tmp:rw,noexec,nosuid,size=8g \
-          --shm-size=8g \
-          mos-bld
+          --shm-size=8g mos-bld
 
     - name: Verify art
       run: |
         [ -d "art" ] || exit 1
+        echo "=== Build Artifacts ==="
         ls -lah art/
         for f in art/*.bin art/*.img; do
           [ -f "$f" ] || continue
           sz=$(stat -c%s "$f" 2>/dev/null || stat -f%z "$f" 2>/dev/null || echo "0")
           echo "$(basename "$f"): $((sz/1024/1024))MB"
         done
+        
+        echo ""
+        echo "=== Branding Assets ==="
+        if [ -d "bnd" ]; then
+          ls -lah bnd/
+        else
+          echo "⚠ No branding directory found"
+        fi
 
     - name: Prep SF
       if: success() && (github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch')
