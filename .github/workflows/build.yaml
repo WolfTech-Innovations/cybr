@@ -2629,7 +2629,7 @@ jobs:
             ./scripts/build-debian-iso.sh
 
       - name: "Validate ISO Build"
-        id: iso-info
+      
         run: |
           ISO_FILE="${{ env.ISO_NAME }}.iso"
           
@@ -2656,7 +2656,6 @@ jobs:
           echo "└─────────────────────────────────────────┘"
 
       - name: "Set Build Status"
-        id: build-status
         run: |
           if [[ "${{ github.event.inputs.force_fail }}" == "true" ]]; then
             echo "success=false" >> $GITHUB_OUTPUT
