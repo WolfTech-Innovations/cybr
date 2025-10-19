@@ -82,7 +82,7 @@ jobs:
           network-manager-applet
           
           # Utilities
-          neofetch
+          
           htop
           git
           curl
