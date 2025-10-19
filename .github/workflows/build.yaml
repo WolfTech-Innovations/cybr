@@ -30,47 +30,27 @@ jobs:
 
       - name: "Free Disk Space"
         run: |
-          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc
           sudo apt-get clean
-          df -h
 
-      - name: "Setup Docker Buildx"
-        uses: docker/setup-buildx-action@v3
-
-      - name: "Create Arch Build Container"
+      - name: "Create Arch Build Environment"
         run: |
-          cat > Dockerfile << 'EOF'
-          FROM archlinux:latest
+          cat > build.sh << 'BUILD_EOF'
+          #!/bin/bash
+          set -euo pipefail
           
-          RUN pacman -Syu --noconfirm && \
-              pacman -S --noconfirm archiso git curl wget base-devel && \
-              pacman -Scc --noconfirm
+          echo "Dawn light shines upon the arches..."
           
-          WORKDIR /build
-          EOF
+          # Install archiso
+          pacman -Sy --noconfirm archiso git
           
-          docker build -t cybr-arch-builder .
-
-      - name: "Build Cybr Linux ISO"
-        run: |
-          docker run --rm --privileged \
-            -v $PWD:/workspace \
-            -e ISO_NAME="${{ env.ISO_NAME }}" \
-            cybr-arch-builder \
-            bash -c '
-              set -euo pipefail
-              
-              echo "═══════════════════════════════════════════════"
-              echo "  Dawn light shines upon the arches..."
-              echo "  Building Cybr Linux with Hyprland"
-              echo "═══════════════════════════════════════════════"
-              
-              # Copy archiso profile
-              cp -r /usr/share/archiso/configs/releng /build/cybr
-              cd /build/cybr
-              
-              # Add packages for Hyprland setup
-              cat >> packages.x86_64 << "PKGS"
+          # Copy archiso profile
+          cp -r /usr/share/archiso/configs/releng /tmp/cybr-build
+          cd /tmp/cybr-build
+          
+          # Customize packages
+          cat >> packages.x86_64 << 'PKGS_EOF'
+          # Hyprland and Wayland
           hyprland
           xdg-desktop-portal-hyprland
           waybar
@@ -82,144 +62,133 @@ jobs:
           wl-clipboard
           swaylock
           swayidle
-          mako
+          
+          # Display manager
           sddm
+          
+          # Essential apps
           firefox
           thunar
-          thunar-volman
           mousepad
+          
+          # Audio
           pipewire
           pipewire-pulse
-          pipewire-alsa
           wireplumber
           pavucontrol
+          
+          # Network
           networkmanager
           network-manager-applet
-          bluez
-          bluez-utils
-          blueman
+          
+          # Utilities
+          neofetch
           htop
           git
           curl
           wget
-          base-devel
+          
+          # Desktop utilities
           brightnessctl
           playerctl
-          pamixer
-          nodejs
-          npm
-          gjs
-          gtk-layer-shell
-          ttf-dejavu
-          ttf-font-awesome
-          noto-fonts
-          noto-fonts-emoji
-          PKGS
-              
-              # Cybr branding
-              echo "cybr-linux" > airootfs/etc/hostname
-              
-              cat > airootfs/etc/os-release << "OS"
-          NAME="Cybr"
+          PKGS_EOF
+          
+          # Create Cybr branding
+          cat > airootfs/etc/hostname << 'HOSTNAME_EOF'
+          cybr-linux
+          HOSTNAME_EOF
+          
+          cat > airootfs/etc/os-release << 'OS_EOF'
+          NAME="Cybr Linux"
+          PRETTY_NAME="Cybr Linux"
           ID=cybr
+          ID_LIKE=arch
           BUILD_ID=rolling
-          PRETTY_NAME="Cybr by WolfTech Innovations"
-          HOME_URL="https://wolfos.uk/"
-          OS
-              
-              # Setup scripts
-              mkdir -p airootfs/usr/local/bin
-              
-              # BlackArch setup
-              cat > airootfs/usr/local/bin/setup-blackarch << "BA"
+          ANSI_COLOR="38;2;23;147;209"
+          HOME_URL="https://wolfos.pages.dev/"
+          SUPPORT_URL="https://wolfos.pages.dev/support"
+          BUG_REPORT_URL="https://wolfos.pages.dev/issues"
+          OS_EOF
+          
+          # Add Kali repos setup script
+          mkdir -p airootfs/usr/local/bin
+          cat > airootfs/usr/local/bin/setup-kali-repos << 'KALI_EOF'
           #!/bin/bash
-          set -e
-          cd /tmp
+          echo "Adding Kali Linux repositories..."
+          
+          # Add BlackArch repos (Arch equivalent of Kali tools)
           curl -O https://blackarch.org/strap.sh
           chmod +x strap.sh
           sudo ./strap.sh
-          rm strap.sh
-          echo "BlackArch repos ready: sudo pacman -S <tool>"
-          BA
-              chmod +x airootfs/usr/local/bin/setup-blackarch
-              
-              # Neo hook
-              curl -fsSL https://raw.githubusercontent.com/WolfTech-Innovations/Neo/main/lb-hooks/0201-Neo.chroot \
-                -o airootfs/usr/local/bin/neo-enhancements 2>/dev/null || echo "Neo hook optional"
-              chmod +x airootfs/usr/local/bin/neo-enhancements 2>/dev/null || true
-              
-              # First boot setup with end-4 dotfiles
-              cat > airootfs/usr/local/bin/cybr-first-boot << "FB"
-          #!/bin/bash
-          FLAG="\$HOME/.config/cybr-setup-done"
           
-          if [ ! -f "\$FLAG" ]; then
-            notify-send "Cybr Linux" "Setting up end-4 dotfiles..." -i distributor-logo
-            
-            # Install end-4 dotfiles
-            bash <(curl -s https://ii.clsty.link/setup) && \
-              notify-send "Cybr Linux" "Dotfiles installed!" -i emblem-default || \
-              notify-send "Cybr Linux" "Dotfiles failed - retry manually" -u critical
-            
-            # BlackArch repos
-            /usr/local/bin/setup-blackarch && \
-              notify-send "Cybr Linux" "Security tools available!" -i security-high
-            
-            # Neo enhancements
-            [ -x /usr/local/bin/neo-enhancements ] && /usr/local/bin/neo-enhancements || true
-            
-            mkdir -p "\$HOME/.config"
-            touch "\$FLAG"
-            notify-send "Cybr Linux" "Setup complete! Relog to apply." -i emblem-default
-          fi
-          FB
-              chmod +x airootfs/usr/local/bin/cybr-first-boot
-              
-              # Autostart
-              mkdir -p airootfs/etc/skel/.config/autostart
-              cat > airootfs/etc/skel/.config/autostart/cybr-setup.desktop << "AS"
+          echo "BlackArch repositories added. Install tools with: sudo pacman -S <tool>"
+          KALI_EOF
+          chmod +x airootfs/usr/local/bin/setup-kali-repos
+          
+          # Install end-4 dotfiles on first boot
+          mkdir -p airootfs/etc/skel/.config/autostart
+          cat > airootfs/etc/skel/.config/autostart/cybr-setup.desktop << 'SETUP_EOF'
           [Desktop Entry]
           Type=Application
           Name=Cybr Setup
           Exec=/usr/local/bin/cybr-first-boot
           Hidden=false
-          NoDisplay=true
+          NoDisplay=false
           X-GNOME-Autostart-enabled=true
-          AS
-              
-              # SDDM config with auto-login for live session
-              mkdir -p airootfs/etc/sddm.conf.d
-              cat > airootfs/etc/sddm.conf.d/cybr.conf << "SDDM"
+          SETUP_EOF
+          
+          cat > airootfs/usr/local/bin/cybr-first-boot << 'FIRST_BOOT_EOF'
+          #!/bin/bash
+          FLAG="$HOME/.config/cybr-setup-done"
+          
+          if [ ! -f "$FLAG" ]; then
+            notify-send "Cybr Linux" "Setting up your system..." -i distributor-logo
+            
+            # Install end-4 dotfiles
+            bash <(curl -s https://ii.clsty.link/setup) || true
+            
+            # Setup BlackArch repos
+            /usr/local/bin/setup-kali-repos || true
+            
+            mkdir -p "$HOME/.config"
+            touch "$FLAG"
+            notify-send "Cybr Linux" "Setup complete! Restart Hyprland to apply changes." -i distributor-logo
+          fi
+          FIRST_BOOT_EOF
+          chmod +x airootfs/usr/local/bin/cybr-first-boot
+          
+          # Download and install Neo hook
+          curl -fsSL https://raw.githubusercontent.com/WolfTech-Innovations/Neo/main/lb-hooks/0201-Neo.chroot \
+            -o airootfs/usr/local/bin/neo-setup
+          chmod +x airootfs/usr/local/bin/neo-setup
+          
+          # Configure SDDM for Hyprland
+          mkdir -p airootfs/etc/sddm.conf.d
+          cat > airootfs/etc/sddm.conf.d/cybr.conf << 'SDDM_EOF'
           [General]
           DisplayServer=wayland
           
           [Wayland]
           SessionDir=/usr/share/wayland-sessions
+          SDDM_EOF
           
-          [Autologin]
-          User=cybr
-          Session=hyprland
-          SDDM
-              
-              # Enable services
-              mkdir -p airootfs/etc/systemd/system/{multi-user.target.wants,graphical.target.wants}
-              ln -sf /usr/lib/systemd/system/NetworkManager.service \
-                airootfs/etc/systemd/system/multi-user.target.wants/
-              ln -sf /usr/lib/systemd/system/sddm.service \
-                airootfs/etc/systemd/system/graphical.target.wants/
-              
-              # Build ISO
-              echo "Building ISO..."
-              mkarchiso -v -w /tmp/work -o /tmp/out .
-              
-              # Move to workspace
-              mv /tmp/out/*.iso /workspace/${ISO_NAME}.iso
-              
-              echo "═══════════════════════════════════════════════"
-              echo "  Cybr Linux ISO created successfully!"
-              echo "  File: ${ISO_NAME}.iso"
-              echo "═══════════════════════════════════════════════"
-            '
+          # Build the ISO
+          mkarchiso -v -w work -o out .
+          
+          # Move ISO to workspace
+          mv out/*.iso /workspace/$ISO_NAME.iso
+          
+          echo "Cybr Arch Linux ISO built successfully!"
+          BUILD_EOF
+          chmod +x build.sh
+
+      - name: "Build ISO in Arch Container"
+        run: |
+          docker run --rm --privileged \
+            -v $PWD:/workspace \
+            -e ISO_NAME="${{ env.ISO_NAME }}" \
+            archlinux:latest \
+            bash /workspace/build.sh
 
       - name: "Validate ISO"
         id: validate
@@ -254,7 +223,6 @@ jobs:
     runs-on: ubuntu-latest
     needs: build
     if: github.event_name == 'workflow_dispatch' || github.ref == 'refs/heads/main'
-    timeout-minutes: 30
     
     steps:
       - name: "Download ISO"
@@ -262,45 +230,21 @@ jobs:
         with:
           name: "cybr-arch-v${{ github.run_number }}"
 
-      - name: "Install Upload Tools"
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y sshpass rsync
-
       - name: "Upload to SourceForge"
         env:
           SF_USER: ${{ secrets.SF_USER }}
           SF_PASS: ${{ secrets.SF_PASS }}
         run: |
-          if [[ -z "$SF_USER" || -z "$SF_PASS" ]]; then
-            echo "SourceForge credentials not configured"
-            exit 1
-          fi
+          sudo apt-get install -y sshpass rsync
           
           ISO_FILE="cybr-arch-v${{ github.run_number }}.iso"
-          REMOTE_PATH="/home/frs/project/wolfos/$ISO_FILE"
           
-          echo "Uploading $ISO_FILE to SourceForge..."
+          sshpass -p "$SF_PASS" rsync -avP \
+            -e "ssh -o StrictHostKeyChecking=no" \
+            "./$ISO_FILE" \
+            "$SF_USER@frs.sourceforge.net:/home/frs/project/wolfos/$ISO_FILE"
           
-          for i in {1..3}; do
-            if timeout 1800 sshpass -p "$SF_PASS" \
-              rsync -avP --progress \
-              -e "ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null" \
-              "./$ISO_FILE" \
-              "$SF_USER@frs.sourceforge.net:$REMOTE_PATH"; then
-              echo "Upload completed successfully"
-              break
-            elif [[ $i -eq 3 ]]; then
-              echo "Upload failed after 3 attempts"
-              exit 1
-            else
-              echo "Upload attempt $i failed, retrying in 30 seconds..."
-              sleep 30
-            fi
-          done
-          
-          echo "ISO uploaded to SourceForge!"
-          echo "Download: https://sourceforge.net/projects/wolfos/files/$ISO_FILE/download"
+          echo "Upload complete!"
 
   notify:
     name: "Notify"
