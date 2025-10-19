@@ -187,7 +187,7 @@ jobs:
           X-GNOME-Autostart-enabled=true
           AS
               
-              # SDDM config
+              # SDDM config with auto-login for live session
               mkdir -p airootfs/etc/sddm.conf.d
               cat > airootfs/etc/sddm.conf.d/cybr.conf << "SDDM"
           [General]
@@ -195,6 +195,10 @@ jobs:
           
           [Wayland]
           SessionDir=/usr/share/wayland-sessions
+          
+          [Autologin]
+          User=cybr
+          Session=hyprland
           SDDM
               
               # Enable services
