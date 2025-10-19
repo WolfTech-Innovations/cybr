@@ -250,6 +250,7 @@ jobs:
     runs-on: ubuntu-latest
     needs: build
     if: github.event_name == 'workflow_dispatch' || github.ref == 'refs/heads/main'
+    timeout-minutes: 30
     
     steps:
       - name: "Download ISO"
@@ -257,21 +258,45 @@ jobs:
         with:
           name: "cybr-arch-v${{ github.run_number }}"
 
+      - name: "Install Upload Tools"
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y sshpass rsync
+
       - name: "Upload to SourceForge"
         env:
           SF_USER: ${{ secrets.SF_USER }}
           SF_PASS: ${{ secrets.SF_PASS }}
         run: |
-          sudo apt-get install -y sshpass rsync
+          if [[ -z "$SF_USER" || -z "$SF_PASS" ]]; then
+            echo "SourceForge credentials not configured"
+            exit 1
+          fi
           
           ISO_FILE="cybr-arch-v${{ github.run_number }}.iso"
+          REMOTE_PATH="/home/frs/project/wolfos/$ISO_FILE"
           
-          sshpass -p "$SF_PASS" rsync -avP \
-            -e "ssh -o StrictHostKeyChecking=no" \
-            "./$ISO_FILE" \
-            "$SF_USER@frs.sourceforge.net:/home/frs/project/wolfos/$ISO_FILE"
+          echo "Uploading $ISO_FILE to SourceForge..."
           
-          echo "Upload complete!"
+          for i in {1..3}; do
+            if timeout 1800 sshpass -p "$SF_PASS" \
+              rsync -avP --progress \
+              -e "ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null" \
+              "./$ISO_FILE" \
+              "$SF_USER@frs.sourceforge.net:$REMOTE_PATH"; then
+              echo "Upload completed successfully"
+              break
+            elif [[ $i -eq 3 ]]; then
+              echo "Upload failed after 3 attempts"
+              exit 1
+            else
+              echo "Upload attempt $i failed, retrying in 30 seconds..."
+              sleep 30
+            fi
+          done
+          
+          echo "ISO uploaded to SourceForge!"
+          echo "Download: https://sourceforge.net/projects/wolfos/files/$ISO_FILE/download"
 
   notify:
     name: "Notify"
