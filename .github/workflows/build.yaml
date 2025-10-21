@@ -93,30 +93,6 @@ jobs:
               cp -r /usr/share/archiso/configs/releng /build/cybr
               cd /build/cybr
               
-              # Copy AUR packages from builder home to include in ISO
-              echo "Copying pre-built AUR packages..."
-              mkdir -p /build/aur-packages
-              cp -r /home/builder/.cache/yay/*/*.pkg.tar.zst /build/aur-packages/ 2>/dev/null || true
-              
-              # Create local repo for AUR packages
-              if [ -d /build/aur-packages ] && [ "$(ls -A /build/aur-packages)" ]; then
-                cd /build/aur-packages
-                repo-add cybr-aur.db.tar.gz *.pkg.tar.zst
-                cd /build/cybr
-                
-                # Add local repo to pacman.conf
-                cat >> pacman.conf << "LOCALREPO"
-          
-          [cybr-aur]
-          SigLevel = Optional TrustAll
-          Server = file:///build/aur-packages
-          LOCALREPO
-                
-                # Copy packages to airootfs
-                mkdir -p airootfs/opt/cybr-aur
-                cp /build/aur-packages/* airootfs/opt/cybr-aur/ || true
-              fi
-              
               # Add packages for end-4 Hyprland setup (illogical-impulse)
               cat >> packages.x86_64 << "PKGS"
           hyprland
@@ -199,12 +175,6 @@ jobs:
           gcc
           python-dbus
           glib2
-          repo-add
-          python-materialyoucolor
-          python-material-color-utilities
-          nwg-dock-hyprland
-          adwaita-qt5
-          adwaita-qt6
           PKGS
               
               # Cybr branding
@@ -246,23 +216,7 @@ jobs:
                 -o airootfs/usr/local/bin/neo-enhancements 2>/dev/null || echo "# Neo optional" > airootfs/usr/local/bin/neo-enhancements
               chmod +x airootfs/usr/local/bin/neo-enhancements 2>/dev/null || true
               
-              # Setup AUR packages in the live system
-              mkdir -p airootfs/etc/pacman.d
-              cat > airootfs/etc/pacman.d/cybr-aur.conf << "AURCONF"
-          [cybr-aur]
-          SigLevel = Optional TrustAll
-          Server = file:///opt/cybr-aur
-          AURCONF
-              
-              # Add custom repo to pacman.conf in airootfs
-              cat >> airootfs/etc/pacman.conf << "PACCONF"
-          
-          [cybr-aur]
-          SigLevel = Optional TrustAll
-          Server = file:///opt/cybr-aur
-          PACCONF
-              
-              # Install yay for users (pre-built binary)
+              # Setup AUR helper installation script for post-install
               mkdir -p airootfs/usr/local/bin
               cat > airootfs/usr/local/bin/install-aur-helper << "AURHELPER"
           #!/bin/bash
@@ -270,11 +224,11 @@ jobs:
           if ! command -v yay &> /dev/null; then
             echo "Installing yay AUR helper..."
             cd /tmp
-            git clone https://aur.archlinux.org/yay-bin.git
-            cd yay-bin
+            git clone https://aur.archlinux.org/yay.git
+            cd yay
             makepkg -si --noconfirm
             cd ..
-            rm -rf yay-bin
+            rm -rf yay
             echo "✓ yay installed successfully"
           else
             echo "✓ yay already installed"
@@ -317,32 +271,12 @@ jobs:
               echo "This setup will install:"
               echo "  • end-4'"'"'s beautiful Hyprland dotfiles (illogical-impulse)"
               echo "  • AGS (Aylur'"'"'s GTK Shell) for stunning widgets"
-              echo "  • Pre-installed AUR packages (no internet needed!)"
+              echo "  • nwg-dock-hyprland for an elegant dock"
               echo "  • BlackArch security tool repositories"
               echo "  • Neo system enhancements"
               echo ""
-              echo "Note: AUR packages are already installed offline!"
-              echo ""
               echo "Press Enter to continue or Ctrl+C to skip..."
               read
-              
-              echo ""
-              echo "═══════════════════════════════════════════════════════"
-              echo "Verifying pre-installed packages"
-              echo "═══════════════════════════════════════════════════════"
-              
-              # Check if packages are available
-              if pacman -Qi python-materialyoucolor &>/dev/null; then
-                echo "✓ python-materialyoucolor: installed"
-              else
-                echo "⚠ python-materialyoucolor: not found (end-4 may install it)"
-              fi
-              
-              if pacman -Qi nwg-dock-hyprland &>/dev/null; then
-                echo "✓ nwg-dock-hyprland: installed"
-              else
-                echo "⚠ nwg-dock-hyprland: not found"
-              fi
               
               echo ""
               echo "═══════════════════════════════════════════════════════"
@@ -366,15 +300,13 @@ jobs:
               
               echo ""
               echo "═══════════════════════════════════════════════════════"
-              echo "Configuring dock integration"
+              echo "Setting up nwg-dock-hyprland"
               echo "═══════════════════════════════════════════════════════"
               
-              # Note: nwg-dock will be configured by end-4 setup if included
-              # This is just a backup configuration
-              if command -v nwg-dock-hyprland &> /dev/null; then
-                mkdir -p "$HOME/.config/nwg-dock-hyprland"
-                
-                cat > "$HOME/.config/nwg-dock-hyprland/style.css" << '"'"'DOCK_CSS'"'"'
+              # Configure nwg-dock-hyprland
+              mkdir -p "$HOME/.config/nwg-dock-hyprland"
+              
+              cat > "$HOME/.config/nwg-dock-hyprland/style.css" << '"'"'DOCK_CSS'"'"'
           window {
             background-color: rgba(20, 20, 30, 0.8);
             border-radius: 15px;
@@ -404,26 +336,22 @@ jobs:
             background-color: rgba(120, 120, 180, 0.6);
           }
           DOCK_CSS
-                
-                cat > "$HOME/.config/nwg-dock-hyprland/launch.sh" << '"'"'DOCK_LAUNCH'"'"'
+              
+              cat > "$HOME/.config/nwg-dock-hyprland/launch.sh" << '"'"'DOCK_LAUNCH'"'"'
           #!/bin/bash
           nwg-dock-hyprland -f -x -i 48 -nolauncher -a center -ml 8 -mr 8 -mb 8
           DOCK_LAUNCH
-                chmod +x "$HOME/.config/nwg-dock-hyprland/launch.sh"
-                
-                # Add dock to Hyprland autostart if not already present
-                if [ -f "$HOME/.config/hypr/hyprland.conf" ]; then
-                  if ! grep -q "nwg-dock-hyprland" "$HOME/.config/hypr/hyprland.conf" 2>/dev/null && \
-                     ! grep -q "nwg-dock-hyprland" "$HOME/.config/hypr/custom/execs.conf" 2>/dev/null; then
-                    echo "exec-once = ~/.config/nwg-dock-hyprland/launch.sh" >> "$HOME/.config/hypr/custom/execs.conf" 2>/dev/null || \
-                    echo "exec-once = ~/.config/nwg-dock-hyprland/launch.sh" >> "$HOME/.config/hypr/hyprland.conf"
-                  fi
+              chmod +x "$HOME/.config/nwg-dock-hyprland/launch.sh"
+              
+              # Add dock to Hyprland autostart
+              if [ -f "$HOME/.config/hypr/hyprland.conf" ]; then
+                if ! grep -q "nwg-dock-hyprland" "$HOME/.config/hypr/hyprland.conf"; then
+                  echo "exec-once = ~/.config/nwg-dock-hyprland/launch.sh" >> "$HOME/.config/hypr/custom/execs.conf" 2>/dev/null || \
+                  echo "exec-once = ~/.config/nwg-dock-hyprland/launch.sh" >> "$HOME/.config/hypr/hyprland.conf"
                 fi
-                
-                echo "✓ nwg-dock configured!"
-              else
-                echo "⚠ nwg-dock not installed (end-4 setup may include alternative)"
               fi
+              
+              echo "✓ nwg-dock configured!"
               
               echo ""
               echo "═══════════════════════════════════════════════════════"
@@ -490,25 +418,14 @@ jobs:
           X-GNOME-Autostart-enabled=true
           AS
               
-              # Configure greetd with tuigreet for Wayland login
-              mkdir -p airootfs/etc/greetd
-              cat > airootfs/etc/greetd/config.toml << "GREETD"
-          [terminal]
-          vt = 1
-          
-          [default_session]
-          command = "tuigreet --time --remember --cmd 'Hyprland --i-am-really-stupid'"
-          user = "greeter"
-          GREETD
-              
               # Create auto-login script for live session that launches Hyprland directly
-              cat > airootfs/usr/local/bin/autologin-live << "AUTOLOGIN"
+              cat > airootfs/usr/local/bin/autologin-live << '"'"'AUTOLOGIN'"'"'
           #!/bin/bash
           # Auto-login for live session - launch Hyprland directly
           if [ -f /etc/cybr-live ]; then
             exec Hyprland --i-am-really-stupid
           else
-            exec tuigreet --time --remember --cmd 'Hyprland --i-am-really-stupid'
+            exec tuigreet --time --remember --cmd '"'"'Hyprland --i-am-really-stupid'"'"'
           fi
           AUTOLOGIN
               chmod +x airootfs/usr/local/bin/autologin-live
@@ -516,8 +433,9 @@ jobs:
               # Mark as live session
               touch airootfs/etc/cybr-live
               
-              # Update greetd config for auto-login in live session
-              cat > airootfs/etc/greetd/config.toml << "GREETD_LIVE"
+              # Configure greetd for auto-login in live session
+              mkdir -p airootfs/etc/greetd
+              cat > airootfs/etc/greetd/config.toml << '"'"'GREETD_LIVE'"'"'
           [terminal]
           vt = 1
           
@@ -691,16 +609,9 @@ jobs:
           - **Window Manager**: Hyprland (Wayland)
           - **Dotfiles**: end-4's illogical-impulse configuration
           - **Shell**: AGS (Aylur's GTK Shell) for beautiful widgets
-          - **Dock**: nwg-dock-hyprland (pre-installed from AUR)
+          - **Dock**: nwg-dock-hyprland with custom styling
           - **Status Bar**: Integrated with end-4 dotfiles
           - **Login Manager**: greetd with tuigreet
-          - **AUR Packages**: Pre-built and included (no internet required!)
-          
-          ### Pre-installed AUR Packages
-          - python-materialyoucolor
-          - python-material-color-utilities  
-          - nwg-dock-hyprland
-          - adwaita-qt5 / adwaita-qt6
           
           ### Applications
           - **Terminal**: Kitty
@@ -731,29 +642,21 @@ jobs:
           
           ## 🚀 First Boot
           
-          **Boots directly into Hyprland!** The system auto-starts Hyprland using `--i-am-really-stupid` flag for the live session.
-          
-          An interactive setup wizard will launch automatically in Kitty terminal:
-          1. Verify pre-installed AUR packages (already included!)
-          2. Install end-4's beautiful Hyprland dotfiles
-          3. Configure nwg-dock-hyprland with custom styling
-          4. Setup BlackArch repositories (requires internet)
-          5. Apply Neo system enhancements
-          6. Configure the system for optimal aesthetics
-          
-          **No internet required for core desktop setup!** Only BlackArch repo setup needs internet.
+          On first boot, an interactive setup wizard will:
+          1. Install end-4's beautiful Hyprland dotfiles
+          2. Configure nwg-dock-hyprland
+          3. Setup BlackArch repositories
+          4. Apply Neo system enhancements
+          5. Configure the system for optimal aesthetics
           
           ## ⌨️ Default Keybinds
           
-          Once you're in Hyprland (auto-launched on boot):
           - `Super + Q` - Close window
-          - `Super + T` - Terminal (Kitty)
+          - `Super + T` - Terminal
           - `Super + R` - App launcher
           - `Super + L` - Lock screen
           - `Super + Shift + Q` - Exit Hyprland
           - `Super + /` - Show all keybinds
-          
-          **First boot:** The setup wizard will launch automatically in Kitty terminal!
           
           ## 🎨 Customization
           
