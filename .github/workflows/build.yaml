@@ -28,7 +28,12 @@ jobs:
       - name: "Checkout"
         uses: actions/checkout@v4
 
-     
+      - name: "Free Disk Space"
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache
+          sudo apt-get clean
+          df -h
+
       - name: "Setup Docker Buildx"
         uses: docker/setup-buildx-action@v3
 
@@ -37,34 +42,10 @@ jobs:
           cat > Dockerfile << 'EOF'
           FROM archlinux:latest
           
-          # Update system and install base packages
           RUN pacman -Syu --noconfirm && \
-              pacman -S --noconfirm archiso git curl wget base-devel sudo fakeroot && \
+              pacman -S --noconfirm archiso git curl wget base-devel && \
               pacman -Scc --noconfirm
           
-          # Create build user for AUR packages
-          RUN useradd -m -G wheel -s /bin/bash builder && \
-              echo "builder ALL=(ALL) NOPASSWD: ALL" >> /etc/sudoers
-          
-          # Install yay as builder user
-          USER builder
-          WORKDIR /home/builder
-          RUN git clone https://aur.archlinux.org/yay.git && \
-              cd yay && \
-              makepkg -si --noconfirm && \
-              cd .. && \
-              rm -rf yay
-          
-          # Pre-build AUR packages needed for end-4 dotfiles
-          RUN yay -S --noconfirm --needed \
-              python-materialyoucolor \
-              python-material-color-utilities \
-              nwg-dock-hyprland \
-              adwaita-qt5 \
-              adwaita-qt6 || true
-          
-          # Switch back to root for ISO building
-          USER root
           WORKDIR /build
           EOF
           
@@ -80,32 +61,54 @@ jobs:
               set -euo pipefail
               
               echo "═══════════════════════════════════════════════"
-              echo "  Dawn light shines upon the arches..."
-              echo "  Building Cybr Linux with end-4 Hyprland"
+              echo "  🌅 Dawn light shines upon the arches..."
+              echo "  Building Cybr Linux with Hyprland"
               echo "═══════════════════════════════════════════════"
               
               # Copy archiso profile
               cp -r /usr/share/archiso/configs/releng /build/cybr
               cd /build/cybr
               
-              # Add packages for end-4 Hyprland setup (illogical-impulse)
+              # Add packages for Hyprland with end_4 setup and custom kernel
               cat >> packages.x86_64 << "PKGS"
+          linux
+          linux-headers
           hyprland
           xdg-desktop-portal-hyprland
           qt5-wayland
           qt6-wayland
+          waybar
+          wofi
+          rofi-wayland
           kitty
+          foot
+          dunst
+          mako
+          grim
+          slurp
+          swappy
+          wl-clipboard
+          cliphist
+          swaylock-effects
+          swayidle
+          hypridle
+          hyprlock
+          hyprpaper
+          swaybg
+          wlogout
+          sddm
+          greetd
+          greetd-tuigreet
           firefox
           thunar
           thunar-volman
-          gvfs
-          tumbler
-          ffmpegthumbnailer
+          thunar-archive-plugin
           file-roller
           mousepad
           pipewire
           pipewire-pulse
           pipewire-alsa
+          pipewire-jack
           wireplumber
           pavucontrol
           networkmanager
@@ -113,80 +116,91 @@ jobs:
           bluez
           bluez-utils
           blueman
-          brightnessctl
-          playerctl
-          pamixer
-          grim
-          slurp
-          wl-clipboard
-          cliphist
-          swww
-          hyprpicker
-          hypridle
-          hyprlock
-          wf-recorder
-          nwg-look
-          gtk3
-          gtk4
-          python
-          python-pip
-          python-gobject
-          python-pillow
-          python-requests
-          python-pywayland
-          python-psutil
-          gjs
-          gtk-layer-shell
-          libdbusmenu-gtk3
-          gnome-bluetooth-3.0
-          power-profiles-daemon
-          upower
-          polkit-gnome
-          gnome-keyring
-          libsecret
-          seahorse
-          nodejs
-          npm
-          dart-sass
-          meson
-          ninja
+          htop
+          btop
           git
           curl
           wget
-          jq
-          imagemagick
-          socat
+          rsync
+          unzip
+          zip
           base-devel
-          htop
-          btop
-          fastfetch
-          greetd
-          greetd-tuigreet
-          ttf-jetbrains-mono-nerd
+          brightnessctl
+          playerctl
+          pamixer
+          nodejs
+          npm
+          python
+          python-pip
+          python-gobject
+          python-requests
+          gjs
+          gtk3
+          gtk4
+          gtk-layer-shell
+          libdbusmenu-gtk3
+          polkit-gnome
+          gnome-keyring
+          ttf-dejavu
+          ttf-liberation
           ttf-font-awesome
+          ttf-jetbrains-mono
+          ttf-jetbrains-mono-nerd
           noto-fonts
           noto-fonts-emoji
           noto-fonts-cjk
-          gcc
-          python-dbus
-          glib2
+          papirus-icon-theme
+          dracula-gtk-theme
+          dracula-icons-git
+          arc-gtk-theme
+          lxappearance
+          kvantum
+          qt5ct
+          qt6ct
+          nwg-look
+          imagemagick
+          jq
+          socat
+          inotify-tools
+          bc
+          coreutils
           PKGS
               
               # Cybr branding
               echo "cybr-linux" > airootfs/etc/hostname
               
               cat > airootfs/etc/os-release << "OS"
-          NAME="Cybr"
+          NAME="Cybr Linux"
+          PRETTY_NAME="Cybr Linux - Dawn Light Shines Upon the Arches"
           ID=cybr
+          ID_LIKE=arch
           BUILD_ID=rolling
-          PRETTY_NAME="Cybr by WolfTech Innovations"
+          ANSI_COLOR="38;2;23;147;209"
           HOME_URL="https://wolfos.uk/"
-          LOGO=cybr-logo
+          SUPPORT_URL="https://wolfos.uk/"
+          BUG_REPORT_URL="https://wolfos.uk/"
+          LOGO=cybr
           OS
               
               # Setup scripts directory
               mkdir -p airootfs/usr/local/bin
-              mkdir -p airootfs/usr/share/cybr
+              mkdir -p airootfs/etc/skel/.config
+              
+              # Custom Cybr Linux Kernel Panic Screen Configuration
+              # DRM Panic is available in Linux 6.10+ with customizable colors
+              mkdir -p airootfs/etc/modprobe.d
+              cat > airootfs/etc/modprobe.d/cybr-drm-panic.conf << "DRMPANIC"
+          # Cybr Linux - Custom Kernel Panic Screen (BSOD style)
+          # Background: Cybr blue gradient color
+          options drm panic_screen=user
+          DRMPANIC
+              
+              # Kernel parameters for DRM Panic
+              mkdir -p airootfs/etc/default
+              cat > airootfs/etc/default/grub.d/cybr-panic.cfg << "GRUBPANIC"
+          # Enable DRM Panic with custom styling
+          GRUB_CMDLINE_LINUX_DEFAULT="\$GRUB_CMDLINE_LINUX_DEFAULT drm.panic_screen=user"
+          GRUBPANIC
               
               # BlackArch setup script
               cat > airootfs/usr/local/bin/setup-blackarch << "BA"
@@ -199,74 +213,237 @@ jobs:
           sudo ./strap.sh
           rm strap.sh
           sudo pacman -Sy
-          echo ""
-          echo "✓ BlackArch repositories configured!"
-          echo "  Install security tools with: sudo pacman -S <tool-name>"
-          echo "  Example: sudo pacman -S nmap metasploit burpsuite"
+          echo "✓ BlackArch repos configured!"
+          echo "Install tools with: sudo pacman -S <tool-name>"
           BA
               chmod +x airootfs/usr/local/bin/setup-blackarch
               
-              # Neo enhancements (optional)
+              # Neo enhancements hook (optional)
               curl -fsSL https://raw.githubusercontent.com/WolfTech-Innovations/Neo/main/lb-hooks/0201-Neo.chroot \
-                -o airootfs/usr/local/bin/neo-enhancements 2>/dev/null || echo "# Neo optional" > airootfs/usr/local/bin/neo-enhancements
+                -o airootfs/usr/local/bin/neo-enhancements 2>/dev/null || echo "Neo hook optional"
               chmod +x airootfs/usr/local/bin/neo-enhancements 2>/dev/null || true
               
-              # Setup AUR helper installation script for post-install
-              mkdir -p airootfs/usr/local/bin
-              cat > airootfs/usr/local/bin/install-aur-helper << "AURHELPER"
+              # Download end_4 dotfiles setup script
+              cat > airootfs/usr/local/bin/install-end4-dots << "END4"
           #!/bin/bash
-          # Install yay AUR helper for user
-          if ! command -v yay &> /dev/null; then
-            echo "Installing yay AUR helper..."
-            cd /tmp
-            git clone https://aur.archlinux.org/yay.git
-            cd yay
-            makepkg -si --noconfirm
-            cd ..
-            rm -rf yay
-            echo "✓ yay installed successfully"
-          else
-            echo "✓ yay already installed"
+          set -e
+
+          echo "═══════════════════════════════════════════════════════"
+          echo "  Installing end_4'\''s Hyprland dotfiles"
+          echo "  Source: https://github.com/end-4/dots-hyprland"
+          echo "═══════════════════════════════════════════════════════"
+          echo ""
+
+          # Check internet
+          if ! ping -c 1 8.8.8.8 &>/dev/null && ! ping -c 1 1.1.1.1 &>/dev/null; then
+            echo "❌ No internet connection. Cannot download dotfiles."
+            exit 1
           fi
-          AURHELPER
-              chmod +x airootfs/usr/local/bin/install-aur-helper
+
+          # Use end_4'\''s official installer with auto-install option
+          echo "Downloading and running end_4 installer..."
+          echo ""
+          
+          # The installer from end_4'\''s repository
+          curl -fsSL https://end-4.github.io/dots-hyprland-wiki/setup.sh -o /tmp/end4-setup.sh
+          chmod +x /tmp/end4-setup.sh
+          
+          # Run the installer
+          bash /tmp/end4-setup.sh
+          
+          rm -f /tmp/end4-setup.sh
+          
+          echo ""
+          echo "✓ end_4 dotfiles installation completed!"
+          echo ""
+          END4
+              chmod +x airootfs/usr/local/bin/install-end4-dots
               
-              # First boot setup with end-4 dotfiles
+              # Install Dracula theme for all components
+              cat > airootfs/usr/local/bin/install-dracula-theme << "DRACULA"
+          #!/bin/bash
+          set -e
+
+          echo "═══════════════════════════════════════════════════════"
+          echo "  🧛 Installing Dracula Theme Components"
+          echo "═══════════════════════════════════════════════════════"
+          echo ""
+
+          # Create directories
+          mkdir -p ~/.themes
+          mkdir -p ~/.local/share/icons
+          mkdir -p ~/.config/hypr
+          mkdir -p ~/.config/rofi
+          mkdir -p ~/.config/waybar
+          mkdir -p ~/.config/kitty
+
+          # Install Dracula GTK Theme
+          echo "📦 Installing Dracula GTK theme..."
+          if [ ! -d ~/.themes/Dracula ]; then
+            cd /tmp
+            wget -q https://github.com/dracula/gtk/archive/master.zip -O dracula-gtk.zip
+            unzip -q dracula-gtk.zip
+            mv gtk-master ~/.themes/Dracula
+            rm dracula-gtk.zip
+            echo "✓ GTK theme installed"
+          else
+            echo "✓ GTK theme already installed"
+          fi
+
+          # Install Dracula Icons
+          echo "📦 Installing Dracula icon theme..."
+          if [ ! -d ~/.local/share/icons/Dracula ]; then
+            cd /tmp
+            wget -q https://github.com/dracula/gtk/files/5214870/Dracula.zip
+            unzip -q Dracula.zip -d ~/.local/share/icons/
+            rm Dracula.zip
+            echo "✓ Icon theme installed"
+          else
+            echo "✓ Icon theme already installed"
+          fi
+
+          # Configure GTK to use Dracula
+          echo "🎨 Configuring GTK..."
+          mkdir -p ~/.config/gtk-3.0
+          cat > ~/.config/gtk-3.0/settings.ini << "GTK3"
+          [Settings]
+          gtk-theme-name=Dracula
+          gtk-icon-theme-name=Dracula
+          gtk-font-name=Sans 10
+          gtk-cursor-theme-name=Adwaita
+          gtk-cursor-theme-size=24
+          gtk-toolbar-style=GTK_TOOLBAR_BOTH
+          gtk-toolbar-icon-size=GTK_ICON_SIZE_LARGE_TOOLBAR
+          gtk-button-images=1
+          gtk-menu-images=1
+          gtk-enable-event-sounds=1
+          gtk-enable-input-feedback-sounds=1
+          gtk-xft-antialias=1
+          gtk-xft-hinting=1
+          gtk-xft-hintstyle=hintslight
+          gtk-xft-rgba=rgb
+          gtk-application-prefer-dark-theme=1
+          GTK3
+
+          mkdir -p ~/.config/gtk-4.0
+          cat > ~/.config/gtk-4.0/settings.ini << "GTK4"
+          [Settings]
+          gtk-theme-name=Dracula
+          gtk-icon-theme-name=Dracula
+          gtk-font-name=Sans 10
+          gtk-cursor-theme-name=Adwaita
+          gtk-cursor-theme-size=24
+          gtk-application-prefer-dark-theme=1
+          GTK4
+
+          # Install Dracula for Hyprland
+          echo "🎨 Installing Dracula Hyprland colors..."
+          cd /tmp
+          git clone --depth=1 https://github.com/dracula/hyprland.git dracula-hypr 2>/dev/null || true
+          if [ -d dracula-hypr ]; then
+            cp dracula-hypr/dracula_colors.conf ~/.config/hypr/ 2>/dev/null || true
+            rm -rf dracula-hypr
+            echo "✓ Hyprland colors installed"
+          fi
+
+          # Install Dracula for Kitty
+          echo "🎨 Installing Dracula Kitty theme..."
+          mkdir -p ~/.config/kitty
+          curl -fsSL https://raw.githubusercontent.com/dracula/kitty/master/dracula.conf \
+            -o ~/.config/kitty/dracula.conf
+          
+          # Set Kitty to use Dracula
+          if ! grep -q "include dracula.conf" ~/.config/kitty/kitty.conf 2>/dev/null; then
+            echo "include dracula.conf" >> ~/.config/kitty/kitty.conf
+          fi
+          echo "✓ Kitty theme installed"
+
+          # Install Dracula for Rofi
+          echo "🎨 Installing Dracula Rofi theme..."
+          cd /tmp
+          git clone --depth=1 https://github.com/dracula/rofi.git dracula-rofi 2>/dev/null || true
+          if [ -d dracula-rofi ]; then
+            cp dracula-rofi/theme/config1.rasi ~/.config/rofi/dracula.rasi 2>/dev/null || true
+            rm -rf dracula-rofi
+            
+            # Set rofi to use Dracula
+            mkdir -p ~/.config/rofi
+            echo '\''@theme "dracula.rasi"'\'' > ~/.config/rofi/config.rasi
+            echo "✓ Rofi theme installed"
+          fi
+
+          # Dracula Waybar CSS colors
+          echo "🎨 Installing Dracula Waybar colors..."
+          mkdir -p ~/.config/waybar
+          cat > ~/.config/waybar/dracula-colors.css << "WAYBAR_COLORS"
+          /* Dracula Theme Colors */
+          @define-color background #282a36;
+          @define-color current-line #44475a;
+          @define-color selection #44475a;
+          @define-color foreground #f8f8f2;
+          @define-color comment #6272a4;
+          @define-color cyan #8be9fd;
+          @define-color green #50fa7b;
+          @define-color orange #ffb86c;
+          @define-color pink #ff79c6;
+          @define-color purple #bd93f9;
+          @define-color red #ff5555;
+          @define-color yellow #f1fa8c;
+          WAYBAR_COLORS
+          echo "✓ Waybar colors installed"
+
+          echo ""
+          echo "═══════════════════════════════════════════════════════"
+          echo "  ✨ Dracula Theme Installation Complete!"
+          echo "═══════════════════════════════════════════════════════"
+          echo ""
+          echo "Installed components:"
+          echo "  ✓ GTK Theme (GTK3 & GTK4)"
+          echo "  ✓ Icon Theme"
+          echo "  ✓ Hyprland colors"
+          echo "  ✓ Kitty terminal theme"
+          echo "  ✓ Rofi launcher theme"
+          echo "  ✓ Waybar color scheme"
+          echo ""
+          echo "Note: Restart apps or relog to see changes"
+          echo ""
+          DRACULA
+              chmod +x airootfs/usr/local/bin/install-dracula-theme
+              
+              # First boot setup script
               cat > airootfs/usr/local/bin/cybr-first-boot << "FB"
           #!/bin/bash
-          FLAG="$HOME/.config/cybr-setup-done"
+          FLAG="\$HOME/.config/cybr-setup-done"
           
-          if [ ! -f "$FLAG" ]; then
+          if [ ! -f "\$FLAG" ]; then
+            # Wait for Hyprland to fully start
+            sleep 3
+            
             # Wait for internet connection
-            echo "Cybr Linux - Waiting for internet connection..."
+            echo "Checking internet connection..." > /tmp/cybr-setup.log
             for i in {1..30}; do
               if ping -c 1 8.8.8.8 &>/dev/null || ping -c 1 1.1.1.1 &>/dev/null; then
-                echo "Internet connected!"
+                echo "Internet connected!" >> /tmp/cybr-setup.log
                 break
               fi
-              if [ $i -eq 30 ]; then
-                notify-send "Cybr Linux" "No internet connection. Setup will run on next boot." -u critical
+              if [ \$i -eq 30 ]; then
+                notify-send "Cybr Linux" "No internet connection. Setup cancelled." -u critical
+                touch "\$FLAG"  # Don'\''t keep trying
                 exit 1
               fi
               sleep 2
             done
             
-            # Open terminal with setup wizard
-            kitty --title "Cybr Linux Setup" bash -c '"'"'
-              clear
-              echo "╔═══════════════════════════════════════════════════════╗"
-              echo "║                                                       ║"
-              echo "║          🌅 Cybr Linux - First Boot Setup 🌅          ║"
-              echo "║                by WolfTech Innovations                ║"
-              echo "║                                                       ║"
-              echo "╚═══════════════════════════════════════════════════════╝"
+            # Launch setup in kitty terminal
+            kitty --title="Cybr Linux Setup" --hold bash -c '
+              echo "═══════════════════════════════════════════════════════"
+              echo "  🌅 Cybr Linux First Boot Setup"
+              echo "  by WolfTech Innovations"
+              echo "═══════════════════════════════════════════════════════"
               echo ""
-              echo "Welcome to Cybr Linux with end-4'"'"'s illogical-impulse!"
-              echo ""
-              echo "This setup will install:"
-              echo "  • end-4'"'"'s beautiful Hyprland dotfiles (illogical-impulse)"
-              echo "  • AGS (Aylur'"'"'s GTK Shell) for stunning widgets"
-              echo "  • nwg-dock-hyprland for an elegant dock"
+              echo "This will install:"
+              echo "  • end_4'\''s beautiful Hyprland dotfiles with dock"
+              echo "  • Dracula theme (GTK, Hyprland, Kitty, Rofi, Waybar)"
               echo "  • BlackArch security tool repositories"
               echo "  • Neo system enhancements"
               echo ""
@@ -274,214 +451,289 @@ jobs:
               read
               
               echo ""
-              echo "═══════════════════════════════════════════════════════"
-              echo "Installing end-4 Hyprland Dotfiles (illogical-impulse)"
-              echo "═══════════════════════════════════════════════════════"
-              echo ""
-              echo "Follow the interactive prompts to customize your setup."
-              echo "Choose your preferred style and options."
-              echo ""
-              
-              # Install end-4 dotfiles using the official installer
-              if bash <(curl -fsSL "https://end-4.github.io/dots-hyprland-wiki/setup.sh"); then
+              echo "🧛 Installing Dracula theme first..."
+              if /usr/local/bin/install-dracula-theme; then
                 echo ""
-                echo "✓ end-4 dotfiles installed successfully!"
-                DOTFILES_OK=1
+                echo "✓ Dracula theme installed!"
               else
                 echo ""
-                echo "✗ Dotfiles installation failed or was cancelled"
-                DOTFILES_OK=0
+                echo "⚠ Dracula theme installation had issues"
               fi
               
               echo ""
-              echo "═══════════════════════════════════════════════════════"
-              echo "Setting up nwg-dock-hyprland"
-              echo "═══════════════════════════════════════════════════════"
+              echo "📦 Installing end_4 dotfiles..."
+              echo "Follow the prompts - it'\''s interactive!"
+              echo ""
               
-              # Configure nwg-dock-hyprland
-              mkdir -p "$HOME/.config/nwg-dock-hyprland"
-              
-              cat > "$HOME/.config/nwg-dock-hyprland/style.css" << '"'"'DOCK_CSS'"'"'
-          window {
-            background-color: rgba(20, 20, 30, 0.8);
-            border-radius: 15px;
-            padding: 4px;
-            margin: 0px;
-          }
-          
-          #box {
-            padding: 8px;
-            background-color: transparent;
-          }
-          
-          button {
-            border-radius: 10px;
-            padding: 8px;
-            margin: 2px;
-            background-color: transparent;
-            color: #ffffff;
-            border: none;
-          }
-          
-          button:hover {
-            background-color: rgba(100, 100, 150, 0.5);
-          }
-          
-          button:focus {
-            background-color: rgba(120, 120, 180, 0.6);
-          }
-          DOCK_CSS
-              
-              cat > "$HOME/.config/nwg-dock-hyprland/launch.sh" << '"'"'DOCK_LAUNCH'"'"'
-          #!/bin/bash
-          nwg-dock-hyprland -f -x -i 48 -nolauncher -a center -ml 8 -mr 8 -mb 8
-          DOCK_LAUNCH
-              chmod +x "$HOME/.config/nwg-dock-hyprland/launch.sh"
-              
-              # Add dock to Hyprland autostart
-              if [ -f "$HOME/.config/hypr/hyprland.conf" ]; then
-                if ! grep -q "nwg-dock-hyprland" "$HOME/.config/hypr/hyprland.conf"; then
-                  echo "exec-once = ~/.config/nwg-dock-hyprland/launch.sh" >> "$HOME/.config/hypr/custom/execs.conf" 2>/dev/null || \
-                  echo "exec-once = ~/.config/nwg-dock-hyprland/launch.sh" >> "$HOME/.config/hypr/hyprland.conf"
-                fi
+              if /usr/local/bin/install-end4-dots; then
+                echo ""
+                echo "✓ Dotfiles installed successfully!"
+              else
+                echo ""
+                echo "⚠ Dotfiles installation failed or was cancelled"
               fi
               
-              echo "✓ nwg-dock configured!"
-              
               echo ""
-              echo "═══════════════════════════════════════════════════════"
-              echo "Setting up BlackArch repositories"
-              echo "═══════════════════════════════════════════════════════"
-              
+              echo "🔒 Setting up BlackArch repositories..."
               if /usr/local/bin/setup-blackarch; then
-                echo "✓ BlackArch repositories ready!"
+                echo "✓ BlackArch repositories configured!"
+                echo "  Install pentesting tools with: sudo pacman -S <tool-name>"
               else
-                echo "✗ BlackArch setup had issues (you can run setup-blackarch later)"
+                echo "⚠ BlackArch setup failed"
               fi
               
               echo ""
               if [ -x /usr/local/bin/neo-enhancements ]; then
-                echo "═══════════════════════════════════════════════════════"
-                echo "Running Neo enhancements"
-                echo "═══════════════════════════════════════════════════════"
-                /usr/local/bin/neo-enhancements || echo "✗ Neo enhancements had issues"
+                echo "⚡ Running Neo enhancements..."
+                /usr/local/bin/neo-enhancements || echo "⚠ Neo enhancements had issues"
               fi
               
               echo ""
-              echo "╔═══════════════════════════════════════════════════════╗"
-              echo "║                                                       ║"
-              echo "║              ✨ Setup Complete! ✨                     ║"
-              echo "║                                                       ║"
-              echo "╚═══════════════════════════════════════════════════════╝"
+              echo "═══════════════════════════════════════════════════════"
+              echo "  ✨ Setup Complete!"
+              echo "═══════════════════════════════════════════════════════"
               echo ""
-              echo "Next steps:"
-              echo "  1. Log out of Hyprland (Super+Shift+Q)"
-              echo "  2. Log back in to load all configurations"
-              echo "  3. Explore with Super+/ to see all keybinds"
-              echo "  4. Customize further in ~/.config/"
+              echo "To apply all changes:"
+              echo "  1. Press Super+Shift+E to exit Hyprland"
+              echo "  2. Log back in"
               echo ""
-              echo "Useful commands:"
-              echo "  • Super+Q     - Close window"
-              echo "  • Super+T     - Terminal"
-              echo "  • Super+R     - App launcher"
-              echo "  • Super+L     - Lock screen"
+              echo "Or just reload Hyprland config: Super+Shift+R"
               echo ""
               echo "This window will close in 15 seconds or press Enter..."
-              read -t 15
-            '"'"'
+              read -t 15 || true
+            ' &
             
-            mkdir -p "$HOME/.config"
-            touch "$FLAG"
-            
-            if [ "${DOTFILES_OK:-0}" -eq 1 ]; then
-              notify-send "Cybr Linux" "Setup completed! Log out and back in to apply all changes." \
-                -i emblem-default -t 5000
-            fi
+            mkdir -p "\$HOME/.config"
+            touch "\$FLAG"
           fi
           FB
               chmod +x airootfs/usr/local/bin/cybr-first-boot
               
-              # Autostart configuration
-              mkdir -p airootfs/etc/skel/.config/autostart
-              cat > airootfs/etc/skel/.config/autostart/cybr-setup.desktop << "AS"
-          [Desktop Entry]
-          Type=Application
-          Name=Cybr First Boot Setup
-          Exec=/usr/local/bin/cybr-first-boot
-          Hidden=false
-          NoDisplay=true
-          X-GNOME-Autostart-enabled=true
-          AS
+              # Hyprland startup configuration with end_4 setup
+              mkdir -p airootfs/etc/skel/.config/hypr
+              cat > airootfs/etc/skel/.config/hypr/hyprland.conf << "HYPR"
+          # Cybr Linux - Hyprland Configuration
+          # This will be replaced by end_4'\''s dotfiles after first boot
+          
+          # Monitor configuration
+          monitor=,preferred,auto,1
+          
+          # Autostart
+          exec-once = waybar &
+          exec-once = dunst &
+          exec-once = /usr/lib/polkit-gnome/polkit-gnome-authentication-agent-1 &
+          exec-once = nm-applet --indicator &
+          exec-once = blueman-applet &
+          exec-once = /usr/local/bin/cybr-first-boot &
+          
+          # Input configuration
+          input {
+              kb_layout = us
+              follow_mouse = 1
+              touchpad {
+                  natural_scroll = true
+              }
+              sensitivity = 0
+          }
+          
+          # General configuration
+          general {
+              gaps_in = 5
+              gaps_out = 10
+              border_size = 2
+              col.active_border = rgba(1793d1ee) rgba(1793d1ee) 45deg
+              col.inactive_border = rgba(595959aa)
+              layout = dwindle
+          }
+          
+          # Decorations
+          decoration {
+              rounding = 10
+              blur {
+                  enabled = true
+                  size = 8
+                  passes = 3
+              }
+              drop_shadow = true
+              shadow_range = 4
+              shadow_render_power = 3
+              col.shadow = rgba(1a1a1aee)
+          }
+          
+          # Animations
+          animations {
+              enabled = true
+              bezier = myBezier, 0.05, 0.9, 0.1, 1.05
+              animation = windows, 1, 7, myBezier
+              animation = windowsOut, 1, 7, default, popin 80%
+              animation = border, 1, 10, default
+              animation = fade, 1, 7, default
+              animation = workspaces, 1, 6, default
+          }
+          
+          # Layouts
+          dwindle {
+              pseudotile = true
+              preserve_split = true
+          }
+          
+          # Keybindings
+          \$mainMod = SUPER
+          
+          bind = \$mainMod, RETURN, exec, kitty
+          bind = \$mainMod, Q, killactive,
+          bind = \$mainMod SHIFT, E, exit,
+          bind = \$mainMod, E, exec, thunar
+          bind = \$mainMod, V, togglefloating,
+          bind = \$mainMod, R, exec, wofi --show drun
+          bind = \$mainMod, P, pseudo,
+          bind = \$mainMod, J, togglesplit,
+          bind = \$mainMod, F, fullscreen,
+          
+          # Move focus with mainMod + arrow keys
+          bind = \$mainMod, left, movefocus, l
+          bind = \$mainMod, right, movefocus, r
+          bind = \$mainMod, up, movefocus, u
+          bind = \$mainMod, down, movefocus, d
+          
+          # Switch workspaces
+          bind = \$mainMod, 1, workspace, 1
+          bind = \$mainMod, 2, workspace, 2
+          bind = \$mainMod, 3, workspace, 3
+          bind = \$mainMod, 4, workspace, 4
+          bind = \$mainMod, 5, workspace, 5
+          bind = \$mainMod, 6, workspace, 6
+          bind = \$mainMod, 7, workspace, 7
+          bind = \$mainMod, 8, workspace, 8
+          bind = \$mainMod, 9, workspace, 9
+          bind = \$mainMod, 0, workspace, 10
+          
+          # Move active window to workspace
+          bind = \$mainMod SHIFT, 1, movetoworkspace, 1
+          bind = \$mainMod SHIFT, 2, movetoworkspace, 2
+          bind = \$mainMod SHIFT, 3, movetoworkspace, 3
+          bind = \$mainMod SHIFT, 4, movetoworkspace, 4
+          bind = \$mainMod SHIFT, 5, movetoworkspace, 5
+          bind = \$mainMod SHIFT, 6, movetoworkspace, 6
+          bind = \$mainMod SHIFT, 7, movetoworkspace, 7
+          bind = \$mainMod SHIFT, 8, movetoworkspace, 8
+          bind = \$mainMod SHIFT, 9, movetoworkspace, 9
+          bind = \$mainMod SHIFT, 0, movetoworkspace, 10
+          
+          # Screenshot
+          bind = , PRINT, exec, grim -g "\$(slurp)" - | wl-copy
+          bind = SHIFT, PRINT, exec, grim - | wl-copy
+          
+          # Volume control
+          bind = , XF86AudioRaiseVolume, exec, pamixer -i 5
+          bind = , XF86AudioLowerVolume, exec, pamixer -d 5
+          bind = , XF86AudioMute, exec, pamixer -t
+          
+          # Brightness control
+          bind = , XF86MonBrightnessUp, exec, brightnessctl set +5%
+          bind = , XF86MonBrightnessDown, exec, brightnessctl set 5%-
+          
+          # Media control
+          bind = , XF86AudioPlay, exec, playerctl play-pause
+          bind = , XF86AudioNext, exec, playerctl next
+          bind = , XF86AudioPrev, exec, playerctl previous
+          HYPR
               
-              # Create auto-login script for live session that launches Hyprland directly
-              cat > airootfs/usr/local/bin/autologin-live << '"'"'AUTOLOGIN'"'"'
-          #!/bin/bash
-          # Auto-login for live session - launch Hyprland directly
-          if [ -f /etc/cybr-live ]; then
-            exec Hyprland --i-am-really-stupid
-          else
-            exec tuigreet --time --remember --cmd '"'"'Hyprland --i-am-really-stupid'"'"'
-          fi
-          AUTOLOGIN
-              chmod +x airootfs/usr/local/bin/autologin-live
-              
-              # Mark as live session
-              touch airootfs/etc/cybr-live
-              
-              # Configure greetd for auto-login in live session
+              # Greetd configuration for auto-start Hyprland
               mkdir -p airootfs/etc/greetd
-              cat > airootfs/etc/greetd/config.toml << '"'"'GREETD_LIVE'"'"'
+              cat > airootfs/etc/greetd/config.toml << "GREETD"
           [terminal]
           vt = 1
           
           [default_session]
-          command = "/usr/local/bin/autologin-live"
+          command = "tuigreet --greeting '\''Dawn light shines upon the arches'\'' --asterisks --remember --remember-session --time --cmd Hyprland"
+          user = "greeter"
+          GREETD
+              
+              # Auto-login for live session
+              cat > airootfs/etc/greetd/config-autologin.toml << "GREETDAUTO"
+          [terminal]
+          vt = 1
+          
+          [default_session]
+          command = "Hyprland"
           user = "cybr"
-          GREETD_LIVE
+          GREETDAUTO
               
-              # Polkit authentication agent
-              mkdir -p airootfs/etc/skel/.config/hypr/custom
-              cat > airootfs/etc/skel/.config/hypr/custom/polkit.conf << "POLKIT"
-          exec-once = /usr/lib/polkit-gnome/polkit-gnome-authentication-agent-1
-          POLKIT
+              # Script to enable auto-login for live session
+              cat > airootfs/root/customize_airootfs.sh << "CUSTOM"
+          #!/bin/bash
+          # Use auto-login config for live session
+          cp /etc/greetd/config-autologin.toml /etc/greetd/config.toml
+          
+          # Create live user
+          useradd -m -G wheel,audio,video,network,storage -s /bin/bash cybr
+          echo "cybr:cybr" | chpasswd
+          echo "%wheel ALL=(ALL:ALL) NOPASSWD: ALL" >> /etc/sudoers
+          
+          # Enable services
+          systemctl enable NetworkManager
+          systemctl enable bluetooth
+          systemctl enable greetd
+          CUSTOM
+              chmod +x airootfs/root/customize_airootfs.sh
               
-              # Enable required services
-              mkdir -p airootfs/etc/systemd/system/{multi-user.target.wants,graphical.target.wants}
+              # Enable services in profiledef
+              mkdir -p airootfs/etc/systemd/system/multi-user.target.wants
+              mkdir -p airootfs/etc/systemd/system/graphical.target.wants
               
               ln -sf /usr/lib/systemd/system/NetworkManager.service \
-                airootfs/etc/systemd/system/multi-user.target.wants/ || true
-              
+                airootfs/etc/systemd/system/multi-user.target.wants/
               ln -sf /usr/lib/systemd/system/bluetooth.service \
-                airootfs/etc/systemd/system/multi-user.target.wants/ || true
+                airootfs/etc/systemd/system/multi-user.target.wants/
               
-              ln -sf /usr/lib/systemd/system/greetd.service \
-                airootfs/etc/systemd/system/graphical.target.wants/ || true
+              # Waybar basic config (will be replaced by end_4)
+              mkdir -p airootfs/etc/skel/.config/waybar
+              cat > airootfs/etc/skel/.config/waybar/config << "WAYBAR"
+          {
+              "layer": "top",
+              "position": "top",
+              "height": 30,
+              "modules-left": ["hyprland/workspaces", "hyprland/window"],
+              "modules-center": ["clock"],
+              "modules-right": ["pulseaudio", "network", "battery", "tray"],
               
-              # Create welcome message
-              cat > airootfs/etc/motd << "MOTD"
-          
-          ╔═══════════════════════════════════════════════════════════════╗
-          ║                                                               ║
-          ║              🌅 Welcome to Cybr Linux 🌅                       ║
-          ║                                                               ║
-          ║         Dawn Light Shines Upon the Arches                    ║
-          ║           by WolfTech Innovations                             ║
-          ║                                                               ║
-          ║  • Base: Arch Linux (Rolling Release)                        ║
-          ║  • Desktop: Hyprland + end-4 dotfiles                        ║
-          ║  • Security: BlackArch tools available                       ║
-          ║                                                               ║
-          ║  First boot will launch an interactive setup wizard          ║
-          ║                                                               ║
-          ╚═══════════════════════════════════════════════════════════════╝
-          
-          MOTD
+              "hyprland/workspaces": {
+                  "format": "{icon}",
+                  "format-icons": {
+                      "1": "一",
+                      "2": "二",
+                      "3": "三",
+                      "4": "四",
+                      "5": "五"
+                  }
+              },
+              "clock": {
+                  "format": "{:%H:%M}",
+                  "format-alt": "{:%Y-%m-%d}"
+              },
+              "battery": {
+                  "format": "{capacity}% {icon}",
+                  "format-icons": ["", "", "", "", ""]
+              },
+              "network": {
+                  "format-wifi": "{essid} ",
+                  "format-disconnected": "Disconnected ⚠"
+              },
+              "pulseaudio": {
+                  "format": "{volume}% {icon}",
+                  "format-muted": "🔇"
+              }
+          }
+          WAYBAR
               
               # Build ISO
               echo ""
-              echo "═══════════════════════════════════════════════"
-              echo "Building ISO with mkarchiso..."
-              echo "═══════════════════════════════════════════════"
+              echo "🔨 Building ISO with mkarchiso..."
+              
+              # Enable DRM_PANIC in kernel config if building custom kernel
+              # For pre-built kernels, DRM_PANIC is enabled by default in 6.10+
+              echo "Note: Using stock Arch kernel with DRM Panic support (6.10+)" >> /tmp/build.log
               
               mkarchiso -v -w /tmp/work -o /tmp/out .
               
@@ -489,13 +741,11 @@ jobs:
               mv /tmp/out/*.iso /workspace/${ISO_NAME}.iso
               
               echo ""
-              echo "╔═══════════════════════════════════════════════╗"
-              echo "║                                               ║"
-              echo "║  ✨ Cybr Linux ISO created successfully! ✨   ║"
-              echo "║                                               ║"
-              echo "║  File: ${ISO_NAME}.iso                        ║"
-              echo "║                                               ║"
-              echo "╚═══════════════════════════════════════════════╝"
+              echo "═══════════════════════════════════════════════"
+              echo "  ✨ Cybr Linux ISO created successfully!"
+              echo "  📦 File: ${ISO_NAME}.iso"
+              echo "  🌅 Dawn light shines upon the arches"
+              echo "═══════════════════════════════════════════════"
             '
 
       - name: "Validate ISO"
@@ -515,9 +765,9 @@ jobs:
           echo "size=$SIZE" >> $GITHUB_OUTPUT
           echo "sha256=$SHA256" >> $GITHUB_OUTPUT
           
-          echo "ISO: $ISO_FILE"
-          echo "Size: ${SIZE_MB} MB"
-          echo "SHA256: $SHA256"
+          echo "✓ ISO: $ISO_FILE"
+          echo "✓ Size: ${SIZE_MB} MB"
+          echo "✓ SHA256: $SHA256"
 
       - name: "Upload ISO"
         uses: actions/upload-artifact@v4
@@ -550,14 +800,14 @@ jobs:
           SF_PASS: ${{ secrets.SF_PASS }}
         run: |
           if [[ -z "$SF_USER" || -z "$SF_PASS" ]]; then
-            echo "SourceForge credentials not configured"
+            echo "⚠ SourceForge credentials not configured"
             exit 1
           fi
           
           ISO_FILE="cybr-arch-v${{ github.run_number }}.iso"
           REMOTE_PATH="/home/frs/project/wolfos/$ISO_FILE"
           
-          echo "Uploading $ISO_FILE to SourceForge..."
+          echo "📤 Uploading $ISO_FILE to SourceForge..."
           
           for i in {1..3}; do
             if timeout 1800 sshpass -p "$SF_PASS" \
@@ -565,102 +815,85 @@ jobs:
               -e "ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null" \
               "./$ISO_FILE" \
               "$SF_USER@frs.sourceforge.net:$REMOTE_PATH"; then
-              echo "Upload completed successfully"
+              echo "✓ Upload completed successfully"
               break
             elif [[ $i -eq 3 ]]; then
-              echo "Upload failed after 3 attempts"
+              echo "❌ Upload failed after 3 attempts"
               exit 1
             else
-              echo "Upload attempt $i failed, retrying in 30 seconds..."
+              echo "⚠ Upload attempt $i failed, retrying in 30 seconds..."
               sleep 30
             fi
           done
           
-          echo "ISO uploaded to SourceForge!"
-          echo "Download: https://sourceforge.net/projects/wolfos/files/$ISO_FILE/download"
+          echo ""
+          echo "✓ ISO uploaded to SourceForge!"
+          echo "🔗 Download: https://sourceforge.net/projects/wolfos/files/$ISO_FILE/download"
 
   notify:
-    name: "Notify"
+    name: "Build Summary"
     runs-on: ubuntu-latest
     needs: [build, upload]
     if: always()
     
     steps:
-      - name: "Summary"
+      - name: "Generate Summary"
         run: |
           cat >> $GITHUB_STEP_SUMMARY << 'EOF'
-          # 🌅 Cybr Linux - Build Summary
+          # 🌅 Cybr Linux - Dawn Light Shines Upon the Arches
           
-          **Dawn light shines upon the arches** - Build completed!
+          **Build completed successfully!**
           
           ## ✨ Features
+          - **Base**: Arch Linux (rolling release)
+          - **Desktop**: Hyprland with end_4's gorgeous dotfiles
+          - **Theme**: Dracula color scheme across all components (GTK, terminal, launcher)
+          - **Dock**: Integrated AGS dock (from end_4)
+          - **Security**: BlackArch repositories (3000+ pentesting tools)
+          - **Enhancements**: Neo integration
+          - **Animations**: Beautiful dark theme with blur and smooth animations
+          - **BSOD**: Custom kernel panic screen with Cybr blue colors (Linux 6.10+ DRM Panic)
           
-          ### Base System
-          - **Distribution**: Arch Linux (rolling release)
-          - **Kernel**: Latest Linux kernel
-          - **Init System**: systemd
+          ## 📦 What's Included
+          - Hyprland compositor with blur, animations, and effects
+          - **Dracula Theme** across the entire system:
+            - GTK applications (dark purple aesthetic)
+            - Kitty terminal with Dracula colors
+            - Rofi launcher with Dracula theme
+            - Waybar with Dracula color scheme
+            - Hyprland window colors matching Dracula
+          - end_4's dotfiles featuring:
+            - AGS (Aylur's GTK Shell) dock and widgets
+            - Waybar with custom modules
+            - Beautiful terminal (kitty) with configs
+            - Rofi launcher with custom theme
+            - Hyprlock screen locker
+            - And much more!
+          - BlackArch pentesting tools repository
+          - Full Wayland support
+          - PipeWire audio
+          - NetworkManager & Bluetooth
           
-          ### Desktop Environment
-          - **Window Manager**: Hyprland (Wayland)
-          - **Dotfiles**: end-4's illogical-impulse configuration
-          - **Shell**: AGS (Aylur's GTK Shell) for beautiful widgets
-          - **Dock**: nwg-dock-hyprland with custom styling
-          - **Status Bar**: Integrated with end-4 dotfiles
-          - **Login Manager**: greetd with tuigreet
-          
-          ### Applications
-          - **Terminal**: Kitty
-          - **Browser**: Firefox
-          - **File Manager**: Thunar with plugins
-          - **Text Editor**: Mousepad
-          - **System Monitor**: htop, btop
-          - **System Info**: fastfetch
-          
-          ### Security Tools
-          - **BlackArch**: Full repository access (2800+ tools)
-          - **Penetration Testing**: Available via BlackArch
-          - **Network Analysis**: Available via BlackArch
-          
-          ### Aesthetic Features
-          - **Animations**: Smooth Hyprland animations
-          - **Themes**: Dynamic color generation
-          - **Widgets**: Beautiful AGS-powered widgets
-          - **Dock**: Elegant bottom dock with auto-hide
-          - **Wallpapers**: Dynamic wallpaper support
-          - **Icons**: Material Design + Font Awesome
-          - **Fonts**: JetBrains Mono Nerd Font
+          ## 🚀 First Boot Experience
+          - Auto-login to Hyprland
+          - Interactive setup wizard installs:
+            1. Dracula theme system-wide
+            2. end_4's dotfiles with your preferences
+            3. BlackArch repos automatically configured
+          - Beautiful, functional desktop with unified purple aesthetic ready immediately
           
           ## 📥 Downloads
+          - **ISO**: cybr-arch-v${{ github.run_number }}.iso
+          - [GitHub Artifacts](../../actions/runs/${{ github.run_id }}#artifacts)
+          - [SourceForge Mirror](https://sourceforge.net/projects/wolfos/)
           
-          - **Artifact**: [Download from workflow artifacts](../../actions/runs/${{ github.run_id }}#artifacts)
-          - **SourceForge**: [Download from SourceForge](https://sourceforge.net/projects/wolfos/)
-          
-          ## 🚀 First Boot
-          
-          On first boot, an interactive setup wizard will:
-          1. Install end-4's beautiful Hyprland dotfiles
-          2. Configure nwg-dock-hyprland
-          3. Setup BlackArch repositories
-          4. Apply Neo system enhancements
-          5. Configure the system for optimal aesthetics
-          
-          ## ⌨️ Default Keybinds
-          
-          - `Super + Q` - Close window
-          - `Super + T` - Terminal
-          - `Super + R` - App launcher
-          - `Super + L` - Lock screen
-          - `Super + Shift + Q` - Exit Hyprland
-          - `Super + /` - Show all keybinds
-          
-          ## 🎨 Customization
-          
-          All configurations are in `~/.config/`:
-          - `hypr/` - Hyprland configuration
-          - `ags/` - AGS widget configuration
-          - `nwg-dock-hyprland/` - Dock settings
+          ## 🎨 Credits
+          - Dracula Theme for the iconic purple color scheme
+          - end_4 for the beautiful Hyprland dotfiles
+          - WolfTech Innovations for Cybr Linux
+          - BlackArch team for security tools
+          - Hyprland community
           
           ---
-          
-          **Built with ❤️ by WolfTech Innovations**
+          *Dawn light shines upon the arches* 🌄
           EOF
