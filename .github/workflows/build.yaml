@@ -150,8 +150,6 @@ jobs:
           noto-fonts-emoji
           noto-fonts-cjk
           papirus-icon-theme
-          dracula-gtk-theme
-          dracula-icons-git
           arc-gtk-theme
           lxappearance
           kvantum
@@ -259,157 +257,6 @@ jobs:
           END4
               chmod +x airootfs/usr/local/bin/install-end4-dots
               
-              # Install Dracula theme for all components
-              cat > airootfs/usr/local/bin/install-dracula-theme << "DRACULA"
-          #!/bin/bash
-          set -e
-
-          echo "═══════════════════════════════════════════════════════"
-          echo "  🧛 Installing Dracula Theme Components"
-          echo "═══════════════════════════════════════════════════════"
-          echo ""
-
-          # Create directories
-          mkdir -p ~/.themes
-          mkdir -p ~/.local/share/icons
-          mkdir -p ~/.config/hypr
-          mkdir -p ~/.config/rofi
-          mkdir -p ~/.config/waybar
-          mkdir -p ~/.config/kitty
-
-          # Install Dracula GTK Theme
-          echo "📦 Installing Dracula GTK theme..."
-          if [ ! -d ~/.themes/Dracula ]; then
-            cd /tmp
-            wget -q https://github.com/dracula/gtk/archive/master.zip -O dracula-gtk.zip
-            unzip -q dracula-gtk.zip
-            mv gtk-master ~/.themes/Dracula
-            rm dracula-gtk.zip
-            echo "✓ GTK theme installed"
-          else
-            echo "✓ GTK theme already installed"
-          fi
-
-          # Install Dracula Icons
-          echo "📦 Installing Dracula icon theme..."
-          if [ ! -d ~/.local/share/icons/Dracula ]; then
-            cd /tmp
-            wget -q https://github.com/dracula/gtk/files/5214870/Dracula.zip
-            unzip -q Dracula.zip -d ~/.local/share/icons/
-            rm Dracula.zip
-            echo "✓ Icon theme installed"
-          else
-            echo "✓ Icon theme already installed"
-          fi
-
-          # Configure GTK to use Dracula
-          echo "🎨 Configuring GTK..."
-          mkdir -p ~/.config/gtk-3.0
-          cat > ~/.config/gtk-3.0/settings.ini << "GTK3"
-          [Settings]
-          gtk-theme-name=Dracula
-          gtk-icon-theme-name=Dracula
-          gtk-font-name=Sans 10
-          gtk-cursor-theme-name=Adwaita
-          gtk-cursor-theme-size=24
-          gtk-toolbar-style=GTK_TOOLBAR_BOTH
-          gtk-toolbar-icon-size=GTK_ICON_SIZE_LARGE_TOOLBAR
-          gtk-button-images=1
-          gtk-menu-images=1
-          gtk-enable-event-sounds=1
-          gtk-enable-input-feedback-sounds=1
-          gtk-xft-antialias=1
-          gtk-xft-hinting=1
-          gtk-xft-hintstyle=hintslight
-          gtk-xft-rgba=rgb
-          gtk-application-prefer-dark-theme=1
-          GTK3
-
-          mkdir -p ~/.config/gtk-4.0
-          cat > ~/.config/gtk-4.0/settings.ini << "GTK4"
-          [Settings]
-          gtk-theme-name=Dracula
-          gtk-icon-theme-name=Dracula
-          gtk-font-name=Sans 10
-          gtk-cursor-theme-name=Adwaita
-          gtk-cursor-theme-size=24
-          gtk-application-prefer-dark-theme=1
-          GTK4
-
-          # Install Dracula for Hyprland
-          echo "🎨 Installing Dracula Hyprland colors..."
-          cd /tmp
-          git clone --depth=1 https://github.com/dracula/hyprland.git dracula-hypr 2>/dev/null || true
-          if [ -d dracula-hypr ]; then
-            cp dracula-hypr/dracula_colors.conf ~/.config/hypr/ 2>/dev/null || true
-            rm -rf dracula-hypr
-            echo "✓ Hyprland colors installed"
-          fi
-
-          # Install Dracula for Kitty
-          echo "🎨 Installing Dracula Kitty theme..."
-          mkdir -p ~/.config/kitty
-          curl -fsSL https://raw.githubusercontent.com/dracula/kitty/master/dracula.conf \
-            -o ~/.config/kitty/dracula.conf
-          
-          # Set Kitty to use Dracula
-          if ! grep -q "include dracula.conf" ~/.config/kitty/kitty.conf 2>/dev/null; then
-            echo "include dracula.conf" >> ~/.config/kitty/kitty.conf
-          fi
-          echo "✓ Kitty theme installed"
-
-          # Install Dracula for Rofi
-          echo "🎨 Installing Dracula Rofi theme..."
-          cd /tmp
-          git clone --depth=1 https://github.com/dracula/rofi.git dracula-rofi 2>/dev/null || true
-          if [ -d dracula-rofi ]; then
-            cp dracula-rofi/theme/config1.rasi ~/.config/rofi/dracula.rasi 2>/dev/null || true
-            rm -rf dracula-rofi
-            
-            # Set rofi to use Dracula
-            mkdir -p ~/.config/rofi
-            echo '\''@theme "dracula.rasi"'\'' > ~/.config/rofi/config.rasi
-            echo "✓ Rofi theme installed"
-          fi
-
-          # Dracula Waybar CSS colors
-          echo "🎨 Installing Dracula Waybar colors..."
-          mkdir -p ~/.config/waybar
-          cat > ~/.config/waybar/dracula-colors.css << "WAYBAR_COLORS"
-          /* Dracula Theme Colors */
-          @define-color background #282a36;
-          @define-color current-line #44475a;
-          @define-color selection #44475a;
-          @define-color foreground #f8f8f2;
-          @define-color comment #6272a4;
-          @define-color cyan #8be9fd;
-          @define-color green #50fa7b;
-          @define-color orange #ffb86c;
-          @define-color pink #ff79c6;
-          @define-color purple #bd93f9;
-          @define-color red #ff5555;
-          @define-color yellow #f1fa8c;
-          WAYBAR_COLORS
-          echo "✓ Waybar colors installed"
-
-          echo ""
-          echo "═══════════════════════════════════════════════════════"
-          echo "  ✨ Dracula Theme Installation Complete!"
-          echo "═══════════════════════════════════════════════════════"
-          echo ""
-          echo "Installed components:"
-          echo "  ✓ GTK Theme (GTK3 & GTK4)"
-          echo "  ✓ Icon Theme"
-          echo "  ✓ Hyprland colors"
-          echo "  ✓ Kitty terminal theme"
-          echo "  ✓ Rofi launcher theme"
-          echo "  ✓ Waybar color scheme"
-          echo ""
-          echo "Note: Restart apps or relog to see changes"
-          echo ""
-          DRACULA
-              chmod +x airootfs/usr/local/bin/install-dracula-theme
-              
               # First boot setup script
               cat > airootfs/usr/local/bin/cybr-first-boot << "FB"
           #!/bin/bash
@@ -443,22 +290,11 @@ jobs:
               echo ""
               echo "This will install:"
               echo "  • end_4'\''s beautiful Hyprland dotfiles with dock"
-              echo "  • Dracula theme (GTK, Hyprland, Kitty, Rofi, Waybar)"
               echo "  • BlackArch security tool repositories"
               echo "  • Neo system enhancements"
               echo ""
               echo "Press Enter to continue or Ctrl+C to skip..."
               read
-              
-              echo ""
-              echo "🧛 Installing Dracula theme first..."
-              if /usr/local/bin/install-dracula-theme; then
-                echo ""
-                echo "✓ Dracula theme installed!"
-              else
-                echo ""
-                echo "⚠ Dracula theme installation had issues"
-              fi
               
               echo ""
               echo "📦 Installing end_4 dotfiles..."
@@ -847,21 +683,14 @@ jobs:
           ## ✨ Features
           - **Base**: Arch Linux (rolling release)
           - **Desktop**: Hyprland with end_4's gorgeous dotfiles
-          - **Theme**: Dracula color scheme across all components (GTK, terminal, launcher)
           - **Dock**: Integrated AGS dock (from end_4)
           - **Security**: BlackArch repositories (3000+ pentesting tools)
           - **Enhancements**: Neo integration
-          - **Animations**: Beautiful dark theme with blur and smooth animations
+          - **Theme**: Beautiful dark theme with animations
           - **BSOD**: Custom kernel panic screen with Cybr blue colors (Linux 6.10+ DRM Panic)
           
           ## 📦 What's Included
           - Hyprland compositor with blur, animations, and effects
-          - **Dracula Theme** across the entire system:
-            - GTK applications (dark purple aesthetic)
-            - Kitty terminal with Dracula colors
-            - Rofi launcher with Dracula theme
-            - Waybar with Dracula color scheme
-            - Hyprland window colors matching Dracula
           - end_4's dotfiles featuring:
             - AGS (Aylur's GTK Shell) dock and widgets
             - Waybar with custom modules
@@ -876,11 +705,9 @@ jobs:
           
           ## 🚀 First Boot Experience
           - Auto-login to Hyprland
-          - Interactive setup wizard installs:
-            1. Dracula theme system-wide
-            2. end_4's dotfiles with your preferences
-            3. BlackArch repos automatically configured
-          - Beautiful, functional desktop with unified purple aesthetic ready immediately
+          - Interactive setup wizard installs end_4's dotfiles
+          - BlackArch repos automatically configured
+          - Beautiful, functional desktop ready immediately
           
           ## 📥 Downloads
           - **ISO**: cybr-arch-v${{ github.run_number }}.iso
@@ -888,7 +715,6 @@ jobs:
           - [SourceForge Mirror](https://sourceforge.net/projects/wolfos/)
           
           ## 🎨 Credits
-          - Dracula Theme for the iconic purple color scheme
           - end_4 for the beautiful Hyprland dotfiles
           - WolfTech Innovations for Cybr Linux
           - BlackArch team for security tools
