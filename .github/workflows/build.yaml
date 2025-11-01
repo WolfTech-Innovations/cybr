@@ -43,6 +43,50 @@ jobs:
           FROM archlinux:latest
           
           RUN pacman -Syu --noconfirm && \
+              # Manual setup option for users
+              cat > airootfs/usr/local/bin/cybr-manual-setup << "MANUAL"
+          #!/bin/bash
+          
+          kitty --title="Cybr Linux Setup" bash -c '
+            echo "═══════════════════════════════════════════════════════"
+            echo "  🌅 Cybr Linux Manual Setup"
+            echo "  by WolfTech Innovations"
+            echo "═══════════════════════════════════════════════════════"
+            echo ""
+            echo "This will install:"
+            echo "  • Dracula theme (GTK, Hyprland, Kitty, Rofi, Waybar)"
+            echo "  • end_4'\''s beautiful Hyprland dotfiles with dock"
+            echo "  • BlackArch security tool repositories"
+            echo "  • Neo system enhancements"
+            echo ""
+            echo "Press Enter to continue or Ctrl+C to cancel..."
+            read
+            
+            echo ""
+            echo "🧛 Installing Dracula theme..."
+            /usr/local/bin/install-dracula-theme
+            
+            echo ""
+            echo "📦 Installing end_4 dotfiles..."
+            /usr/local/bin/install-end4-dots
+            
+            echo ""
+            echo "🔒 Setting up BlackArch repositories..."
+            /usr/local/bin/setup-blackarch
+            
+            echo ""
+            if [ -x /usr/local/bin/neo-enhancements ]; then
+              echo "⚡ Running Neo enhancements..."
+              /usr/local/bin/neo-enhancements || true
+            fi
+            
+            echo ""
+            echo "✨ Setup Complete!"
+            echo "Press Enter to close..."
+            read
+          '
+          MANUAL
+              chmod +x airootfs/usr/local/bin/cybr-manual-setup
               pacman -S --noconfirm archiso git curl wget base-devel && \
               pacman -Scc --noconfirm
           
@@ -224,18 +268,26 @@ jobs:
             exit 1
           fi
 
-          # Use end_4'\''s official installer with auto-install option
-          echo "Downloading and running end_4 installer..."
-          echo ""
+          # Clone end_4 dotfiles repository
+          echo "Cloning end_4 dotfiles repository..."
+          cd /tmp
+          rm -rf dots-hyprland
+          git clone --depth=1 https://github.com/end-4/dots-hyprland.git
           
-          # The installer from end_4'\''s repository
-          curl -fsSL https://end-4.github.io/dots-hyprland-wiki/setup.sh -o /tmp/end4-setup.sh
-          chmod +x /tmp/end4-setup.sh
+          cd dots-hyprland
           
-          # Run the installer
-          bash /tmp/end4-setup.sh
+          # Copy dotfiles to home directory
+          echo "Installing dotfiles..."
+          cp -r .config/* ~/.config/ 2>/dev/null || true
+          cp -r .local/* ~/.local/ 2>/dev/null || true
           
-          rm -f /tmp/end4-setup.sh
+          # Make scripts executable
+          find ~/.config -type f -name "*.sh" -exec chmod +x {} \; 2>/dev/null || true
+          find ~/.local/bin -type f -exec chmod +x {} \; 2>/dev/null || true
+          
+          # Clean up
+          cd ~
+          rm -rf /tmp/dots-hyprland
           
           echo ""
           echo "✓ end_4 dotfiles installation completed!"
@@ -403,92 +455,76 @@ jobs:
             # Wait for Hyprland to fully start
             sleep 3
             
-            # Wait for internet connection
-            echo "Checking internet connection..." > /tmp/cybr-setup.log
-            for i in {1..30}; do
-              if ping -c 1 8.8.8.8 &>/dev/null || ping -c 1 1.1.1.1 &>/dev/null; then
-                echo "Internet connected!" >> /tmp/cybr-setup.log
-                break
-              fi
-              if [ \$i -eq 30 ]; then
-                notify-send "Cybr Linux" "No internet connection. Setup cancelled." -u critical
-                touch "\$FLAG"  # Don'\''t keep trying
-                exit 1
-              fi
-              sleep 2
-            done
-            
-            # Launch setup in kitty terminal
-            kitty --title="Cybr Linux Setup" --hold bash -c '
-              echo "═══════════════════════════════════════════════════════"
-              echo "  🌅 Cybr Linux First Boot Setup"
-              echo "  by WolfTech Innovations"
-              echo "═══════════════════════════════════════════════════════"
-              echo ""
-              echo "This will install:"
-              echo "  • end_4'\''s beautiful Hyprland dotfiles with dock"
-              echo "  • Dracula theme (GTK, Hyprland, Kitty, Rofi, Waybar)"
-              echo "  • BlackArch security tool repositories"
-              echo "  • Neo system enhancements"
-              echo ""
-              echo "Press Enter to continue or Ctrl+C to skip..."
-              read
+            # Run setup in background with logging
+            (
+              exec > /tmp/cybr-setup.log 2>&1
               
-              echo ""
-              echo "🧛 Installing Dracula theme first..."
+              echo "Cybr Linux First Boot Setup Starting..."
+              date
+              
+              # Wait for internet connection
+              echo "Checking internet connection..."
+              for i in {1..30}; do
+                if ping -c 1 8.8.8.8 &>/dev/null || ping -c 1 1.1.1.1 &>/dev/null; then
+                  echo "Internet connected!"
+                  break
+                fi
+                if [ \$i -eq 30 ]; then
+                  echo "No internet connection after 60 seconds."
+                  notify-send "Cybr Linux" "No internet. Setup skipped. Run manually: /usr/local/bin/cybr-manual-setup" -u critical
+                  touch "\$FLAG"
+                  exit 1
+                fi
+                sleep 2
+              done
+              
+              # Show notification that setup is starting
+              notify-send "Cybr Linux" "First boot setup in progress..." -t 5000
+              
+              # Install Dracula theme
+              echo "Installing Dracula theme..."
               if /usr/local/bin/install-dracula-theme; then
-                echo ""
-                echo "✓ Dracula theme installed!"
+                echo "✓ Dracula theme installed"
+                notify-send "Cybr Linux" "✓ Dracula theme installed" -t 3000
               else
-                echo ""
-                echo "⚠ Dracula theme installation had issues"
+                echo "⚠ Dracula theme installation failed"
               fi
               
-              echo ""
-              echo "📦 Installing end_4 dotfiles..."
-              echo "Follow the prompts - it'\''s interactive!"
-              echo ""
-              
+              # Install end_4 dotfiles
+              echo "Installing end_4 dotfiles..."
               if /usr/local/bin/install-end4-dots; then
-                echo ""
-                echo "✓ Dotfiles installed successfully!"
+                echo "✓ end_4 dotfiles installed"
+                notify-send "Cybr Linux" "✓ end_4 dotfiles installed" -t 3000
               else
-                echo ""
-                echo "⚠ Dotfiles installation failed or was cancelled"
+                echo "⚠ end_4 dotfiles installation failed"
               fi
               
-              echo ""
-              echo "🔒 Setting up BlackArch repositories..."
+              # Setup BlackArch
+              echo "Setting up BlackArch repositories..."
               if /usr/local/bin/setup-blackarch; then
-                echo "✓ BlackArch repositories configured!"
-                echo "  Install pentesting tools with: sudo pacman -S <tool-name>"
+                echo "✓ BlackArch repositories configured"
+                notify-send "Cybr Linux" "✓ BlackArch repos configured" -t 3000
               else
                 echo "⚠ BlackArch setup failed"
               fi
               
-              echo ""
+              # Run Neo enhancements
               if [ -x /usr/local/bin/neo-enhancements ]; then
-                echo "⚡ Running Neo enhancements..."
+                echo "Running Neo enhancements..."
                 /usr/local/bin/neo-enhancements || echo "⚠ Neo enhancements had issues"
               fi
               
-              echo ""
-              echo "═══════════════════════════════════════════════════════"
-              echo "  ✨ Setup Complete!"
-              echo "═══════════════════════════════════════════════════════"
-              echo ""
-              echo "To apply all changes:"
-              echo "  1. Press Super+Shift+E to exit Hyprland"
-              echo "  2. Log back in"
-              echo ""
-              echo "Or just reload Hyprland config: Super+Shift+R"
-              echo ""
-              echo "This window will close in 15 seconds or press Enter..."
-              read -t 15 || true
-            ' &
-            
-            mkdir -p "\$HOME/.config"
-            touch "\$FLAG"
+              echo "Setup completed!"
+              date
+              
+              # Mark as done
+              mkdir -p "\$HOME/.config"
+              touch "\$FLAG"
+              
+              # Final notification
+              notify-send "Cybr Linux" "✨ Setup complete! Please relog to apply all changes.\n\nPress Super+Shift+E to exit Hyprland." -t 10000
+              
+            ) &
           fi
           FB
               chmod +x airootfs/usr/local/bin/cybr-first-boot
@@ -854,11 +890,14 @@ jobs:
           
           ## 🚀 First Boot Experience
           - Auto-login to Hyprland
-          - Interactive setup wizard installs:
-            1. Dracula theme system-wide
-            2. end_4's dotfiles with your preferences
-            3. BlackArch repos automatically configured
-          - Beautiful, functional desktop with unified purple aesthetic ready immediately
+          - Setup runs automatically in background:
+            1. Dracula theme installed system-wide
+            2. end_4's dotfiles configured automatically
+            3. BlackArch repos set up
+            4. Neo enhancements applied
+          - Notifications keep you informed of progress
+          - Beautiful, functional desktop with unified purple aesthetic ready after relog
+          - If auto-setup fails, run manually: `cybr-manual-setup`
           
           ## 📥 Downloads
           - **ISO**: cybr-arch-v${{ github.run_number }}.iso
