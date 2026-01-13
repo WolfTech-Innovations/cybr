@@ -65,11 +65,9 @@ jobs:
               echo "  Building Cybr Linux with KDE Plasma"
               echo "═══════════════════════════════════════════════"
               
-              # Copy archiso profile
               cp -r /usr/share/archiso/configs/releng /build/cybr
               cd /build/cybr
               
-              # Add packages for KDE Plasma
               cat >> packages.x86_64 << "PKGS"
           linux
           linux-headers
@@ -140,7 +138,6 @@ jobs:
           coreutils
           PKGS
               
-              # Cybr branding
               echo "cybr-linux" > airootfs/etc/hostname
               
               cat > airootfs/etc/os-release << "OS"
@@ -156,82 +153,29 @@ jobs:
           LOGO=cybr
           OS
               
-              # Setup scripts directory
               mkdir -p airootfs/usr/local/bin
               mkdir -p airootfs/etc/skel/.config
               
-              # Manual setup script
-              cat > airootfs/usr/local/bin/cybr-manual-setup << 'MANUAL'
-          #!/bin/bash
-          
-          konsole --title="Cybr Linux Setup" -e bash -c '
-            echo "═══════════════════════════════════════════════════════"
-            echo "  Cybr Linux Manual Setup (Plasma Edition)"
-            echo "  by WolfTech Innovations"
-            echo "═══════════════════════════════════════════════════════"
-            echo ""
-            echo "This will install:"
-            echo "  - Dracula theme (Plasma, Konsole, Kvantum)"
-            echo "  - BlackArch security tool repositories"
-            echo "  - Neo system enhancements"
-            echo ""
-            echo "Press Enter to continue or Ctrl+C to cancel..."
-            read
-            
-            echo ""
-            echo "Installing Dracula theme..."
-            /usr/local/bin/install-dracula-theme
-            
-            echo ""
-            echo "Setting up BlackArch repositories..."
-            /usr/local/bin/setup-blackarch
-            
-            echo ""
-            if [ -x /usr/local/bin/neo-enhancements ]; then
-              echo "Running Neo enhancements..."
-              /usr/local/bin/neo-enhancements || true
-            fi
-            
-            echo ""
-            echo "Setup Complete!"
-            echo "Press Enter to close..."
-            read
-          '
-          MANUAL
-              chmod +x airootfs/usr/local/bin/cybr-manual-setup
-              
-              # BlackArch setup script
               cat > airootfs/usr/local/bin/setup-blackarch << "BA"
           #!/bin/bash
           set -e
-          echo "Setting up BlackArch repositories..."
           cd /tmp
           curl -O https://blackarch.org/strap.sh
           chmod +x strap.sh
           sudo ./strap.sh
           rm strap.sh
           sudo pacman -Sy
-          echo "✓ BlackArch repos configured!"
-          echo "Install tools with: sudo pacman -S <tool-name>"
           BA
               chmod +x airootfs/usr/local/bin/setup-blackarch
               
-              # Neo enhancements hook (optional)
               curl -fsSL https://raw.githubusercontent.com/WolfTech-Innovations/Neo/main/lb-hooks/0201-Neo.chroot \
                 -o airootfs/usr/local/bin/neo-enhancements 2>/dev/null || echo "Neo hook optional"
               chmod +x airootfs/usr/local/bin/neo-enhancements 2>/dev/null || true
               
-              # Install Dracula theme for Plasma
               cat > airootfs/usr/local/bin/install-dracula-theme << "DRACULA"
           #!/bin/bash
           set -e
 
-          echo "═══════════════════════════════════════════════════════"
-          echo "  🧛 Installing Dracula Theme for KDE Plasma"
-          echo "═══════════════════════════════════════════════════════"
-          echo ""
-
-          # Create directories
           mkdir -p ~/.local/share/plasma/desktoptheme
           mkdir -p ~/.local/share/plasma/look-and-feel
           mkdir -p ~/.local/share/color-schemes
@@ -239,8 +183,6 @@ jobs:
           mkdir -p ~/.local/share/konsole
           mkdir -p ~/.config/Kvantum
 
-          # Install Dracula Plasma Theme
-          echo "📦 Installing Dracula Plasma theme..."
           cd /tmp
           git clone --depth=1 https://github.com/dracula/kde.git dracula-kde 2>/dev/null || true
           if [ -d dracula-kde ]; then
@@ -248,143 +190,72 @@ jobs:
             cp -r dracula-kde/color-schemes/* ~/.local/share/color-schemes/ 2>/dev/null || true
             cp -r dracula-kde/aurorae/* ~/.local/share/aurorae/themes/ 2>/dev/null || true
             rm -rf dracula-kde
-            echo "✓ Plasma theme installed"
           fi
 
-          # Install Dracula for Konsole
-          echo "📦 Installing Dracula Konsole color scheme..."
-          cd /tmp
           git clone --depth=1 https://github.com/dracula/konsole.git dracula-konsole 2>/dev/null || true
           if [ -d dracula-konsole ]; then
             cp dracula-konsole/Dracula.colorscheme ~/.local/share/konsole/ 2>/dev/null || true
             rm -rf dracula-konsole
-            echo "✓ Konsole theme installed"
           fi
 
-          # Install Dracula Kvantum Theme
-          echo "📦 Installing Dracula Kvantum theme..."
-          cd /tmp
           git clone --depth=1 https://github.com/dracula/kvantum.git dracula-kvantum 2>/dev/null || true
           if [ -d dracula-kvantum ]; then
             cp -r dracula-kvantum/Dracula* ~/.config/Kvantum/ 2>/dev/null || true
             rm -rf dracula-kvantum
-            echo "✓ Kvantum theme installed"
           fi
 
-          # Configure Kvantum to use Dracula
           cat > ~/.config/Kvantum/kvantum.kvconfig << "KVANTUM"
           [General]
           theme=Dracula
           KVANTUM
 
-          # Apply Plasma theme settings
-          echo "🎨 Configuring Plasma to use Dracula..."
-          
-          # Set color scheme
           kwriteconfig5 --file ~/.config/kdeglobals --group General --key ColorScheme Dracula
-          
-          # Set window decoration
           kwriteconfig5 --file ~/.config/kwinrc --group org.kde.kdecoration2 --key theme Dracula
-          
-          # Set Plasma theme
           plasma-apply-desktoptheme Dracula 2>/dev/null || true
           plasma-apply-colorscheme Dracula 2>/dev/null || true
-          
-          # Set Kvantum as the Qt theme
           kwriteconfig5 --file ~/.config/Kvantum/kvantum.kvconfig --group General --key theme Dracula
-          
-          echo ""
-          echo "═══════════════════════════════════════════════════════"
-          echo "  ✨ Dracula Theme Installation Complete!"
-          echo "═══════════════════════════════════════════════════════"
-          echo ""
-          echo "Installed components:"
-          echo "  ✓ Plasma Desktop Theme"
-          echo "  ✓ Color Schemes"
-          echo "  ✓ Window Decorations (Aurorae)"
-          echo "  ✓ Konsole terminal theme"
-          echo "  ✓ Kvantum theme"
-          echo ""
-          echo "Note: Log out and log back in to see all changes"
-          echo ""
           DRACULA
               chmod +x airootfs/usr/local/bin/install-dracula-theme
               
-              # First boot setup script
               cat > airootfs/usr/local/bin/cybr-first-boot << "FB"
           #!/bin/bash
           FLAG="\$HOME/.config/cybr-setup-done"
           
           if [ ! -f "\$FLAG" ]; then
-            # Wait for Plasma to fully start
             sleep 5
             
-            # Run setup in background with logging
             (
               exec > /tmp/cybr-setup.log 2>&1
               
-              echo "Cybr Linux First Boot Setup Starting..."
               date
               
-              # Wait for internet connection
-              echo "Checking internet connection..."
               for i in {1..30}; do
                 if ping -c 1 8.8.8.8 &>/dev/null || ping -c 1 1.1.1.1 &>/dev/null; then
-                  echo "Internet connected!"
                   break
                 fi
                 if [ \$i -eq 30 ]; then
-                  echo "No internet connection after 60 seconds."
-                  kdialog --error "No internet connection. Setup skipped.\n\nRun manually: /usr/local/bin/cybr-manual-setup"
                   touch "\$FLAG"
                   exit 1
                 fi
                 sleep 2
               done
               
-              # Show notification that setup is starting
-              kdialog --passivepopup "First boot setup in progress..." 5
+              /usr/local/bin/install-dracula-theme || true
+              /usr/local/bin/setup-blackarch || true
               
-              # Install Dracula theme
-              echo "Installing Dracula theme..."
-              if /usr/local/bin/install-dracula-theme; then
-                echo "✓ Dracula theme installed"
-                kdialog --passivepopup "✓ Dracula theme installed" 3
-              else
-                echo "⚠ Dracula theme installation failed"
-              fi
-              
-              # Setup BlackArch
-              echo "Setting up BlackArch repositories..."
-              if /usr/local/bin/setup-blackarch; then
-                echo "✓ BlackArch repositories configured"
-                kdialog --passivepopup "✓ BlackArch repos configured" 3
-              else
-                echo "⚠ BlackArch setup failed"
-              fi
-              
-              # Run Neo enhancements
               if [ -x /usr/local/bin/neo-enhancements ]; then
-                echo "Running Neo enhancements..."
-                /usr/local/bin/neo-enhancements || echo "⚠ Neo enhancements had issues"
+                /usr/local/bin/neo-enhancements || true
               fi
               
-              echo "Setup completed!"
-              date
-              
-              # Mark as done
               mkdir -p "\$HOME/.config"
               touch "\$FLAG"
               
-              # Final notification
-              kdialog --msgbox "✨ Setup complete! Please log out and log back in to apply all changes."
-              
+              date
             ) &
           fi
           FB
               chmod +x airootfs/usr/local/bin/cybr-first-boot
               
-              # Plasma autostart entry
               mkdir -p airootfs/etc/skel/.config/autostart
               cat > airootfs/etc/skel/.config/autostart/cybr-first-boot.desktop << "AUTOSTART"
           [Desktop Entry]
@@ -394,7 +265,6 @@ jobs:
           X-KDE-autostart-after=panel
           AUTOSTART
               
-              # Enable SDDM
               mkdir -p airootfs/etc/systemd/system/display-manager.service.d
               cat > airootfs/etc/systemd/system/display-manager.service.d/override.conf << "SDDM"
           [Service]
@@ -405,20 +275,16 @@ jobs:
               ln -sf /usr/lib/systemd/system/sddm.service \
                 airootfs/etc/systemd/system/display-manager.service
               
-              # Enable NetworkManager
               ln -sf /usr/lib/systemd/system/NetworkManager.service \
                 airootfs/etc/systemd/system/multi-user.target.wants/NetworkManager.service
               
-              # Enable Bluetooth
               ln -sf /usr/lib/systemd/system/bluetooth.service \
                 airootfs/etc/systemd/system/multi-user.target.wants/bluetooth.service
               
-              # Build ISO
               echo ""
               echo "🔨 Building ISO with mkarchiso..."
               mkarchiso -v -w /tmp/work -o /tmp/out .
               
-              # Move to workspace
               mv /tmp/out/*.iso /workspace/${ISO_NAME}.iso
               
               echo ""
@@ -516,7 +382,6 @@ jobs:
           echo ""
           echo "🔗 Download URL:"
           echo "https://sourceforge.net/projects/wolfos/files/plasma/$ISO_FILE/download"
-          echo ""
 
   notify:
     name: "Build Summary"
@@ -527,4 +392,9 @@ jobs:
     steps:
       - name: "Generate Summary"
         run: |
-          echo "Build complete" >> $GITHUB_STEP_SUMMARY
+          echo "## 🌅 Cybr Linux Build Complete" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Dawn light shines upon the arches." >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Edition:** Plasma" >> $GITHUB_STEP_SUMMARY
+          echo "**Build:** ${{ github.run_number }}" >> $GITHUB_STEP_SUMMARY
