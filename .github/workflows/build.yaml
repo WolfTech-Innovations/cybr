@@ -1,4 +1,4 @@
-name: "Cybr Linux - Dawn Light Shines Upon the Arches"
+name: "Cybr Linux - Dawn Light Shines Upon the Arches (Plasma Edition)"
 
 on:
   workflow_dispatch:
@@ -15,12 +15,12 @@ on:
     - cron: '0 2 * * 0'
 
 env:
-  ISO_NAME: "cybr-arch-v${{ github.run_number }}"
+  ISO_NAME: "cybr-arch-plasma-v${{ github.run_number }}"
   BUILD_VERSION: ${{ github.run_number }}
 
 jobs:
   build:
-    name: "Build Cybr Arch Linux"
+    name: "Build Cybr Arch Linux (Plasma)"
     runs-on: ubuntu-latest
     timeout-minutes: 180
 
@@ -44,18 +44,18 @@ jobs:
           
           RUN pacman -Syu --noconfirm && \
               # Manual setup option for users
+              mkdir -p airootfs/usr/local/bin && \
               cat > airootfs/usr/local/bin/cybr-manual-setup << "MANUAL"
           #!/bin/bash
           
-          kitty --title="Cybr Linux Setup" bash -c '
+          konsole --title="Cybr Linux Setup" -e bash -c '
             echo "═══════════════════════════════════════════════════════"
-            echo "  🌅 Cybr Linux Manual Setup"
+            echo "  🌅 Cybr Linux Manual Setup (Plasma Edition)"
             echo "  by WolfTech Innovations"
             echo "═══════════════════════════════════════════════════════"
             echo ""
             echo "This will install:"
-            echo "  • Dracula theme (GTK, Hyprland, Kitty, Rofi, Waybar)"
-            echo "  • end_4'\''s beautiful Hyprland dotfiles with dock"
+            echo "  • Dracula theme (Plasma, Konsole, Kvantum)"
             echo "  • BlackArch security tool repositories"
             echo "  • Neo system enhancements"
             echo ""
@@ -65,10 +65,6 @@ jobs:
             echo ""
             echo "🧛 Installing Dracula theme..."
             /usr/local/bin/install-dracula-theme
-            
-            echo ""
-            echo "📦 Installing end_4 dotfiles..."
-            /usr/local/bin/install-end4-dots
             
             echo ""
             echo "🔒 Setting up BlackArch repositories..."
@@ -86,7 +82,7 @@ jobs:
             read
           '
           MANUAL
-              chmod +x airootfs/usr/local/bin/cybr-manual-setup
+              chmod +x airootfs/usr/local/bin/cybr-manual-setup && \
               pacman -S --noconfirm archiso git curl wget base-devel && \
               pacman -Scc --noconfirm
           
@@ -106,60 +102,53 @@ jobs:
               
               echo "═══════════════════════════════════════════════"
               echo "  🌅 Dawn light shines upon the arches..."
-              echo "  Building Cybr Linux with Hyprland"
+              echo "  Building Cybr Linux with KDE Plasma"
               echo "═══════════════════════════════════════════════"
               
               # Copy archiso profile
               cp -r /usr/share/archiso/configs/releng /build/cybr
               cd /build/cybr
               
-              # Add packages for Hyprland with end_4 setup and custom kernel
+              # Add packages for KDE Plasma
               cat >> packages.x86_64 << "PKGS"
           linux
           linux-headers
-          hyprland
-          xdg-desktop-portal-hyprland
-          qt5-wayland
-          qt6-wayland
-          waybar
-          wofi
-          rofi-wayland
-          kitty
-          foot
-          dunst
-          mako
-          grim
-          slurp
-          swappy
-          wl-clipboard
-          cliphist
-          swaylock-effects
-          swayidle
-          hypridle
-          hyprlock
-          hyprpaper
-          swaybg
-          wlogout
+          plasma-desktop
+          plasma-workspace
+          plasma-nm
+          plasma-pa
+          powerdevil
+          bluedevil
+          kde-gtk-config
+          breeze-gtk
+          kscreen
+          kinfocenter
+          plasma-systemmonitor
+          spectacle
+          dolphin
+          konsole
+          kate
+          gwenview
+          okular
+          ark
+          filelight
+          kcalc
+          partitionmanager
           sddm
-          greetd
-          greetd-tuigreet
+          sddm-kcm
           firefox
-          thunar
-          thunar-volman
-          thunar-archive-plugin
-          file-roller
-          mousepad
+          xorg-server
+          xorg-xwayland
+          wayland
+          egl-wayland
           pipewire
           pipewire-pulse
           pipewire-alsa
           pipewire-jack
           wireplumber
-          pavucontrol
           networkmanager
-          network-manager-applet
           bluez
           bluez-utils
-          blueman
           htop
           btop
           git
@@ -169,22 +158,10 @@ jobs:
           unzip
           zip
           base-devel
-          brightnessctl
-          playerctl
-          pamixer
           nodejs
           npm
           python
           python-pip
-          python-gobject
-          python-requests
-          gjs
-          gtk3
-          gtk4
-          gtk-layer-shell
-          libdbusmenu-gtk3
-          polkit-gnome
-          gnome-keyring
           ttf-dejavu
           ttf-liberation
           ttf-font-awesome
@@ -194,18 +171,11 @@ jobs:
           noto-fonts-emoji
           noto-fonts-cjk
           papirus-icon-theme
-          dracula-gtk-theme
-          dracula-icons-git
-          arc-gtk-theme
-          lxappearance
           kvantum
           qt5ct
           qt6ct
-          nwg-look
           imagemagick
           jq
-          socat
-          inotify-tools
           bc
           coreutils
           PKGS
@@ -215,7 +185,7 @@ jobs:
               
               cat > airootfs/etc/os-release << "OS"
           NAME="Cybr Linux"
-          PRETTY_NAME="Cybr Linux - Dawn Light Shines Upon the Arches"
+          PRETTY_NAME="Cybr Linux - Dawn Light Shines Upon the Arches (Plasma Edition)"
           ID=cybr
           ID_LIKE=arch
           BUILD_ID=rolling
@@ -251,197 +221,91 @@ jobs:
                 -o airootfs/usr/local/bin/neo-enhancements 2>/dev/null || echo "Neo hook optional"
               chmod +x airootfs/usr/local/bin/neo-enhancements 2>/dev/null || true
               
-              # Download end_4 dotfiles setup script
-              cat > airootfs/usr/local/bin/install-end4-dots << "END4"
-          #!/bin/bash
-          set -e
-
-          echo "═══════════════════════════════════════════════════════"
-          echo "  Installing end_4'\''s Hyprland dotfiles"
-          echo "  Source: https://github.com/end-4/dots-hyprland"
-          echo "═══════════════════════════════════════════════════════"
-          echo ""
-
-          # Check internet
-          if ! ping -c 1 8.8.8.8 &>/dev/null && ! ping -c 1 1.1.1.1 &>/dev/null; then
-            echo "❌ No internet connection. Cannot download dotfiles."
-            exit 1
-          fi
-
-          # Clone end_4 dotfiles repository
-          echo "Cloning end_4 dotfiles repository..."
-          cd /tmp
-          rm -rf dots-hyprland
-          git clone --depth=1 https://github.com/end-4/dots-hyprland.git
-          
-          cd dots-hyprland
-          
-          # Copy dotfiles to home directory
-          echo "Installing dotfiles..."
-          cp -r .config/* ~/.config/ 2>/dev/null || true
-          cp -r .local/* ~/.local/ 2>/dev/null || true
-          
-          # Make scripts executable
-          find ~/.config -type f -name "*.sh" -exec chmod +x {} \; 2>/dev/null || true
-          find ~/.local/bin -type f -exec chmod +x {} \; 2>/dev/null || true
-          
-          # Clean up
-          cd ~
-          rm -rf /tmp/dots-hyprland
-          
-          echo ""
-          echo "✓ end_4 dotfiles installation completed!"
-          echo ""
-          END4
-              chmod +x airootfs/usr/local/bin/install-end4-dots
-              
-              # Install Dracula theme for all components
+              # Install Dracula theme for Plasma
               cat > airootfs/usr/local/bin/install-dracula-theme << "DRACULA"
           #!/bin/bash
           set -e
 
           echo "═══════════════════════════════════════════════════════"
-          echo "  🧛 Installing Dracula Theme Components"
+          echo "  🧛 Installing Dracula Theme for KDE Plasma"
           echo "═══════════════════════════════════════════════════════"
           echo ""
 
           # Create directories
-          mkdir -p ~/.themes
-          mkdir -p ~/.local/share/icons
-          mkdir -p ~/.config/hypr
-          mkdir -p ~/.config/rofi
-          mkdir -p ~/.config/waybar
-          mkdir -p ~/.config/kitty
+          mkdir -p ~/.local/share/plasma/desktoptheme
+          mkdir -p ~/.local/share/plasma/look-and-feel
+          mkdir -p ~/.local/share/color-schemes
+          mkdir -p ~/.local/share/aurorae/themes
+          mkdir -p ~/.local/share/konsole
+          mkdir -p ~/.config/Kvantum
 
-          # Install Dracula GTK Theme
-          echo "📦 Installing Dracula GTK theme..."
-          if [ ! -d ~/.themes/Dracula ]; then
-            cd /tmp
-            wget -q https://github.com/dracula/gtk/archive/master.zip -O dracula-gtk.zip
-            unzip -q dracula-gtk.zip
-            mv gtk-master ~/.themes/Dracula
-            rm dracula-gtk.zip
-            echo "✓ GTK theme installed"
-          else
-            echo "✓ GTK theme already installed"
-          fi
-
-          # Install Dracula Icons
-          echo "📦 Installing Dracula icon theme..."
-          if [ ! -d ~/.local/share/icons/Dracula ]; then
-            cd /tmp
-            wget -q https://github.com/dracula/gtk/files/5214870/Dracula.zip
-            unzip -q Dracula.zip -d ~/.local/share/icons/
-            rm Dracula.zip
-            echo "✓ Icon theme installed"
-          else
-            echo "✓ Icon theme already installed"
-          fi
-
-          # Configure GTK to use Dracula
-          echo "🎨 Configuring GTK..."
-          mkdir -p ~/.config/gtk-3.0
-          cat > ~/.config/gtk-3.0/settings.ini << "GTK3"
-          [Settings]
-          gtk-theme-name=Dracula
-          gtk-icon-theme-name=Dracula
-          gtk-font-name=Sans 10
-          gtk-cursor-theme-name=Adwaita
-          gtk-cursor-theme-size=24
-          gtk-toolbar-style=GTK_TOOLBAR_BOTH
-          gtk-toolbar-icon-size=GTK_ICON_SIZE_LARGE_TOOLBAR
-          gtk-button-images=1
-          gtk-menu-images=1
-          gtk-enable-event-sounds=1
-          gtk-enable-input-feedback-sounds=1
-          gtk-xft-antialias=1
-          gtk-xft-hinting=1
-          gtk-xft-hintstyle=hintslight
-          gtk-xft-rgba=rgb
-          gtk-application-prefer-dark-theme=1
-          GTK3
-
-          mkdir -p ~/.config/gtk-4.0
-          cat > ~/.config/gtk-4.0/settings.ini << "GTK4"
-          [Settings]
-          gtk-theme-name=Dracula
-          gtk-icon-theme-name=Dracula
-          gtk-font-name=Sans 10
-          gtk-cursor-theme-name=Adwaita
-          gtk-cursor-theme-size=24
-          gtk-application-prefer-dark-theme=1
-          GTK4
-
-          # Install Dracula for Hyprland
-          echo "🎨 Installing Dracula Hyprland colors..."
+          # Install Dracula Plasma Theme
+          echo "📦 Installing Dracula Plasma theme..."
           cd /tmp
-          git clone --depth=1 https://github.com/dracula/hyprland.git dracula-hypr 2>/dev/null || true
-          if [ -d dracula-hypr ]; then
-            cp dracula-hypr/dracula_colors.conf ~/.config/hypr/ 2>/dev/null || true
-            rm -rf dracula-hypr
-            echo "✓ Hyprland colors installed"
+          git clone --depth=1 https://github.com/dracula/kde.git dracula-kde 2>/dev/null || true
+          if [ -d dracula-kde ]; then
+            cp -r dracula-kde/plasma/* ~/.local/share/plasma/desktoptheme/ 2>/dev/null || true
+            cp -r dracula-kde/color-schemes/* ~/.local/share/color-schemes/ 2>/dev/null || true
+            cp -r dracula-kde/aurorae/* ~/.local/share/aurorae/themes/ 2>/dev/null || true
+            rm -rf dracula-kde
+            echo "✓ Plasma theme installed"
           fi
 
-          # Install Dracula for Kitty
-          echo "🎨 Installing Dracula Kitty theme..."
-          mkdir -p ~/.config/kitty
-          curl -fsSL https://raw.githubusercontent.com/dracula/kitty/master/dracula.conf \
-            -o ~/.config/kitty/dracula.conf
+          # Install Dracula for Konsole
+          echo "📦 Installing Dracula Konsole color scheme..."
+          cd /tmp
+          git clone --depth=1 https://github.com/dracula/konsole.git dracula-konsole 2>/dev/null || true
+          if [ -d dracula-konsole ]; then
+            cp dracula-konsole/Dracula.colorscheme ~/.local/share/konsole/ 2>/dev/null || true
+            rm -rf dracula-konsole
+            echo "✓ Konsole theme installed"
+          fi
+
+          # Install Dracula Kvantum Theme
+          echo "📦 Installing Dracula Kvantum theme..."
+          cd /tmp
+          git clone --depth=1 https://github.com/dracula/kvantum.git dracula-kvantum 2>/dev/null || true
+          if [ -d dracula-kvantum ]; then
+            cp -r dracula-kvantum/Dracula* ~/.config/Kvantum/ 2>/dev/null || true
+            rm -rf dracula-kvantum
+            echo "✓ Kvantum theme installed"
+          fi
+
+          # Configure Kvantum to use Dracula
+          cat > ~/.config/Kvantum/kvantum.kvconfig << "KVANTUM"
+          [General]
+          theme=Dracula
+          KVANTUM
+
+          # Apply Plasma theme settings
+          echo "🎨 Configuring Plasma to use Dracula..."
           
-          # Set Kitty to use Dracula
-          if ! grep -q "include dracula.conf" ~/.config/kitty/kitty.conf 2>/dev/null; then
-            echo "include dracula.conf" >> ~/.config/kitty/kitty.conf
-          fi
-          echo "✓ Kitty theme installed"
-
-          # Install Dracula for Rofi
-          echo "🎨 Installing Dracula Rofi theme..."
-          cd /tmp
-          git clone --depth=1 https://github.com/dracula/rofi.git dracula-rofi 2>/dev/null || true
-          if [ -d dracula-rofi ]; then
-            cp dracula-rofi/theme/config1.rasi ~/.config/rofi/dracula.rasi 2>/dev/null || true
-            rm -rf dracula-rofi
-            
-            # Set rofi to use Dracula
-            mkdir -p ~/.config/rofi
-            echo '\''@theme "dracula.rasi"'\'' > ~/.config/rofi/config.rasi
-            echo "✓ Rofi theme installed"
-          fi
-
-          # Dracula Waybar CSS colors
-          echo "🎨 Installing Dracula Waybar colors..."
-          mkdir -p ~/.config/waybar
-          cat > ~/.config/waybar/dracula-colors.css << "WAYBAR_COLORS"
-          /* Dracula Theme Colors */
-          @define-color background #282a36;
-          @define-color current-line #44475a;
-          @define-color selection #44475a;
-          @define-color foreground #f8f8f2;
-          @define-color comment #6272a4;
-          @define-color cyan #8be9fd;
-          @define-color green #50fa7b;
-          @define-color orange #ffb86c;
-          @define-color pink #ff79c6;
-          @define-color purple #bd93f9;
-          @define-color red #ff5555;
-          @define-color yellow #f1fa8c;
-          WAYBAR_COLORS
-          echo "✓ Waybar colors installed"
-
+          # Set color scheme
+          kwriteconfig5 --file ~/.config/kdeglobals --group General --key ColorScheme Dracula
+          
+          # Set window decoration
+          kwriteconfig5 --file ~/.config/kwinrc --group org.kde.kdecoration2 --key theme Dracula
+          
+          # Set Plasma theme
+          plasma-apply-desktoptheme Dracula 2>/dev/null || true
+          plasma-apply-colorscheme Dracula 2>/dev/null || true
+          
+          # Set Kvantum as the Qt theme
+          kwriteconfig5 --file ~/.config/Kvantum/kvantum.kvconfig --group General --key theme Dracula
+          
           echo ""
           echo "═══════════════════════════════════════════════════════"
           echo "  ✨ Dracula Theme Installation Complete!"
           echo "═══════════════════════════════════════════════════════"
           echo ""
           echo "Installed components:"
-          echo "  ✓ GTK Theme (GTK3 & GTK4)"
-          echo "  ✓ Icon Theme"
-          echo "  ✓ Hyprland colors"
-          echo "  ✓ Kitty terminal theme"
-          echo "  ✓ Rofi launcher theme"
-          echo "  ✓ Waybar color scheme"
+          echo "  ✓ Plasma Desktop Theme"
+          echo "  ✓ Color Schemes"
+          echo "  ✓ Window Decorations (Aurorae)"
+          echo "  ✓ Konsole terminal theme"
+          echo "  ✓ Kvantum theme"
           echo ""
-          echo "Note: Restart apps or relog to see changes"
+          echo "Note: Log out and log back in to see all changes"
           echo ""
           DRACULA
               chmod +x airootfs/usr/local/bin/install-dracula-theme
@@ -452,8 +316,8 @@ jobs:
           FLAG="\$HOME/.config/cybr-setup-done"
           
           if [ ! -f "\$FLAG" ]; then
-            # Wait for Hyprland to fully start
-            sleep 3
+            # Wait for Plasma to fully start
+            sleep 5
             
             # Run setup in background with logging
             (
@@ -471,7 +335,7 @@ jobs:
                 fi
                 if [ \$i -eq 30 ]; then
                   echo "No internet connection after 60 seconds."
-                  notify-send "Cybr Linux" "No internet. Setup skipped. Run manually: /usr/local/bin/cybr-manual-setup" -u critical
+                  kdialog --error "No internet connection. Setup skipped.\n\nRun manually: /usr/local/bin/cybr-manual-setup"
                   touch "\$FLAG"
                   exit 1
                 fi
@@ -479,31 +343,22 @@ jobs:
               done
               
               # Show notification that setup is starting
-              notify-send "Cybr Linux" "First boot setup in progress..." -t 5000
+              kdialog --passivepopup "First boot setup in progress..." 5
               
               # Install Dracula theme
               echo "Installing Dracula theme..."
               if /usr/local/bin/install-dracula-theme; then
                 echo "✓ Dracula theme installed"
-                notify-send "Cybr Linux" "✓ Dracula theme installed" -t 3000
+                kdialog --passivepopup "✓ Dracula theme installed" 3
               else
                 echo "⚠ Dracula theme installation failed"
-              fi
-              
-              # Install end_4 dotfiles
-              echo "Installing end_4 dotfiles..."
-              if /usr/local/bin/install-end4-dots; then
-                echo "✓ end_4 dotfiles installed"
-                notify-send "Cybr Linux" "✓ end_4 dotfiles installed" -t 3000
-              else
-                echo "⚠ end_4 dotfiles installation failed"
               fi
               
               # Setup BlackArch
               echo "Setting up BlackArch repositories..."
               if /usr/local/bin/setup-blackarch; then
                 echo "✓ BlackArch repositories configured"
-                notify-send "Cybr Linux" "✓ BlackArch repos configured" -t 3000
+                kdialog --passivepopup "✓ BlackArch repos configured" 3
               else
                 echo "⚠ BlackArch setup failed"
               fi
@@ -522,230 +377,41 @@ jobs:
               touch "\$FLAG"
               
               # Final notification
-              notify-send "Cybr Linux" "✨ Setup complete! Please relog to apply all changes.\n\nPress Super+Shift+E to exit Hyprland." -t 10000
+              kdialog --msgbox "✨ Setup complete! Please log out and log back in to apply all changes."
               
             ) &
           fi
           FB
               chmod +x airootfs/usr/local/bin/cybr-first-boot
               
-              # Hyprland startup configuration with end_4 setup
-              mkdir -p airootfs/etc/skel/.config/hypr
-              cat > airootfs/etc/skel/.config/hypr/hyprland.conf << "HYPR"
-          # Cybr Linux - Hyprland Configuration
-          # This will be replaced by end_4'\''s dotfiles after first boot
-          
-          # Monitor configuration
-          monitor=,preferred,auto,1
-          
-          # Autostart
-          exec-once = waybar &
-          exec-once = dunst &
-          exec-once = /usr/lib/polkit-gnome/polkit-gnome-authentication-agent-1 &
-          exec-once = nm-applet --indicator &
-          exec-once = blueman-applet &
-          exec-once = /usr/local/bin/cybr-first-boot &
-          
-          # Input configuration
-          input {
-              kb_layout = us
-              follow_mouse = 1
-              touchpad {
-                  natural_scroll = true
-              }
-              sensitivity = 0
-          }
-          
-          # General configuration
-          general {
-              gaps_in = 5
-              gaps_out = 10
-              border_size = 2
-              col.active_border = rgba(1793d1ee) rgba(1793d1ee) 45deg
-              col.inactive_border = rgba(595959aa)
-              layout = dwindle
-          }
-          
-          # Decorations
-          decoration {
-              rounding = 10
-              blur {
-                  enabled = true
-                  size = 8
-                  passes = 3
-              }
-              drop_shadow = true
-              shadow_range = 4
-              shadow_render_power = 3
-              col.shadow = rgba(1a1a1aee)
-          }
-          
-          # Animations
-          animations {
-              enabled = true
-              bezier = myBezier, 0.05, 0.9, 0.1, 1.05
-              animation = windows, 1, 7, myBezier
-              animation = windowsOut, 1, 7, default, popin 80%
-              animation = border, 1, 10, default
-              animation = fade, 1, 7, default
-              animation = workspaces, 1, 6, default
-          }
-          
-          # Layouts
-          dwindle {
-              pseudotile = true
-              preserve_split = true
-          }
-          
-          # Keybindings
-          \$mainMod = SUPER
-          
-          bind = \$mainMod, RETURN, exec, kitty
-          bind = \$mainMod, Q, killactive,
-          bind = \$mainMod SHIFT, E, exit,
-          bind = \$mainMod, E, exec, thunar
-          bind = \$mainMod, V, togglefloating,
-          bind = \$mainMod, R, exec, wofi --show drun
-          bind = \$mainMod, P, pseudo,
-          bind = \$mainMod, J, togglesplit,
-          bind = \$mainMod, F, fullscreen,
-          
-          # Move focus with mainMod + arrow keys
-          bind = \$mainMod, left, movefocus, l
-          bind = \$mainMod, right, movefocus, r
-          bind = \$mainMod, up, movefocus, u
-          bind = \$mainMod, down, movefocus, d
-          
-          # Switch workspaces
-          bind = \$mainMod, 1, workspace, 1
-          bind = \$mainMod, 2, workspace, 2
-          bind = \$mainMod, 3, workspace, 3
-          bind = \$mainMod, 4, workspace, 4
-          bind = \$mainMod, 5, workspace, 5
-          bind = \$mainMod, 6, workspace, 6
-          bind = \$mainMod, 7, workspace, 7
-          bind = \$mainMod, 8, workspace, 8
-          bind = \$mainMod, 9, workspace, 9
-          bind = \$mainMod, 0, workspace, 10
-          
-          # Move active window to workspace
-          bind = \$mainMod SHIFT, 1, movetoworkspace, 1
-          bind = \$mainMod SHIFT, 2, movetoworkspace, 2
-          bind = \$mainMod SHIFT, 3, movetoworkspace, 3
-          bind = \$mainMod SHIFT, 4, movetoworkspace, 4
-          bind = \$mainMod SHIFT, 5, movetoworkspace, 5
-          bind = \$mainMod SHIFT, 6, movetoworkspace, 6
-          bind = \$mainMod SHIFT, 7, movetoworkspace, 7
-          bind = \$mainMod SHIFT, 8, movetoworkspace, 8
-          bind = \$mainMod SHIFT, 9, movetoworkspace, 9
-          bind = \$mainMod SHIFT, 0, movetoworkspace, 10
-          
-          # Screenshot
-          bind = , PRINT, exec, grim -g "\$(slurp)" - | wl-copy
-          bind = SHIFT, PRINT, exec, grim - | wl-copy
-          
-          # Volume control
-          bind = , XF86AudioRaiseVolume, exec, pamixer -i 5
-          bind = , XF86AudioLowerVolume, exec, pamixer -d 5
-          bind = , XF86AudioMute, exec, pamixer -t
-          
-          # Brightness control
-          bind = , XF86MonBrightnessUp, exec, brightnessctl set +5%
-          bind = , XF86MonBrightnessDown, exec, brightnessctl set 5%-
-          
-          # Media control
-          bind = , XF86AudioPlay, exec, playerctl play-pause
-          bind = , XF86AudioNext, exec, playerctl next
-          bind = , XF86AudioPrev, exec, playerctl previous
-          HYPR
+              # Plasma autostart entry
+              mkdir -p airootfs/etc/skel/.config/autostart
+              cat > airootfs/etc/skel/.config/autostart/cybr-first-boot.desktop << "AUTOSTART"
+          [Desktop Entry]
+          Type=Application
+          Name=Cybr First Boot Setup
+          Exec=/usr/local/bin/cybr-first-boot
+          X-KDE-autostart-after=panel
+          AUTOSTART
               
-              # Greetd configuration for auto-start Hyprland
-              mkdir -p airootfs/etc/greetd
-              cat > airootfs/etc/greetd/config.toml << "GREETD"
-          [terminal]
-          vt = 1
-          
-          [default_session]
-          command = "tuigreet --greeting '\''Dawn light shines upon the arches'\'' --asterisks --remember --remember-session --time --cmd Hyprland"
-          user = "greeter"
-          GREETD
+              # Enable SDDM
+              mkdir -p airootfs/etc/systemd/system/display-manager.service.d
+              cat > airootfs/etc/systemd/system/display-manager.service.d/override.conf << "SDDM"
+          [Service]
+          ExecStart=
+          ExecStart=/usr/bin/sddm
+          SDDM
               
-              # Auto-login for live session
-              cat > airootfs/etc/greetd/config-autologin.toml << "GREETDAUTO"
-          [terminal]
-          vt = 1
-          
-          [default_session]
-          command = "Hyprland"
-          user = "cybr"
-          GREETDAUTO
+              ln -sf /usr/lib/systemd/system/sddm.service \
+                airootfs/etc/systemd/system/display-manager.service
               
-              # Script to enable auto-login for live session
-              cat > airootfs/root/customize_airootfs.sh << "CUSTOM"
-          #!/bin/bash
-          # Use auto-login config for live session
-          cp /etc/greetd/config-autologin.toml /etc/greetd/config.toml
-          
-          # Create live user
-          useradd -m -G wheel,audio,video,network,storage -s /bin/bash cybr
-          echo "cybr:cybr" | chpasswd
-          echo "%wheel ALL=(ALL:ALL) NOPASSWD: ALL" >> /etc/sudoers
-          
-          # Enable services
-          systemctl enable NetworkManager
-          systemctl enable bluetooth
-          systemctl enable greetd
-          CUSTOM
-              chmod +x airootfs/root/customize_airootfs.sh
-              
-              # Enable services in profiledef
-              mkdir -p airootfs/etc/systemd/system/multi-user.target.wants
-              mkdir -p airootfs/etc/systemd/system/graphical.target.wants
-              
+              # Enable NetworkManager
               ln -sf /usr/lib/systemd/system/NetworkManager.service \
-                airootfs/etc/systemd/system/multi-user.target.wants/
+                airootfs/etc/systemd/system/multi-user.target.wants/NetworkManager.service
+              
+              # Enable Bluetooth
               ln -sf /usr/lib/systemd/system/bluetooth.service \
-                airootfs/etc/systemd/system/multi-user.target.wants/
-              
-              # Waybar basic config (will be replaced by end_4)
-              mkdir -p airootfs/etc/skel/.config/waybar
-              cat > airootfs/etc/skel/.config/waybar/config << "WAYBAR"
-          {
-              "layer": "top",
-              "position": "top",
-              "height": 30,
-              "modules-left": ["hyprland/workspaces", "hyprland/window"],
-              "modules-center": ["clock"],
-              "modules-right": ["pulseaudio", "network", "battery", "tray"],
-              
-              "hyprland/workspaces": {
-                  "format": "{icon}",
-                  "format-icons": {
-                      "1": "一",
-                      "2": "二",
-                      "3": "三",
-                      "4": "四",
-                      "5": "五"
-                  }
-              },
-              "clock": {
-                  "format": "{:%H:%M}",
-                  "format-alt": "{:%Y-%m-%d}"
-              },
-              "battery": {
-                  "format": "{capacity}% {icon}",
-                  "format-icons": ["", "", "", "", ""]
-              },
-              "network": {
-                  "format-wifi": "{essid} ",
-                  "format-disconnected": "Disconnected ⚠"
-              },
-              "pulseaudio": {
-                  "format": "{volume}% {icon}",
-                  "format-muted": "🔇"
-              }
-          }
-          WAYBAR
+                airootfs/etc/systemd/system/multi-user.target.wants/bluetooth.service
               
               # Build ISO
               echo ""
@@ -757,7 +423,7 @@ jobs:
               
               echo ""
               echo "═══════════════════════════════════════════════"
-              echo "  ✨ Cybr Linux ISO created successfully!"
+              echo "  ✨ Cybr Linux Plasma ISO created successfully!"
               echo "  📦 File: ${ISO_NAME}.iso"
               echo "  🌅 Dawn light shines upon the arches"
               echo "═══════════════════════════════════════════════"
@@ -777,14 +443,14 @@ jobs:
           SIZE_MB=$(( SIZE / 1024 / 1024 ))
           SHA256=$(sha256sum "$ISO_FILE" | cut -d' ' -f1)
           
-          echo "size=$SIZE" >> $GITHUB_OUTPUT
+          echo "size_mb=$SIZE_MB" >> $GITHUB_OUTPUT
           echo "sha256=$SHA256" >> $GITHUB_OUTPUT
           
           echo "✓ ISO: $ISO_FILE"
           echo "✓ Size: ${SIZE_MB} MB"
           echo "✓ SHA256: $SHA256"
 
-      - name: "Upload ISO"
+      - name: "Upload ISO Artifact"
         uses: actions/upload-artifact@v4
         with:
           name: "${{ env.ISO_NAME }}"
@@ -797,12 +463,12 @@ jobs:
     needs: build
     if: github.event_name == 'workflow_dispatch' || github.ref == 'refs/heads/main'
     timeout-minutes: 30
-    
+
     steps:
       - name: "Download ISO"
         uses: actions/download-artifact@v4
         with:
-          name: "cybr-arch-v${{ github.run_number }}"
+          name: "${{ env.ISO_NAME }}"
 
       - name: "Install Upload Tools"
         run: |
@@ -816,13 +482,15 @@ jobs:
         run: |
           if [[ -z "$SF_USER" || -z "$SF_PASS" ]]; then
             echo "⚠ SourceForge credentials not configured"
+            echo "Add SF_USER and SF_PASS secrets to enable SourceForge uploads"
             exit 1
           fi
           
-          ISO_FILE="cybr-arch-v${{ github.run_number }}.iso"
-          REMOTE_PATH="/home/frs/project/wolfos/$ISO_FILE"
+          ISO_FILE="${{ env.ISO_NAME }}.iso"
+          REMOTE_PATH="/home/frs/project/wolfos/plasma/$ISO_FILE"
           
           echo "📤 Uploading $ISO_FILE to SourceForge..."
+          echo "Remote path: $REMOTE_PATH"
           
           for i in {1..3}; do
             if timeout 1800 sshpass -p "$SF_PASS" \
@@ -842,75 +510,21 @@ jobs:
           done
           
           echo ""
-          echo "✓ ISO uploaded to SourceForge!"
-          echo "🔗 Download: https://sourceforge.net/projects/wolfos/files/$ISO_FILE/download"
+          echo "═══════════════════════════════════════════════════════"
+          echo "  ✨ ISO uploaded to SourceForge!"
+          echo "═══════════════════════════════════════════════════════"
+          echo ""
+          echo "🔗 Download URL:"
+          echo "https://sourceforge.net/projects/wolfos/files/plasma/$ISO_FILE/download"
+          echo ""
 
   notify:
     name: "Build Summary"
     runs-on: ubuntu-latest
     needs: [build, upload]
     if: always()
-    
+
     steps:
       - name: "Generate Summary"
         run: |
-          cat >> $GITHUB_STEP_SUMMARY << 'EOF'
-          # 🌅 Cybr Linux - Dawn Light Shines Upon the Arches
-          
-          **Build completed successfully!**
-          
-          ## ✨ Features
-          - **Base**: Arch Linux (rolling release)
-          - **Desktop**: Hyprland with end_4's gorgeous dotfiles
-          - **Theme**: Dracula color scheme across all components (GTK, terminal, launcher)
-          - **Dock**: Integrated AGS dock (from end_4)
-          - **Security**: BlackArch repositories (3000+ pentesting tools)
-          - **Enhancements**: Neo integration
-          - **Animations**: Beautiful dark theme with blur and smooth animations
-          
-          ## 📦 What's Included
-          - Hyprland compositor with blur, animations, and effects
-          - **Dracula Theme** across the entire system:
-            - GTK applications (dark purple aesthetic)
-            - Kitty terminal with Dracula colors
-            - Rofi launcher with Dracula theme
-            - Waybar with Dracula color scheme
-            - Hyprland window colors matching Dracula
-          - end_4's dotfiles featuring:
-            - AGS (Aylur's GTK Shell) dock and widgets
-            - Waybar with custom modules
-            - Beautiful terminal (kitty) with configs
-            - Rofi launcher with custom theme
-            - Hyprlock screen locker
-            - And much more!
-          - BlackArch pentesting tools repository
-          - Full Wayland support
-          - PipeWire audio
-          - NetworkManager & Bluetooth
-          
-          ## 🚀 First Boot Experience
-          - Auto-login to Hyprland
-          - Setup runs automatically in background:
-            1. Dracula theme installed system-wide
-            2. end_4's dotfiles configured automatically
-            3. BlackArch repos set up
-            4. Neo enhancements applied
-          - Notifications keep you informed of progress
-          - Beautiful, functional desktop with unified purple aesthetic ready after relog
-          - If auto-setup fails, run manually: `cybr-manual-setup`
-          
-          ## 📥 Downloads
-          - **ISO**: cybr-arch-v${{ github.run_number }}.iso
-          - [GitHub Artifacts](../../actions/runs/${{ github.run_id }}#artifacts)
-          - [SourceForge Mirror](https://sourceforge.net/projects/wolfos/)
-          
-          ## 🎨 Credits
-          - Dracula Theme for the iconic purple color scheme
-          - end_4 for the beautiful Hyprland dotfiles
-          - WolfTech Innovations for Cybr Linux
-          - BlackArch team for security tools
-          - Hyprland community
-          
-          ---
-          *Dawn light shines upon the arches* 🌄
-          EOF
+          echo "Build complete" >> $GITHUB_STEP_SUMMARY
