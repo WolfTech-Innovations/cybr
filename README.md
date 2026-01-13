@@ -1,40 +1,67 @@
+# Welcome to Cybr Linux - Dawn Light Shines Upon the Arches
 
-# Welcome to cybr! -- The Version of Kali for everybody
+[![Cybr Plasma Build System](https://github.com/WolfTech-Innovations/cybr/actions/workflows/build.yaml/badge.svg)](https://github.com/WolfTech-Innovations/cybr/actions/workflows/build.yaml)
 
-[![Cybr NextGen Build System](https://github.com/WolfTech-Innovations/cybr/actions/workflows/build.yaml/badge.svg)](https://github.com/WolfTech-Innovations/cybr/actions/workflows/build.yaml)
- 
-Cybr is meant for all users, new users to professionals, or even people just wanting a regular distro, Cybr comes in handy, for all walks of life
+Cybr Linux is an Arch-based distribution designed for all users, from newcomers to professionals. Whether you need a security-focused workstation or a regular desktop system, Cybr provides a polished experience for all walks of life.
 
-## CREDIT TO END_4 FOR DOTFILES
+## Editions
 
-## Installation:
+### Plasma Edition
+KDE Plasma desktop environment with the Dracula theme, featuring a complete suite of applications and BlackArch repository integration for security tools.
 
-To install cybr, follow these steps:
+## Features
 
-1. Download the ISO from the Sourceforge Mirror.
-2. Create a bootable USB drive using your preferred tool (e.g., Rufus, Etcher).
-3. Boot your computer from the USB drive.
-4. Follow the on-screen instructions to install cybr.
+- **Base**: Arch Linux rolling release
+- **Desktop**: KDE Plasma with Wayland and X11 support
+- **Theme**: Dracula color scheme system-wide
+- **Security**: BlackArch repositories with 3000+ pentesting tools
+- **Audio**: PipeWire with full multimedia support
+- **Networking**: NetworkManager and Bluetooth ready out of the box
 
-## Conclusion:
+## Installation
 
-Thank you for choosing cybr! We hope you enjoy using our distro as much as we enjoyed creating it!
+To install Cybr Linux, follow these steps:
 
-Happy computing!
+1. Download the ISO from the [SourceForge Mirror](https://sourceforge.net/projects/wolfos/files/plasma/)
+2. Create a bootable USB drive using your preferred tool (Rufus, Etcher, dd)
+3. Boot your computer from the USB drive
+4. Follow the on-screen instructions to install Cybr Linux
 
-## Extras: 
+## First Boot
+
+On first boot, Cybr automatically configures:
+- Dracula theme across all applications
+- BlackArch security tool repositories
+- System enhancements via Neo integration
+
+If automatic setup fails, run manually with: `/usr/local/bin/cybr-manual-setup`
+
+## Downloads
+
+- [SourceForge](https://sourceforge.net/projects/wolfos/files/plasma/) - Primary download mirror
+- [GitHub Releases](https://github.com/WolfTech-Innovations/cybr/releases) - Alternative download location
+
+## Credits
+
+- Dracula Theme for the color scheme
+- KDE Community for Plasma Desktop
+- BlackArch Team for security tools
+- Arch Linux community
 
 ## Our Team
 
--- Christopher F. - CEO and Head of cybr Development Team and the one behind it's resilient computing experience for its users.
+- Christopher F. - CEO and Head of Cybr Development Team
+- Joseph D. - Head of HR and Marketing
+- Christopher (Development Team) - Programming Department
 
--- Joseph D. - Head of HR and marketing
+## Legal
 
--- Christopher (2 > Diff employee) - Programming department
-
-## Legal Stuff:
-
-cybr is GPL Licensed and is managed by WolfTech Innovations
+Cybr Linux is GPL Licensed and managed by WolfTech Innovations.
 
 [![Copyrighted.com Registered & Protected](https://static.copyrighted.com/badges/125x75/04.png)](https://app.copyrighted.com/work/GW0cSbajaE2ZDg9X "Copyrighted.com Registered & Protected")
-![6Z9kHZ1](https://github.com/user-attachments/assets/44eeeff3-821d-4066-9933-9323d284a394)
+
+---
+
+Dawn light shines upon the arches
+
+Thank you for choosing Cybr Linux.
