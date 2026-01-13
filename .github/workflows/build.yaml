@@ -43,46 +43,6 @@ jobs:
           FROM archlinux:latest
           
           RUN pacman -Syu --noconfirm && \
-              # Manual setup option for users
-              mkdir -p airootfs/usr/local/bin && \
-              cat > airootfs/usr/local/bin/cybr-manual-setup << "MANUAL"
-          #!/bin/bash
-          
-          konsole --title="Cybr Linux Setup" -e bash -c '
-            echo "═══════════════════════════════════════════════════════"
-            echo "  🌅 Cybr Linux Manual Setup (Plasma Edition)"
-            echo "  by WolfTech Innovations"
-            echo "═══════════════════════════════════════════════════════"
-            echo ""
-            echo "This will install:"
-            echo "  • Dracula theme (Plasma, Konsole, Kvantum)"
-            echo "  • BlackArch security tool repositories"
-            echo "  • Neo system enhancements"
-            echo ""
-            echo "Press Enter to continue or Ctrl+C to cancel..."
-            read
-            
-            echo ""
-            echo "🧛 Installing Dracula theme..."
-            /usr/local/bin/install-dracula-theme
-            
-            echo ""
-            echo "🔒 Setting up BlackArch repositories..."
-            /usr/local/bin/setup-blackarch
-            
-            echo ""
-            if [ -x /usr/local/bin/neo-enhancements ]; then
-              echo "⚡ Running Neo enhancements..."
-              /usr/local/bin/neo-enhancements || true
-            fi
-            
-            echo ""
-            echo "✨ Setup Complete!"
-            echo "Press Enter to close..."
-            read
-          '
-          MANUAL
-              chmod +x airootfs/usr/local/bin/cybr-manual-setup && \
               pacman -S --noconfirm archiso git curl wget base-devel && \
               pacman -Scc --noconfirm
           
@@ -199,6 +159,46 @@ jobs:
               # Setup scripts directory
               mkdir -p airootfs/usr/local/bin
               mkdir -p airootfs/etc/skel/.config
+              
+              # Manual setup script
+              cat > airootfs/usr/local/bin/cybr-manual-setup << 'MANUAL'
+          #!/bin/bash
+          
+          konsole --title="Cybr Linux Setup" -e bash -c '
+            echo "═══════════════════════════════════════════════════════"
+            echo "  Cybr Linux Manual Setup (Plasma Edition)"
+            echo "  by WolfTech Innovations"
+            echo "═══════════════════════════════════════════════════════"
+            echo ""
+            echo "This will install:"
+            echo "  - Dracula theme (Plasma, Konsole, Kvantum)"
+            echo "  - BlackArch security tool repositories"
+            echo "  - Neo system enhancements"
+            echo ""
+            echo "Press Enter to continue or Ctrl+C to cancel..."
+            read
+            
+            echo ""
+            echo "Installing Dracula theme..."
+            /usr/local/bin/install-dracula-theme
+            
+            echo ""
+            echo "Setting up BlackArch repositories..."
+            /usr/local/bin/setup-blackarch
+            
+            echo ""
+            if [ -x /usr/local/bin/neo-enhancements ]; then
+              echo "Running Neo enhancements..."
+              /usr/local/bin/neo-enhancements || true
+            fi
+            
+            echo ""
+            echo "Setup Complete!"
+            echo "Press Enter to close..."
+            read
+          '
+          MANUAL
+              chmod +x airootfs/usr/local/bin/cybr-manual-setup
               
               # BlackArch setup script
               cat > airootfs/usr/local/bin/setup-blackarch << "BA"
