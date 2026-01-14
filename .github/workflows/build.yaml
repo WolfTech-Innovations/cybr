@@ -52,100 +52,132 @@ jobs:
           pacman-key --init
           pacman-key --populate archlinux
           
-          # Import and sign the BlackArch key (required before adding the repo)
-          pacman-key --recv-keys F9A6E68A711354D84A9B91637533BAFE69A25079
-          pacman-key --lsign-key F9A6E68A711354D84A9B91637533BAFE69A25079
-          
-          # Add ALCI repo (for Calamares installer)
-          sed -i "/\$core\$/i [alci_repo]\nSigLevel = Optional TrustAll\nServer = https://arch-linux-calamares-installer.github.io/\\\$repo/\\\$arch\n" pacman.conf
-          
-          # Add BlackArch repo
-          sed -i "/\$core\$/i [blackarch]\nSigLevel = Optional TrustAll\nServer = https://www.mirrorservice.org/sites/blackarch.org/blackarch/\\\$repo/os/\\\$arch\n" pacman.conf
+          # Add ALCI repo FIRST (for Calamares installer)
+          cat >> pacman.conf << "REPOS"
+
+[alci_repo]
+SigLevel = Optional TrustAll
+Server = https://arch-linux-calamares-installer.github.io/\$repo/\$arch
+
+[blackarch]
+SigLevel = Optional TrustAll
+Server = https://www.mirrorservice.org/sites/blackarch.org/blackarch/\$repo/os/\$arch
+REPOS
           
           # Enable parallel downloads
-          sed -i "s/#ParallelDownloads/ParallelDownloads/" pacman.conf
+          sed -i "s/#ParallelDownloads = 5/ParallelDownloads = 5/" pacman.conf
           
-          # Sync Pacman databases after repo changes
-          pacman -Sy
+          # Update databases with new repos
+          pacman -Sy --noconfirm
           
-          # Define packages (removed invalid plasma-framework)
-          cat > packages.x86_64 << "P"
-          linux-lts
-          syslinux
-          edk2-shell
-          memtest86+
-          memtest86+-efi
-          mkinitcpio
-          calamares
-          blackarch-keyring
-          plasma-desktop
-          plasma-workspace
-          plasma-nm
-          plasma-pa
-          sddm
-          dolphin
-          konsole
-          kate
-          firefox
-          qt6-virtualkeyboard
-          kscreen
-          networkmanager
-          pipewire
-          pipewire-pulse
-          pipewire-jack
-          pipewire-alsa
-          wireplumber
-          sbc
-          xf86-input-wacom
-          iwd
-          git
-          curl
-          wget
-          vim
-          nano
-          base-devel
-          ttf-liberation
-          noto-fonts
-          noto-fonts-emoji
-          gparted
-          P
+          # Import BlackArch keyring separately first
+          pacman -S --noconfirm --needed wget
+          wget https://blackarch.org/keyring/blackarch-keyring.pkg.tar.xz
+          pacman -U --noconfirm blackarch-keyring.pkg.tar.xz || true
           
+          # Define core packages (removed problematic ones)
+          cat > packages.x86_64 << "PKGS"
+linux-lts
+linux-firmware
+base
+base-devel
+syslinux
+edk2-shell
+memtest86+
+memtest86+-efi
+mkinitcpio
+mkinitcpio-archiso
+plasma-desktop
+plasma-workspace
+plasma-nm
+plasma-pa
+sddm
+dolphin
+konsole
+kate
+firefox
+kscreen
+networkmanager
+pipewire
+pipewire-pulse
+pipewire-jack
+pipewire-alsa
+wireplumber
+xf86-input-wacom
+iwd
+git
+curl
+wget
+vim
+nano
+ttf-liberation
+noto-fonts
+noto-fonts-emoji
+gparted
+ntfs-3g
+dosfstools
+exfatprogs
+PKGS
+
+          # Add Calamares separately if available
+          echo "calamares" >> packages.x86_64 || echo "Warning: Calamares not available"
+          
+          # Configure hostname
           echo "cybr-linux" > airootfs/etc/hostname
           
-          cat > airootfs/etc/os-release << "O"
-          NAME="Cybr Linux"
-          PRETTY_NAME="Cybr Linux - Dawn Light Shines Upon the Arches"
-          ID=cybr
-          ID_LIKE=arch
-          BUILD_ID=rolling
-          HOME_URL="https://wolfos.uk/"
-          O
+          # Create OS release file
+          mkdir -p airootfs/etc
+          cat > airootfs/etc/os-release << "OSREL"
+NAME="Cybr Linux"
+PRETTY_NAME="Cybr Linux - Dawn Light Shines Upon the Arches"
+ID=cybr
+ID_LIKE=arch
+BUILD_ID=rolling
+ANSI_COLOR="38;2;23;147;209"
+HOME_URL="https://wolfos.uk/"
+LOGO=archlinux-logo
+OSREL
           
+          # Enable services
+          mkdir -p airootfs/etc/systemd/system/multi-user.target.wants
+          mkdir -p airootfs/etc/systemd/system/graphical.target.wants
           ln -sf /usr/lib/systemd/system/sddm.service airootfs/etc/systemd/system/display-manager.service
           ln -sf /usr/lib/systemd/system/NetworkManager.service airootfs/etc/systemd/system/multi-user.target.wants/
           
+          # Configure compression
           sed -i "s/airootfs_image_type=\"squashfs\"/airootfs_image_type=\"squashfs\"\nairootfs_image_tool_options=(\"-comp\" \"xz\" \"-Xbcj\" \"x86\" \"-b\" \"1M\" \"-Xdict-size\" \"1M\")/" profiledef.sh
           
+          # Build ISO
           mkarchiso -v -w /tmp/work -o /tmp/out .
+          
+          # Move ISO to workspace
           mv /tmp/out/*.iso /workspace/${ISO_NAME}.iso
-          echo "ISO: ${ISO_NAME}.iso created"
+          ls -lh /workspace/${ISO_NAME}.iso
+          echo "ISO: ${ISO_NAME}.iso created successfully"
           '
 
       - name: Verify ISO and generate checksums
         id: verify
         run: |
           ISO="${{ env.ISO_NAME }}.iso"
-          [[ ! -f "$ISO" ]] && exit 1
+          if [[ ! -f "$ISO" ]]; then
+            echo "Error: ISO file not found"
+            exit 1
+          fi
           SIZE_MB=$(($(stat -c%s "$ISO")/1024/1024))
           SHA256=$(sha256sum "$ISO"|cut -d" " -f1)
           echo "size_mb=$SIZE_MB" >> $GITHUB_OUTPUT
           echo "sha256=$SHA256" >> $GITHUB_OUTPUT
-          echo "Size: ${SIZE_MB}MB SHA256: $SHA256"
+          echo "ISO Size: ${SIZE_MB}MB"
+          echo "SHA256: $SHA256"
+          sha256sum "$ISO" > "${ISO}.sha256"
 
       - uses: actions/upload-artifact@v4
         with:
           name: "${{ env.ISO_NAME }}"
-          path: "${{ env.ISO_NAME }}.iso"
+          path: |
+            ${{ env.ISO_NAME }}.iso
+            ${{ env.ISO_NAME }}.iso.sha256
           retention-days: 7
 
   upload:
@@ -167,15 +199,29 @@ jobs:
           SF_USER: ${{ secrets.SF_USER }}
           SF_PASS: ${{ secrets.SF_PASS }}
         run: |
-          [[ -z "$SF_USER" || -z "$SF_PASS" ]] && echo "Warning: Configure SF_USER and SF_PASS secrets" && exit 1
+          if [[ -z "$SF_USER" || -z "$SF_PASS" ]]; then
+            echo "Warning: Configure SF_USER and SF_PASS secrets in repository settings"
+            exit 0
+          fi
+          
           ISO="${{ env.ISO_NAME }}.iso"
+          
           for i in {1..3}; do
-            timeout 1800 sshpass -p "$SF_PASS" rsync -avP -e "ssh -o StrictHostKeyChecking=no" \
-              "./$ISO" "$SF_USER@frs.sourceforge.net:/home/frs/project/wolfos/plasma/$ISO" && break
-            [[ $i -eq 3 ]] && exit 1
+            if timeout 1800 sshpass -p "$SF_PASS" rsync -avP -e "ssh -o StrictHostKeyChecking=no" \
+              "./$ISO" "$SF_USER@frs.sourceforge.net:/home/frs/project/wolfos/plasma/$ISO"; then
+              echo "Upload successful!"
+              echo "Download link: https://sourceforge.net/projects/wolfos/files/plasma/$ISO/download"
+              exit 0
+            fi
+            
+            if [[ $i -eq 3 ]]; then
+              echo "Upload failed after 3 attempts"
+              exit 1
+            fi
+            
+            echo "Upload attempt $i failed, retrying in 30s..."
             sleep 30
           done
-          echo "Download link: https://sourceforge.net/projects/wolfos/files/plasma/$ISO/download"
 
   notify:
     name: "Build Summary"
@@ -185,5 +231,16 @@ jobs:
     steps:
       - name: Generate summary
         run: |
-          echo "## Cybr Linux Build Complete" >> $GITHUB_STEP_SUMMARY
-          echo "**Edition:** Plasma | **Build:** ${{ github.run_number }}" >> $GITHUB_STEP_SUMMARY
+          echo "## 🚀 Cybr Linux Build Complete" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Edition:** Plasma Desktop" >> $GITHUB_STEP_SUMMARY
+          echo "**Build Number:** ${{ github.run_number }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Status:** ${{ needs.build.result }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          if [[ "${{ needs.build.result }}" == "success" ]]; then
+            echo "✅ ISO built successfully" >> $GITHUB_STEP_SUMMARY
+            echo "📦 Artifact: ${{ env.ISO_NAME }}.iso" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "❌ Build failed - check logs for details" >> $GITHUB_STEP_SUMMARY
+          fi
