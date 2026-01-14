@@ -63,21 +63,25 @@ jobs:
           konsole
           kate
           firefox
-          calamares
           qt6-virtualkeyboard
-          kcm-wacomtablet
           kscreen
           networkmanager
           pipewire
           pipewire-pulse
           wireplumber
+          xf86-input-wacom
+          iwd
           git
           curl
           wget
+          vim
+          nano
           base-devel
           ttf-liberation
           noto-fonts
           noto-fonts-emoji
+          archinstall
+          gparted
           P
           
           echo "cybr-linux" > airootfs/etc/hostname
@@ -91,7 +95,7 @@ jobs:
           HOME_URL="https://wolfos.uk/"
           O
           
-          mkdir -p airootfs/usr/local/bin airootfs/etc/skel/.config
+          mkdir -p airootfs/usr/local/bin airootfs/etc/skel/.config airootfs/root
           
           cat > airootfs/usr/local/bin/cybr-setup << "S"
           #!/bin/bash
@@ -105,36 +109,10 @@ jobs:
           S
           chmod +x airootfs/usr/local/bin/cybr-setup
           
-          mkdir -p airootfs/etc/calamares/modules
-          cat > airootfs/etc/calamares/settings.conf << "C"
-          ---
-          modules-search: [local]
-          sequence:
-            - show:
-              - welcome
-              - locale
-              - keyboard
-              - partition
-              - users
-              - summary
-            - exec:
-              - partition
-              - mount
-              - unpackfs
-              - machineid
-              - fstab
-              - locale
-              - keyboard
-              - localecfg
-              - users
-              - networkcfg
-              - hwclock
-              - services-systemd
-              - bootloader
-              - umount
-            - show:
-              - finished
-          C
+          echo "#!/bin/bash" > airootfs/root/.bash_profile
+          echo "echo 'Welcome to Cybr Linux!'" >> airootfs/root/.bash_profile
+          echo "echo 'Run: archinstall to start installation'" >> airootfs/root/.bash_profile
+          echo "echo ''" >> airootfs/root/.bash_profile
           
           mkdir -p airootfs/etc/skel/.config/plasma-org.kde.plasma.desktop-appletsrc
           cat > airootfs/etc/skel/.config/kdeglobals << "K"
