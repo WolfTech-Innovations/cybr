@@ -135,17 +135,6 @@ jobs:
           echo "echo 'Run: sudo calamares to start graphical installation'" >> airootfs/root/.bash_profile
           echo "echo ''" >> airootfs/root/.bash_profile
           
-          mkdir -p airootfs/etc/xdg/autostart
-          cat > airootfs/etc/xdg/autostart/calamares.desktop << "DESK"
-          [Desktop Entry]
-          Type=Application
-          Name=Install System
-          Exec=sudo -E calamares
-          Icon=calamares
-          Terminal=false
-          Categories=System;
-          DESK
-          
           mkdir -p airootfs/etc/skel/.config/plasma-org.kde.plasma.desktop-appletsrc
           cat > airootfs/etc/skel/.config/kdeglobals << "K"
           [KDE]
