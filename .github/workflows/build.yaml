@@ -15,8 +15,6 @@ jobs:
     timeout-minutes: 180
     steps:
       - uses: actions/checkout@v4
-      - name: Free disk space
-        run: sudo rm -rf /usr/{share/dotnet,local/lib/android} /opt/{ghc,hostedtoolcache}
       - uses: docker/setup-buildx-action@v3
       - name: Build ISO
         run: |
@@ -45,15 +43,55 @@ jobs:
           pacman -Sy --noconfirm
           
           # Core packages
-          cat > packages.x86_64 <<PKGS
-          linux-lts linux-firmware base base-devel syslinux edk2-shell memtest86+ memtest86+-efi
-          mkinitcpio mkinitcpio-archiso arch-install-scripts pacman-contrib archlinux-contrib
-          plasma-desktop plasma-workspace plasma-nm plasma-pa sddm dolphin konsole kate firefox
-          kscreen networkmanager pipewire pipewire-pulse pipewire-jack pipewire-alsa wireplumber
-          git curl wget xmlstarlet vim nano ttf-liberation noto-fonts noto-fonts-emoji
-          gparted ntfs-3g dosfstools exfatprogs xf86-input-wacom iwd
-          kvantum latte-dock papirus-icon-theme
-          PKGS
+          cat > packages.x86_64 <<'PKGS'
+linux-lts
+linux-firmware
+base
+base-devel
+syslinux
+edk2-shell
+memtest86+
+memtest86+-efi
+mkinitcpio
+mkinitcpio-archiso
+arch-install-scripts
+pacman-contrib
+archlinux-contrib
+plasma-desktop
+plasma-workspace
+plasma-nm
+plasma-pa
+sddm
+dolphin
+konsole
+kate
+firefox
+kscreen
+networkmanager
+pipewire
+pipewire-pulse
+pipewire-jack
+pipewire-alsa
+wireplumber
+git
+curl
+wget
+xmlstarlet
+vim
+nano
+ttf-liberation
+noto-fonts
+noto-fonts-emoji
+gparted
+ntfs-3g
+dosfstools
+exfatprogs
+xf86-input-wacom
+iwd
+kvantum
+latte-dock
+papirus-icon-theme
+PKGS
           
           # OS Release
           mkdir -p airootfs/etc
