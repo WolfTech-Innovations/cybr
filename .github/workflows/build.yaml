@@ -48,12 +48,27 @@ jobs:
           echo "Building Cybr Linux..."
           cp -r /usr/share/archiso/configs/releng /build/cybr && cd /build/cybr
           
-          sed -i "/\[core\]/i [alci_repo]\nSigLevel = Optional TrustAll\nServer = https://arch-linux-calamares-installer.github.io/\\\$repo/\\\$arch\n" pacman.conf
+          # Initialize and populate the Pacman keyring
+          pacman-key --init
+          pacman-key --populate archlinux
           
-          sed -i "/\[core\]/i [blackarch]\nSigLevel = Optional TrustAll\nServer = https://www.mirrorservice.org/sites/blackarch.org/blackarch/\\\$repo/os/\\\$arch\n" pacman.conf
+          # Import and sign the BlackArch key (required before adding the repo)
+          pacman-key --recv-keys F9A6E68A711354D84A9B91637533BAFE69A25079
+          pacman-key --lsign-key F9A6E68A711354D84A9B91637533BAFE69A25079
           
+          # Add ALCI repo (for Calamares installer)
+          sed -i "/\$core\$/i [alci_repo]\nSigLevel = Optional TrustAll\nServer = https://arch-linux-calamares-installer.github.io/\\\$repo/\\\$arch\n" pacman.conf
+          
+          # Add BlackArch repo
+          sed -i "/\$core\$/i [blackarch]\nSigLevel = Optional TrustAll\nServer = https://www.mirrorservice.org/sites/blackarch.org/blackarch/\\\$repo/os/\\\$arch\n" pacman.conf
+          
+          # Enable parallel downloads
           sed -i "s/#ParallelDownloads/ParallelDownloads/" pacman.conf
           
+          # Sync Pacman databases after repo changes
+          pacman -Sy
+          
+          # Define packages (removed invalid plasma-framework)
           cat > packages.x86_64 << "P"
           linux-lts
           syslinux
@@ -62,7 +77,6 @@ jobs:
           memtest86+-efi
           mkinitcpio
           calamares
-          plasma-framework
           blackarch-keyring
           plasma-desktop
           plasma-workspace
