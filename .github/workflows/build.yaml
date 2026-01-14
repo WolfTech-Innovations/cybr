@@ -136,7 +136,7 @@ jobs:
           echo "echo ''" >> airootfs/root/.bash_profile
           
           mkdir -p airootfs/etc/xdg/autostart
-          cat > airootfs/etc/xdg/autostart/calamares.desktop << "D"
+          cat > airootfs/etc/xdg/autostart/calamares.desktop << "DESK"
           [Desktop Entry]
           Type=Application
           Name=Install System
@@ -144,7 +144,7 @@ jobs:
           Icon=calamares
           Terminal=false
           Categories=System;
-          D
+          DESK
           
           mkdir -p airootfs/etc/skel/.config/plasma-org.kde.plasma.desktop-appletsrc
           cat > airootfs/etc/skel/.config/kdeglobals << "K"
