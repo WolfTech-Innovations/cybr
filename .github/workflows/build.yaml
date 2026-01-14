@@ -1,13 +1,6 @@
 name: "Cybr Linux - Dawn Light Shines Upon the Arches (Plasma Edition)"
 on:
   workflow_dispatch:
-    inputs:
-      build_variant:
-        description: "Build variant"
-        required: false
-        default: "standard"
-        type: choice
-        options: ["minimal", "standard", "full"]
   push:
     branches: [main, develop]
   schedule:
@@ -15,163 +8,251 @@ on:
 
 env:
   ISO_NAME: "cybr-arch-plasma-v${{ github.run_number }}"
-  BUILD_VERSION: ${{ github.run_number }}
 
 jobs:
   build:
-    name: "Build Cybr Arch Linux (Plasma)"
     runs-on: ubuntu-latest
     timeout-minutes: 180
-
     steps:
       - uses: actions/checkout@v4
-      
-      - name: Free up disk space
-        run: |
-          sudo rm -rf /usr/{share/dotnet,local/lib/android} /opt/{ghc,hostedtoolcache}
-          sudo apt-get clean && df -h
-      
+      - name: Free disk space
+        run: sudo rm -rf /usr/{share/dotnet,local/lib/android} /opt/{ghc,hostedtoolcache}
       - uses: docker/setup-buildx-action@v3
-      
-      - name: Build Docker image
+      - name: Build ISO
         run: |
-          cat << 'EOF' | docker build -t cybr-arch-builder -
+          docker build -t builder - <<'DOCKERFILE'
           FROM archlinux:latest
           RUN pacman -Syu --noconfirm && pacman -S --noconfirm archiso git && pacman -Scc --noconfirm
           WORKDIR /build
-          EOF
-
-      - name: Build Cybr Linux ISO
-        run: |
-          docker run --rm --privileged -v $PWD:/workspace -e ISO_NAME="${{ env.ISO_NAME }}" cybr-arch-builder bash -c '
+          DOCKERFILE
+          
+          docker run --rm --privileged -v $PWD:/workspace -e ISO_NAME="${{ env.ISO_NAME }}" builder bash -c '
           set -euo pipefail
-          echo "Building Cybr Linux..."
           cp -r /usr/share/archiso/configs/releng /build/cybr && cd /build/cybr
           
-          # Initialize and populate the Pacman keyring
-          pacman-key --init
-          pacman-key --populate archlinux
+          # Setup keyrings
+          pacman-key --init && pacman-key --populate archlinux
+          curl -O https://blackarch.org/keyring/blackarch-keyring.pkg.tar.zst
+          pacman --config /dev/null --noconfirm -U blackarch-keyring.pkg.tar.zst
+          pacman-key --populate blackarch
           
-          # Add ALCI repo FIRST (for Calamares installer)
-          cat >> pacman.conf << "REPOS"
-
-[alci_repo]
-SigLevel = Optional TrustAll
-Server = https://arch-linux-calamares-installer.github.io/\$repo/\$arch
-
-[blackarch]
-SigLevel = Optional TrustAll
-Server = https://www.mirrorservice.org/sites/blackarch.org/blackarch/\$repo/os/\$arch
-REPOS
-          
-          # Enable parallel downloads
-          sed -i "s/#ParallelDownloads = 5/ParallelDownloads = 5/" pacman.conf
-          
-          # Update databases with new repos
+          # Configure repos
+          cat >> pacman.conf <<REPOS
+          ParallelDownloads = 5
+          [blackarch]
+          Include = /etc/pacman.d/blackarch-mirrorlist
+          REPOS
+          mkdir -p /etc/pacman.d
+          echo "Server = https://www.mirrorservice.org/sites/blackarch.org/blackarch/\\\$repo/os/\\\$arch" > /etc/pacman.d/blackarch-mirrorlist
           pacman -Sy --noconfirm
           
-          # Import BlackArch keyring separately first
-          pacman -S --noconfirm --needed wget
-          wget https://blackarch.org/keyring/blackarch-keyring.pkg.tar.xz
-          pacman -U --noconfirm blackarch-keyring.pkg.tar.xz || true
+          # Core packages
+          cat > packages.x86_64 <<PKGS
+          linux-lts linux-firmware base base-devel syslinux edk2-shell memtest86+ memtest86+-efi
+          mkinitcpio mkinitcpio-archiso arch-install-scripts pacman-contrib archlinux-contrib
+          plasma-desktop plasma-workspace plasma-nm plasma-pa sddm dolphin konsole kate firefox
+          kscreen networkmanager pipewire pipewire-pulse pipewire-jack pipewire-alsa wireplumber
+          git curl wget xmlstarlet vim nano ttf-liberation noto-fonts noto-fonts-emoji
+          gparted ntfs-3g dosfstools exfatprogs xf86-input-wacom iwd
+          kvantum latte-dock papirus-icon-theme
+          PKGS
           
-          # Define core packages (removed problematic ones)
-          cat > packages.x86_64 << "PKGS"
-linux-lts
-linux-firmware
-base
-base-devel
-syslinux
-edk2-shell
-memtest86+
-memtest86+-efi
-mkinitcpio
-mkinitcpio-archiso
-plasma-desktop
-plasma-workspace
-plasma-nm
-plasma-pa
-sddm
-dolphin
-konsole
-kate
-firefox
-kscreen
-networkmanager
-pipewire
-pipewire-pulse
-pipewire-jack
-pipewire-alsa
-wireplumber
-xf86-input-wacom
-iwd
-git
-curl
-wget
-vim
-nano
-ttf-liberation
-noto-fonts
-noto-fonts-emoji
-gparted
-ntfs-3g
-dosfstools
-exfatprogs
-PKGS
-
-          # Add Calamares separately if available
-          echo "calamares" >> packages.x86_64 || echo "Warning: Calamares not available"
-          
-          # Configure hostname
-          echo "cybr-linux" > airootfs/etc/hostname
-          
-          # Create OS release file
+          # OS Release
           mkdir -p airootfs/etc
-          cat > airootfs/etc/os-release << "OSREL"
-NAME="Cybr Linux"
-PRETTY_NAME="Cybr Linux - Dawn Light Shines Upon the Arches"
-ID=cybr
-ID_LIKE=arch
-BUILD_ID=rolling
-ANSI_COLOR="38;2;23;147;209"
-HOME_URL="https://wolfos.uk/"
-LOGO=archlinux-logo
-OSREL
+          cat > airootfs/etc/os-release <<OS
+          NAME="Cybr Linux"
+          PRETTY_NAME="Cybr Linux - Dawn Light Shines Upon the Arches"
+          ID=cybr
+          ID_LIKE=arch
+          BUILD_ID=rolling
+          ANSI_COLOR="38;2;23;147;209"
+          HOME_URL="https://wolfos.uk/"
+          LOGO=archlinux-logo
+          OS
+          
+          # Auto-update service
+          mkdir -p airootfs/etc/systemd/system
+          cat > airootfs/etc/systemd/system/cybr-autoupdate.service <<SVC
+          [Unit]
+          Description=Cybr Auto Update
+          After=network-online.target
+          ConditionACPower=true
+          [Service]
+          Type=oneshot
+          Nice=19
+          IOSchedulingClass=idle
+          ExecStart=/usr/local/bin/cybr-autoupdate.sh
+          TimeoutSec=3600
+          [Install]
+          WantedBy=multi-user.target
+          SVC
+          
+          cat > airootfs/etc/systemd/system/cybr-autoupdate.timer <<TMR
+          [Unit]
+          Description=Cybr Auto Update Timer
+          [Timer]
+          OnCalendar=daily
+          OnCalendar=03:00
+          RandomizedDelaySec=30min
+          Persistent=true
+          [Install]
+          WantedBy=timers.target
+          TMR
+          
+          # Auto-update script
+          mkdir -p airootfs/usr/local/bin
+          cat > airootfs/usr/local/bin/cybr-autoupdate.sh <<"SCRIPT"
+          #!/bin/bash
+          LOG="/var/log/cybr-autoupdate.log"
+          LOCK="/var/run/cybr-autoupdate.lock"
+          log() { echo "[$(date +"%Y-%m-%d %H:%M:%S")] $1" | tee -a "$LOG"; }
+          
+          [[ -f "$LOCK" && $(($(date +%s)-$(stat -c %Y "$LOCK" 2>/dev/null||echo 0))) -lt 86400 ]] && log "Update running" && exit 1
+          [[ -f "$LOCK" ]] && rm -f "$LOCK"
+          touch "$LOCK" && trap "rm -f $LOCK" EXIT INT TERM
+          
+          log "========== Cybr Auto-Update =========="
+          ping -c1 -W5 archlinux.org &>/dev/null || { log "No network"; exit 1; }
+          
+          # Check Arch news
+          mkdir -p /var/cache/cybr
+          if curl -sm30 https://archlinux.org/feeds/news/ -o /tmp/news.rss; then
+            LATEST=$(xmlstarlet sel -t -m "//item[1]" -v "pubDate" /tmp/news.rss 2>/dev/null)
+            [[ -f /var/cache/cybr/last-news && "$LATEST" == "$(cat /var/cache/cybr/last-news)" ]] || {
+              log "=== Arch News ===" && xmlstarlet sel -t -m "//item[position()<=3]" -n -o "• " -v "title" -n /tmp/news.rss 2>/dev/null | tee -a "$LOG"
+              echo "$LATEST" > /var/cache/cybr/last-news
+            }
+            rm -f /tmp/news.rss
+          fi
+          
+          log "Updating keyring..." && pacman -Sy --noconfirm --needed archlinux-keyring 2>&1 | tee -a "$LOG"
+          UPDATES=$(checkupdates 2>/dev/null)
+          COUNT=$(echo "$UPDATES"|grep -cv "^$")
+          [[ $COUNT -eq 0 ]] && log "Up to date" && exit 0
+          log "Found $COUNT updates" && echo "$UPDATES"|tee -a "$LOG"
+          pacman -Su --noconfirm 2>&1|tee -a "$LOG" || { log "Update failed"; exit 1; }
+          
+          PACNEW=$(find /etc -name "*.pacnew" -o -name "*.pacsave" 2>/dev/null)
+          [[ -n "$PACNEW" ]] && log "Config files need review:" && echo "$PACNEW"|tee -a "$LOG"
+          paccache -rk3 2>&1|tee -a "$LOG"
+          [[ ! -f /usr/lib/modules/$(uname -r) ]] && log "WARNING: Reboot recommended (kernel updated)"
+          log "Update complete"
+          SCRIPT
+          chmod +x airootfs/usr/local/bin/cybr-autoupdate.sh
+          
+          # UI Customization setup script
+          mkdir -p airootfs/usr/local/bin
+          cat > airootfs/usr/local/bin/setup-modern-ui.sh <<"UISCRIPT"
+          #!/bin/bash
+          # Cybr Modern UI Setup
+          echo "Setting up modern UI with rounded corners and blur effects..."
+          
+          # Build and install KDE Rounded Corners
+          cd /tmp
+          git clone https://github.com/matinlotfali/KDE-Rounded-Corners
+          cd KDE-Rounded-Corners
+          mkdir build && cd build
+          cmake .. -DCMAKE_INSTALL_PREFIX=/usr
+          make -j$(nproc)
+          sudo make install
+          
+          # Build Better Blur effect
+          cd /tmp
+          git clone https://github.com/taj-ny/kwin-effects-forceblur
+          cd kwin-effects-forceblur
+          mkdir build && cd build
+          cmake .. -DCMAKE_INSTALL_PREFIX=/usr
+          make -j$(nproc)
+          sudo make install
+          
+          # Apply Layan theme (modern rounded theme)
+          mkdir -p ~/.local/share/plasma/desktoptheme
+          cd ~/.local/share/plasma/desktoptheme
+          git clone https://github.com/vinceliuice/Layan-kde
+          
+          # Configure Kvantum with Layan
+          mkdir -p ~/.config/Kvantum
+          cd /tmp
+          git clone https://github.com/vinceliuice/Layan-kde
+          cp -r Layan-kde/kvantum/* ~/.config/Kvantum/
+          
+          # Enable effects
+          kwriteconfig5 --file kwinrc --group Plugins --key kwin4_effect_shapecornersEnabled true
+          kwriteconfig5 --file kwinrc --group Plugins --key blurEnabled true
+          kwriteconfig5 --file kwinrc --group Effect-Blur --key BlurStrength 8
+          
+          # Configure Latte Dock
+          kwriteconfig5 --file lattedockrc --group UniversalSettings --key launchers "applications:org.kde.dolphin.desktop,applications:firefox.desktop,applications:org.kde.konsole.desktop"
+          
+          # Restart KWin
+          kwin_x11 --replace &
+          
+          echo "Modern UI setup complete! Restart your session for full effect."
+          echo "To customize further:"
+          echo "  - System Settings > Workspace Behavior > Desktop Effects"
+          echo "  - Right-click Latte Dock > Configure Latte"
+          echo "  - Kvantum Manager for transparency settings"
+          UISCRIPT
+          chmod +x airootfs/usr/local/bin/setup-modern-ui.sh
+          
+          # Installation helper
+          cat > airootfs/root/install-cybr.sh <<"INSTALL"
+          #!/bin/bash
+          cat <<INFO
+          ╔════════════════════════════════════════════╗
+          ║   Cybr Linux Installation Helper          ║
+          ║   Dawn Light Shines Upon the Arches       ║
+          ╚════════════════════════════════════════════╝
+          
+          Quick Install Steps:
+            1. cfdisk /dev/sdX          # Partition disk
+            2. mkfs.ext4 /dev/sdX1      # Format partition
+            3. mount /dev/sdX1 /mnt     # Mount
+            4. pacstrap /mnt base linux # Install base
+            5. genfstab -U /mnt >> /mnt/etc/fstab
+            6. arch-chroot /mnt         # Enter system
+            7. Configure & install bootloader
+          
+          Or use: archinstall (automated installer)
+          
+          Modern UI Features:
+            • Rounded corners on all windows
+            • Advanced blur effects with anti-aliasing
+            • Latte Dock for Mac-like experience
+            • Kvantum theme engine for customization
+            • Layan modern theme pre-configured
+          
+          After installation, run:
+            /usr/local/bin/setup-modern-ui.sh
+          
+          Auto-Update (enabled by default):
+            • Checks Arch news before updates
+            • Updates daily at 3 AM
+            • Runs on AC power only
+            • View: journalctl -u cybr-autoupdate
+          INFO
+          read -p "Press Enter..."
+          INSTALL
+          chmod +x airootfs/root/install-cybr.sh
           
           # Enable services
-          mkdir -p airootfs/etc/systemd/system/multi-user.target.wants
-          mkdir -p airootfs/etc/systemd/system/graphical.target.wants
+          mkdir -p airootfs/etc/systemd/system/{multi-user.target.wants,timers.target.wants}
           ln -sf /usr/lib/systemd/system/sddm.service airootfs/etc/systemd/system/display-manager.service
           ln -sf /usr/lib/systemd/system/NetworkManager.service airootfs/etc/systemd/system/multi-user.target.wants/
-          
-          # Configure compression
-          sed -i "s/airootfs_image_type=\"squashfs\"/airootfs_image_type=\"squashfs\"\nairootfs_image_tool_options=(\"-comp\" \"xz\" \"-Xbcj\" \"x86\" \"-b\" \"1M\" \"-Xdict-size\" \"1M\")/" profiledef.sh
+          ln -sf /etc/systemd/system/cybr-autoupdate.timer airootfs/etc/systemd/system/timers.target.wants/
           
           # Build ISO
+          sed -i "s/airootfs_image_type=\"squashfs\"/airootfs_image_type=\"squashfs\"\nairootfs_image_tool_options=(\"-comp\" \"xz\" \"-Xbcj\" \"x86\" \"-b\" \"1M\" \"-Xdict-size\" \"1M\")/" profiledef.sh
           mkarchiso -v -w /tmp/work -o /tmp/out .
-          
-          # Move ISO to workspace
           mv /tmp/out/*.iso /workspace/${ISO_NAME}.iso
-          ls -lh /workspace/${ISO_NAME}.iso
-          echo "ISO: ${ISO_NAME}.iso created successfully"
           '
-
-      - name: Verify ISO and generate checksums
-        id: verify
+      
+      - name: Generate checksums
         run: |
-          ISO="${{ env.ISO_NAME }}.iso"
-          if [[ ! -f "$ISO" ]]; then
-            echo "Error: ISO file not found"
-            exit 1
-          fi
-          SIZE_MB=$(($(stat -c%s "$ISO")/1024/1024))
-          SHA256=$(sha256sum "$ISO"|cut -d" " -f1)
-          echo "size_mb=$SIZE_MB" >> $GITHUB_OUTPUT
-          echo "sha256=$SHA256" >> $GITHUB_OUTPUT
+          sha256sum "${{ env.ISO_NAME }}.iso" > "${{ env.ISO_NAME }}.iso.sha256"
+          SIZE_MB=$(($(stat -c%s "${{ env.ISO_NAME }}.iso")/1024/1024))
           echo "ISO Size: ${SIZE_MB}MB"
-          echo "SHA256: $SHA256"
-          sha256sum "$ISO" > "${ISO}.sha256"
-
+      
       - uses: actions/upload-artifact@v4
         with:
           name: "${{ env.ISO_NAME }}"
@@ -181,66 +262,23 @@ OSREL
           retention-days: 7
 
   upload:
-    name: "Upload to SourceForge"
     runs-on: ubuntu-latest
     needs: build
     if: github.event_name == 'workflow_dispatch' || github.ref == 'refs/heads/main'
-    timeout-minutes: 30
     steps:
       - uses: actions/download-artifact@v4
         with:
           name: "${{ env.ISO_NAME }}"
-      
-      - name: Install rsync and sshpass
-        run: sudo apt-get update && sudo apt-get install -y sshpass rsync
-      
       - name: Upload to SourceForge
         env:
           SF_USER: ${{ secrets.SF_USER }}
           SF_PASS: ${{ secrets.SF_PASS }}
         run: |
-          if [[ -z "$SF_USER" || -z "$SF_PASS" ]]; then
-            echo "Warning: Configure SF_USER and SF_PASS secrets in repository settings"
-            exit 0
-          fi
-          
-          ISO="${{ env.ISO_NAME }}.iso"
-          
+          [[ -z "$SF_USER" || -z "$SF_PASS" ]] && echo "Configure SF secrets" && exit 0
+          sudo apt-get update && sudo apt-get install -y sshpass rsync
           for i in {1..3}; do
-            if timeout 1800 sshpass -p "$SF_PASS" rsync -avP -e "ssh -o StrictHostKeyChecking=no" \
-              "./$ISO" "$SF_USER@frs.sourceforge.net:/home/frs/project/wolfos/plasma/$ISO"; then
-              echo "Upload successful!"
-              echo "Download link: https://sourceforge.net/projects/wolfos/files/plasma/$ISO/download"
-              exit 0
-            fi
-            
-            if [[ $i -eq 3 ]]; then
-              echo "Upload failed after 3 attempts"
-              exit 1
-            fi
-            
-            echo "Upload attempt $i failed, retrying in 30s..."
+            timeout 1800 sshpass -p "$SF_PASS" rsync -avP -e "ssh -o StrictHostKeyChecking=no" \
+              "${{ env.ISO_NAME }}.iso" "$SF_USER@frs.sourceforge.net:/home/frs/project/wolfos/plasma/" && break
+            [[ $i -eq 3 ]] && exit 1
             sleep 30
           done
-
-  notify:
-    name: "Build Summary"
-    runs-on: ubuntu-latest
-    needs: [build, upload]
-    if: always()
-    steps:
-      - name: Generate summary
-        run: |
-          echo "## 🚀 Cybr Linux Build Complete" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**Edition:** Plasma Desktop" >> $GITHUB_STEP_SUMMARY
-          echo "**Build Number:** ${{ github.run_number }}" >> $GITHUB_STEP_SUMMARY
-          echo "**Status:** ${{ needs.build.result }}" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          
-          if [[ "${{ needs.build.result }}" == "success" ]]; then
-            echo "✅ ISO built successfully" >> $GITHUB_STEP_SUMMARY
-            echo "📦 Artifact: ${{ env.ISO_NAME }}.iso" >> $GITHUB_STEP_SUMMARY
-          else
-            echo "❌ Build failed - check logs for details" >> $GITHUB_STEP_SUMMARY
-          fi
