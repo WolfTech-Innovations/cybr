@@ -65,7 +65,6 @@ jobs:
           xf86-input-wacom
           iwd
           kvantum
-          latte-dock
           papirus-icon-theme
           PKGS
       
@@ -222,16 +221,18 @@ jobs:
           kwriteconfig5 --file kwinrc --group Plugins --key blurEnabled true
           kwriteconfig5 --file kwinrc --group Effect-Blur --key BlurStrength 8
           
-          # Configure Latte Dock
-          kwriteconfig5 --file lattedockrc --group UniversalSettings --key launchers "applications:org.kde.dolphin.desktop,applications:firefox.desktop,applications:org.kde.konsole.desktop"
+          # Configure Plasma panel for modern dock-like appearance
+          kwriteconfig5 --file plasmashellrc --group PlasmaViews --group Panel\ 2 --key floating 1
+          kwriteconfig5 --file plasmashellrc --group PlasmaViews --group Panel\ 2 --key alignment 132
           
-          # Restart KWin
+          # Restart KWin and Plasma Shell
           kwin_x11 --replace &
+          plasmashell --replace &
           
           echo "Modern UI setup complete! Restart your session for full effect."
           echo "To customize further:"
           echo "  - System Settings > Workspace Behavior > Desktop Effects"
-          echo "  - Right-click Latte Dock > Configure Latte"
+          echo "  - Right-click panel > Configure Panel (set to floating and centered)"
           echo "  - Kvantum Manager for transparency settings"
           UISCRIPT
           chmod +x airootfs/usr/local/bin/setup-modern-ui.sh
