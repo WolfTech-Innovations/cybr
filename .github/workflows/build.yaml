@@ -1,5 +1,4 @@
 name: "Cybr Linux - Dawn Light Shines Upon the Arches (Plasma Edition)"
-
 on:
   workflow_dispatch:
     inputs:
@@ -25,299 +24,134 @@ jobs:
     timeout-minutes: 180
 
     steps:
-      - name: "Checkout"
-        uses: actions/checkout@v4
-
-      - name: "Free Disk Space"
-        run: |
-          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache
-          sudo apt-get clean
-          df -h
-
-      - name: "Setup Docker Buildx"
-        uses: docker/setup-buildx-action@v3
-
-      - name: "Create Arch Build Container"
-        run: |
-          cat > Dockerfile << 'EOF'
+      - uses: actions/checkout@v4
+      - run: |
+          sudo rm -rf /usr/{share/dotnet,local/lib/android} /opt/{ghc,hostedtoolcache}
+          sudo apt-get clean && df -h
+      - uses: docker/setup-buildx-action@v3
+      - run: docker build -t cybr-arch-builder - << 'EOF'
           FROM archlinux:latest
-          
-          RUN pacman -Syu --noconfirm && \
-              pacman -S --noconfirm archiso git curl wget base-devel && \
-              pacman -Scc --noconfirm
-          
+          RUN pacman -Syu --noconfirm && pacman -S --noconfirm archiso git && pacman -Scc --noconfirm
           WORKDIR /build
           EOF
-          
-          docker build -t cybr-arch-builder .
 
-      - name: "Build Cybr Linux ISO"
-        run: |
-          docker run --rm --privileged \
-            -v $PWD:/workspace \
-            -e ISO_NAME="${{ env.ISO_NAME }}" \
-            cybr-arch-builder \
-            bash -c '
-              set -euo pipefail
-              
-              echo "═══════════════════════════════════════════════"
-              echo "  🌅 Dawn light shines upon the arches..."
-              echo "  Building Cybr Linux with KDE Plasma"
-              echo "═══════════════════════════════════════════════"
-              
-              cp -r /usr/share/archiso/configs/releng /build/cybr
-              cd /build/cybr
-              
-              cat >> packages.x86_64 << "PKGS"
-          linux
-          linux-headers
+      - run: |
+          docker run --rm --privileged -v $PWD:/workspace -e ISO_NAME="${{ env.ISO_NAME }}" cybr-arch-builder bash -c '
+          set -euo pipefail
+          echo "🌅 Building Cybr Linux..."
+          cp -r /usr/share/archiso/configs/releng /build/cybr && cd /build/cybr
+          
+          cat > packages.x86_64 << "P"
+          linux-lts
           plasma-desktop
           plasma-workspace
           plasma-nm
           plasma-pa
-          powerdevil
-          bluedevil
-          kde-gtk-config
-          breeze-gtk
-          kscreen
-          kinfocenter
-          plasma-systemmonitor
-          spectacle
+          sddm
           dolphin
           konsole
           kate
-          gwenview
-          okular
-          ark
-          filelight
-          kcalc
-          partitionmanager
-          sddm
-          sddm-kcm
           firefox
-          xorg-server
-          xorg-xwayland
-          wayland
-          egl-wayland
+          calamares
+          qt6-virtualkeyboard
+          kcm-wacomtablet
+          kscreen
+          networkmanager
           pipewire
           pipewire-pulse
-          pipewire-alsa
-          pipewire-jack
           wireplumber
-          networkmanager
-          bluez
-          bluez-utils
-          htop
-          btop
           git
           curl
           wget
-          rsync
-          unzip
-          zip
           base-devel
-          nodejs
-          npm
-          python
-          python-pip
-          ttf-dejavu
           ttf-liberation
-          ttf-font-awesome
-          ttf-jetbrains-mono
-          ttf-jetbrains-mono-nerd
           noto-fonts
           noto-fonts-emoji
-          noto-fonts-cjk
-          papirus-icon-theme
-          kvantum
-          qt5ct
-          qt6ct
-          imagemagick
-          jq
-          bc
-          coreutils
-          PKGS
-              
-              echo "cybr-linux" > airootfs/etc/hostname
-              
-              cat > airootfs/etc/os-release << "OS"
+          P
+          
+          echo "cybr-linux" > airootfs/etc/hostname
+          
+          cat > airootfs/etc/os-release << "O"
           NAME="Cybr Linux"
-          PRETTY_NAME="Cybr Linux - Dawn Light Shines Upon the Arches (Plasma Edition)"
+          PRETTY_NAME="Cybr Linux - Dawn Light Shines Upon the Arches"
           ID=cybr
           ID_LIKE=arch
           BUILD_ID=rolling
-          ANSI_COLOR="38;2;23;147;209"
           HOME_URL="https://wolfos.uk/"
-          SUPPORT_URL="https://wolfos.uk/"
-          BUG_REPORT_URL="https://wolfos.uk/"
-          LOGO=cybr
-          OS
-              
-              mkdir -p airootfs/usr/local/bin
-              mkdir -p airootfs/etc/skel/.config
-              
-              cat > airootfs/usr/local/bin/setup-blackarch << "BA"
+          O
+          
+          mkdir -p airootfs/usr/local/bin airootfs/etc/skel/.config
+          
+          cat > airootfs/usr/local/bin/cybr-setup << "S"
           #!/bin/bash
-          set -e
           cd /tmp
-          curl -O https://blackarch.org/strap.sh
-          chmod +x strap.sh
-          sudo ./strap.sh
-          rm strap.sh
-          sudo pacman -Sy
-          BA
-              chmod +x airootfs/usr/local/bin/setup-blackarch
-              
-              curl -fsSL https://raw.githubusercontent.com/WolfTech-Innovations/Neo/main/lb-hooks/0201-Neo.chroot \
-                -o airootfs/usr/local/bin/neo-enhancements 2>/dev/null || echo "Neo hook optional"
-              chmod +x airootfs/usr/local/bin/neo-enhancements 2>/dev/null || true
-              
-              cat > airootfs/usr/local/bin/install-dracula-theme << "DRACULA"
-          #!/bin/bash
-          set -e
-
-          mkdir -p ~/.local/share/plasma/desktoptheme
-          mkdir -p ~/.local/share/plasma/look-and-feel
-          mkdir -p ~/.local/share/color-schemes
-          mkdir -p ~/.local/share/aurorae/themes
-          mkdir -p ~/.local/share/konsole
-          mkdir -p ~/.config/Kvantum
-
-          cd /tmp
-          git clone --depth=1 https://github.com/dracula/kde.git dracula-kde 2>/dev/null || true
-          if [ -d dracula-kde ]; then
-            cp -r dracula-kde/plasma/* ~/.local/share/plasma/desktoptheme/ 2>/dev/null || true
-            cp -r dracula-kde/color-schemes/* ~/.local/share/color-schemes/ 2>/dev/null || true
-            cp -r dracula-kde/aurorae/* ~/.local/share/aurorae/themes/ 2>/dev/null || true
-            rm -rf dracula-kde
-          fi
-
-          git clone --depth=1 https://github.com/dracula/konsole.git dracula-konsole 2>/dev/null || true
-          if [ -d dracula-konsole ]; then
-            cp dracula-konsole/Dracula.colorscheme ~/.local/share/konsole/ 2>/dev/null || true
-            rm -rf dracula-konsole
-          fi
-
-          git clone --depth=1 https://github.com/dracula/kvantum.git dracula-kvantum 2>/dev/null || true
-          if [ -d dracula-kvantum ]; then
-            cp -r dracula-kvantum/Dracula* ~/.config/Kvantum/ 2>/dev/null || true
-            rm -rf dracula-kvantum
-          fi
-
-          cat > ~/.config/Kvantum/kvantum.kvconfig << "KVANTUM"
+          git clone --depth=1 https://github.com/vinceliuice/McMojave-kde.git && cd McMojave-kde && ./install.sh
+          cd /tmp && git clone --depth=1 https://github.com/vinceliuice/ChromeOS-kde.git && cd ChromeOS-kde && ./install.sh
+          kwriteconfig5 --file kdeglobals --group General --key ColorScheme McMojave
+          kwriteconfig5 --file kdeglobals --group KDE --key widgetStyle Breeze
+          plasma-apply-colorscheme McMojave
+          S
+          chmod +x airootfs/usr/local/bin/cybr-setup
+          
+          mkdir -p airootfs/etc/calamares/modules
+          cat > airootfs/etc/calamares/settings.conf << "C"
+          ---
+          modules-search: [local]
+          sequence:
+            - show:
+              - welcome
+              - locale
+              - keyboard
+              - partition
+              - users
+              - summary
+            - exec:
+              - partition
+              - mount
+              - unpackfs
+              - machineid
+              - fstab
+              - locale
+              - keyboard
+              - localecfg
+              - users
+              - networkcfg
+              - hwclock
+              - services-systemd
+              - bootloader
+              - umount
+            - show:
+              - finished
+          C
+          
+          mkdir -p airootfs/etc/skel/.config/plasma-org.kde.plasma.desktop-appletsrc
+          cat > airootfs/etc/skel/.config/kdeglobals << "K"
+          [KDE]
+          SingleClick=false
           [General]
-          theme=Dracula
-          KVANTUM
+          ColorScheme=Breeze
+          K
+          
+          ln -sf /usr/lib/systemd/system/sddm.service airootfs/etc/systemd/system/display-manager.service
+          ln -sf /usr/lib/systemd/system/NetworkManager.service airootfs/etc/systemd/system/multi-user.target.wants/
+          
+          sed -i "s/airootfs_image_type=\"squashfs\"/airootfs_image_type=\"squashfs\"\nairootfs_image_tool_options=(\"-comp\" \"xz\" \"-Xbcj\" \"x86\" \"-b\" \"1M\" \"-Xdict-size\" \"1M\")/" profiledef.sh
+          
+          mkarchiso -v -w /tmp/work -o /tmp/out .
+          mv /tmp/out/*.iso /workspace/${ISO_NAME}.iso
+          echo "ISO: ${ISO_NAME}.iso created"
+          '
 
-          kwriteconfig5 --file ~/.config/kdeglobals --group General --key ColorScheme Dracula
-          kwriteconfig5 --file ~/.config/kwinrc --group org.kde.kdecoration2 --key theme Dracula
-          plasma-apply-desktoptheme Dracula 2>/dev/null || true
-          plasma-apply-colorscheme Dracula 2>/dev/null || true
-          kwriteconfig5 --file ~/.config/Kvantum/kvantum.kvconfig --group General --key theme Dracula
-          DRACULA
-              chmod +x airootfs/usr/local/bin/install-dracula-theme
-              
-              cat > airootfs/usr/local/bin/cybr-first-boot << "FB"
-          #!/bin/bash
-          FLAG="\$HOME/.config/cybr-setup-done"
-          
-          if [ ! -f "\$FLAG" ]; then
-            sleep 5
-            
-            (
-              exec > /tmp/cybr-setup.log 2>&1
-              
-              date
-              
-              for i in {1..30}; do
-                if ping -c 1 8.8.8.8 &>/dev/null || ping -c 1 1.1.1.1 &>/dev/null; then
-                  break
-                fi
-                if [ \$i -eq 30 ]; then
-                  touch "\$FLAG"
-                  exit 1
-                fi
-                sleep 2
-              done
-              
-              /usr/local/bin/install-dracula-theme || true
-              /usr/local/bin/setup-blackarch || true
-              
-              if [ -x /usr/local/bin/neo-enhancements ]; then
-                /usr/local/bin/neo-enhancements || true
-              fi
-              
-              mkdir -p "\$HOME/.config"
-              touch "\$FLAG"
-              
-              date
-            ) &
-          fi
-          FB
-              chmod +x airootfs/usr/local/bin/cybr-first-boot
-              
-              mkdir -p airootfs/etc/skel/.config/autostart
-              cat > airootfs/etc/skel/.config/autostart/cybr-first-boot.desktop << "AUTOSTART"
-          [Desktop Entry]
-          Type=Application
-          Name=Cybr First Boot Setup
-          Exec=/usr/local/bin/cybr-first-boot
-          X-KDE-autostart-after=panel
-          AUTOSTART
-              
-              mkdir -p airootfs/etc/systemd/system/display-manager.service.d
-              cat > airootfs/etc/systemd/system/display-manager.service.d/override.conf << "SDDM"
-          [Service]
-          ExecStart=
-          ExecStart=/usr/bin/sddm
-          SDDM
-              
-              ln -sf /usr/lib/systemd/system/sddm.service \
-                airootfs/etc/systemd/system/display-manager.service
-              
-              ln -sf /usr/lib/systemd/system/NetworkManager.service \
-                airootfs/etc/systemd/system/multi-user.target.wants/NetworkManager.service
-              
-              ln -sf /usr/lib/systemd/system/bluetooth.service \
-                airootfs/etc/systemd/system/multi-user.target.wants/bluetooth.service
-              
-              echo ""
-              echo "🔨 Building ISO with mkarchiso..."
-              mkarchiso -v -w /tmp/work -o /tmp/out .
-              
-              mv /tmp/out/*.iso /workspace/${ISO_NAME}.iso
-              
-              echo ""
-              echo "═══════════════════════════════════════════════"
-              echo "  ✨ Cybr Linux Plasma ISO created successfully!"
-              echo "  📦 File: ${ISO_NAME}.iso"
-              echo "  🌅 Dawn light shines upon the arches"
-              echo "═══════════════════════════════════════════════"
-            '
-
-      - name: "Validate ISO"
-        id: validate
-        run: |
-          ISO_FILE="${{ env.ISO_NAME }}.iso"
-          
-          if [[ ! -f "$ISO_FILE" ]]; then
-            echo "ERROR: ISO not found"
-            exit 1
-          fi
-          
-          SIZE=$(stat -c%s "$ISO_FILE")
-          SIZE_MB=$(( SIZE / 1024 / 1024 ))
-          SHA256=$(sha256sum "$ISO_FILE" | cut -d' ' -f1)
-          
+      - run: |
+          ISO="${{ env.ISO_NAME }}.iso"
+          [[ ! -f "$ISO" ]] && exit 1
+          SIZE_MB=$(($(stat -c%s "$ISO")/1024/1024))
+          SHA256=$(sha256sum "$ISO"|cut -d" " -f1)
           echo "size_mb=$SIZE_MB" >> $GITHUB_OUTPUT
           echo "sha256=$SHA256" >> $GITHUB_OUTPUT
-          
-          echo "✓ ISO: $ISO_FILE"
-          echo "✓ Size: ${SIZE_MB} MB"
-          echo "✓ SHA256: $SHA256"
+          echo "✓ Size: ${SIZE_MB}MB SHA256: $SHA256"
 
-      - name: "Upload ISO Artifact"
-        uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v4
         with:
           name: "${{ env.ISO_NAME }}"
           path: "${{ env.ISO_NAME }}.iso"
@@ -329,72 +163,31 @@ jobs:
     needs: build
     if: github.event_name == 'workflow_dispatch' || github.ref == 'refs/heads/main'
     timeout-minutes: 30
-
     steps:
-      - name: "Download ISO"
-        uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v4
         with:
           name: "${{ env.ISO_NAME }}"
-
-      - name: "Install Upload Tools"
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y sshpass rsync
-
-      - name: "Upload to SourceForge"
-        env:
+      - run: sudo apt-get update && sudo apt-get install -y sshpass rsync
+      - env:
           SF_USER: ${{ secrets.SF_USER }}
           SF_PASS: ${{ secrets.SF_PASS }}
         run: |
-          if [[ -z "$SF_USER" || -z "$SF_PASS" ]]; then
-            echo "⚠ SourceForge credentials not configured"
-            echo "Add SF_USER and SF_PASS secrets to enable SourceForge uploads"
-            exit 1
-          fi
-          
-          ISO_FILE="${{ env.ISO_NAME }}.iso"
-          REMOTE_PATH="/home/frs/project/wolfos/plasma/$ISO_FILE"
-          
-          echo "📤 Uploading $ISO_FILE to SourceForge..."
-          echo "Remote path: $REMOTE_PATH"
-          
+          [[ -z "$SF_USER" || -z "$SF_PASS" ]] && echo "⚠ Configure SF_USER and SF_PASS secrets" && exit 1
+          ISO="${{ env.ISO_NAME }}.iso"
           for i in {1..3}; do
-            if timeout 1800 sshpass -p "$SF_PASS" \
-              rsync -avP --progress \
-              -e "ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null" \
-              "./$ISO_FILE" \
-              "$SF_USER@frs.sourceforge.net:$REMOTE_PATH"; then
-              echo "✓ Upload completed successfully"
-              break
-            elif [[ $i -eq 3 ]]; then
-              echo "❌ Upload failed after 3 attempts"
-              exit 1
-            else
-              echo "⚠ Upload attempt $i failed, retrying in 30 seconds..."
-              sleep 30
-            fi
+            timeout 1800 sshpass -p "$SF_PASS" rsync -avP -e "ssh -o StrictHostKeyChecking=no" \
+              "./$ISO" "$SF_USER@frs.sourceforge.net:/home/frs/project/wolfos/plasma/$ISO" && break
+            [[ $i -eq 3 ]] && exit 1
+            sleep 30
           done
-          
-          echo ""
-          echo "═══════════════════════════════════════════════════════"
-          echo "  ✨ ISO uploaded to SourceForge!"
-          echo "═══════════════════════════════════════════════════════"
-          echo ""
-          echo "🔗 Download URL:"
-          echo "https://sourceforge.net/projects/wolfos/files/plasma/$ISO_FILE/download"
+          echo "🔗 https://sourceforge.net/projects/wolfos/files/plasma/$ISO/download"
 
   notify:
     name: "Build Summary"
     runs-on: ubuntu-latest
     needs: [build, upload]
     if: always()
-
     steps:
-      - name: "Generate Summary"
-        run: |
+      - run: |
           echo "## 🌅 Cybr Linux Build Complete" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "Dawn light shines upon the arches." >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**Edition:** Plasma" >> $GITHUB_STEP_SUMMARY
-          echo "**Build:** ${{ github.run_number }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Edition:** Plasma | **Build:** ${{ github.run_number }}" >> $GITHUB_STEP_SUMMARY
