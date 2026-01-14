@@ -100,49 +100,6 @@ jobs:
           HOME_URL="https://wolfos.uk/"
           O
           
-          mkdir -p airootfs/usr/local/bin airootfs/etc/skel/.config airootfs/root
-          
-          cat > airootfs/root/setup-blackarch.sh << "B"
-          #!/bin/bash
-          echo "BlackArch repository is already configured in /etc/pacman.conf"
-          echo ""
-          echo "To install BlackArch tools, use:"
-          echo "  sudo pacman -S blackarch           # Install all tools (NOT recommended)"
-          echo "  sudo pacman -S blackarch-webapp    # Install web app testing tools"
-          echo "  sudo pacman -S blackarch-forensic  # Install forensics tools"
-          echo "  sudo pacman -Sg | grep blackarch   # List all categories"
-          echo ""
-          echo "Popular tools:"
-          echo "  sudo pacman -S nmap metasploit aircrack-ng wireshark-qt burpsuite"
-          B
-          chmod +x airootfs/root/setup-blackarch.sh
-          
-          cat > airootfs/usr/local/bin/cybr-setup << "S"
-          #!/bin/bash
-          cd /tmp
-          git clone --depth=1 https://github.com/vinceliuice/McMojave-kde.git && cd McMojave-kde && ./install.sh
-          cd /tmp && git clone --depth=1 https://github.com/vinceliuice/ChromeOS-kde.git && cd ChromeOS-kde && ./install.sh
-          git clone --depth=1 https://github.com/vinceliuice/WhiteSur-icon-theme.git && cd WhiteSur-icon-theme && ./install.sh
-          kwriteconfig5 --file kdeglobals --group General --key ColorScheme McMojave
-          kwriteconfig5 --file kdeglobals --group KDE --key widgetStyle Breeze
-          plasma-apply-colorscheme McMojave
-          S
-          chmod +x airootfs/usr/local/bin/cybr-setup
-          
-          echo "#!/bin/bash" > airootfs/root/.bash_profile
-          echo "echo 'Welcome to Cybr Linux!'" >> airootfs/root/.bash_profile
-          echo "echo 'BlackArch repository is enabled. Run: ~/setup-blackarch.sh for info'" >> airootfs/root/.bash_profile
-          echo "echo 'Run: sudo calamares to start graphical installation'" >> airootfs/root/.bash_profile
-          echo "echo ''" >> airootfs/root/.bash_profile
-          
-          mkdir -p airootfs/etc/skel/.config/plasma-org.kde.plasma.desktop-appletsrc
-          cat > airootfs/etc/skel/.config/kdeglobals << "K"
-          [KDE]
-          SingleClick=false
-          [General]
-          ColorScheme=Breeze
-          K
-          
           ln -sf /usr/lib/systemd/system/sddm.service airootfs/etc/systemd/system/display-manager.service
           ln -sf /usr/lib/systemd/system/NetworkManager.service airootfs/etc/systemd/system/multi-user.target.wants/
           
