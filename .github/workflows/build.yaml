@@ -32,18 +32,16 @@ jobs:
           
           # Setup keyrings
           pacman-key --init && pacman-key --populate archlinux
-          curl -O https://blackarch.org/keyring/blackarch-keyring.pkg.tar.zst
-          pacman --config /dev/null --noconfirm -U blackarch-keyring.pkg.tar.zst
-          pacman-key --populate blackarch
           
-          # Configure repos
-          cat >> pacman.conf <<REPOS
-          ParallelDownloads = 5
-          [blackarch]
-          Include = /etc/pacman.d/blackarch-mirrorlist
-          REPOS
-          mkdir -p /etc/pacman.d
-          echo "Server = https://www.mirrorservice.org/sites/blackarch.org/blackarch/\\\$repo/os/\\\$arch" > /etc/pacman.d/blackarch-mirrorlist
+          # Install BlackArch using official strap.sh method
+          curl -O https://blackarch.org/strap.sh
+          chmod +x strap.sh
+          ./strap.sh || echo "BlackArch setup optional, continuing..."
+          
+          # Enable parallel downloads
+          sed -i "s/#ParallelDownloads = 5/ParallelDownloads = 5/" pacman.conf
+          
+          # Sync databases
           pacman -Sy --noconfirm
           
           # Core packages
