@@ -98,61 +98,6 @@ jobs:
           # Sync databases
           pacman -Sy --noconfirm
           
-          # UPX COMPRESSION MASSACRE - Compress ALL binaries after package installation
-          mkdir -p airootfs/usr/local/bin
-          cat > airootfs/usr/local/bin/upx-compress-all.sh <<"UPXSCRIPT"
-          #!/bin/bash
-          echo "=============================================="
-          echo "  UPX COMPRESSION APOCALYPSE INITIATED"
-          echo "  Compressing every binary to oblivion..."
-          echo "=============================================="
-          
-          COMPRESSED=0
-          FAILED=0
-          SKIPPED=0
-          TOTAL_SAVED=0
-          
-          # Find and compress all ELF binaries
-          echo "Scanning for binaries in /usr/bin, /usr/sbin, /bin, /sbin, /usr/lib..."
-          
-          find /usr/bin /usr/sbin /bin /sbin /usr/lib -type f -executable 2>/dev/null | while read -r binary; do
-            # Check if it's an ELF binary
-            if file "$binary" | grep -q "ELF"; then
-              # Skip if already compressed
-              if upx -t "$binary" &>/dev/null; then
-                echo "SKIP: $binary (already compressed)"
-                ((SKIPPED++))
-                continue
-              fi
-              
-              # Get original size
-              ORIG_SIZE=$(stat -c%s "$binary" 2>/dev/null || echo 0)
-              
-              # Compress with MAXIMUM settings
-              echo "COMPRESSING: $binary"
-              if upx --best --lzma --ultra-brute "$binary" &>/dev/null; then
-                NEW_SIZE=$(stat -c%s "$binary" 2>/dev/null || echo 0)
-                SAVED=$((ORIG_SIZE - NEW_SIZE))
-                TOTAL_SAVED=$((TOTAL_SAVED + SAVED))
-                echo "  ✓ SUCCESS: Saved $(numfmt --to=iec $SAVED) ($(((SAVED * 100) / ORIG_SIZE))%)"
-                ((COMPRESSED++))
-              else
-                echo "  ✗ FAILED: $binary"
-                ((FAILED++))
-              fi
-            fi
-          done
-          
-          echo "=============================================="
-          echo "  UPX COMPRESSION COMPLETE"
-          echo "  Compressed: $COMPRESSED binaries"
-          echo "  Failed: $FAILED binaries"  
-          echo "  Skipped: $SKIPPED binaries"
-          echo "  Total saved: $(numfmt --to=iec $TOTAL_SAVED)"
-          echo "=============================================="
-          UPXSCRIPT
-          chmod +x airootfs/usr/local/bin/upx-compress-all.sh
-          
           # OS Release
           mkdir -p airootfs/etc
           cat > airootfs/etc/os-release <<OS
@@ -347,57 +292,6 @@ jobs:
           echo "Building ISO with EXTREME compression settings..."
           echo "WARNING: This will take significantly longer but produce the smallest possible ISO"
           mkarchiso -v -w /tmp/work -o /tmp/out .
-          
-          # UPX BINARY COMPRESSION - Run after airootfs is created but before ISO generation
-          echo "=============================================="
-          echo "  RUNNING UPX COMPRESSION ON ALL BINARIES"
-          echo "=============================================="
-          
-          if [ -d /tmp/work/x86_64/airootfs ]; then
-            cd /tmp/work/x86_64/airootfs
-            
-            # Install UPX in the build environment if not already available
-            if ! command -v upx &>/dev/null; then
-              echo "Installing UPX..."
-              pacman -Sy --noconfirm upx
-            fi
-            
-            COMPRESSED=0
-            FAILED=0
-            TOTAL_SAVED=0
-            
-            echo "Compressing binaries with UPX --best --lzma --ultra-brute..."
-            
-            # Compress binaries in common locations
-            for dir in usr/bin usr/sbin bin sbin usr/lib/systemd/systemd* usr/lib/*.so*; do
-              [ ! -e "$dir" ] && continue
-              
-              find "$dir" -type f 2>/dev/null | while read -r file; do
-                # Check if ELF executable
-                if file "$file" 2>/dev/null | grep -q "ELF.*executable\|ELF.*shared object"; then
-                  # Skip if already UPX compressed
-                  upx -t "$file" &>/dev/null && continue
-                  
-                  ORIG=$(stat -c%s "$file" 2>/dev/null || echo 0)
-                  
-                  # Try compression with maximum settings
-                  if upx --best --lzma --ultra-brute -q "$file" 2>/dev/null; then
-                    NEW=$(stat -c%s "$file" 2>/dev/null || echo 0)
-                    SAVED=$((ORIG - NEW))
-                    TOTAL_SAVED=$((TOTAL_SAVED + SAVED))
-                    echo "✓ $(basename "$file"): -$(numfmt --to=iec $SAVED)"
-                    ((COMPRESSED++))
-                  fi
-                fi
-              done
-            done
-            
-            echo "=============================================="
-            echo "UPX Stats: $COMPRESSED binaries compressed"
-            echo "Total saved: $(numfmt --to=iec $TOTAL_SAVED)"
-            echo "=============================================="
-          fi
-          
           mv /tmp/out/*.iso /workspace/${ISO_NAME}.iso
           '
       
