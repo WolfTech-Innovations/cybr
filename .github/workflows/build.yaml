@@ -50,6 +50,10 @@ jobs:
           
           cat > packages.x86_64 << "P"
           linux-lts
+          syslinux
+          edk2-shell
+          memtest86+
+          memtest86+-efi
           plasma-desktop
           plasma-workspace
           plasma-nm
