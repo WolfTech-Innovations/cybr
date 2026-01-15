@@ -80,13 +80,15 @@ jobs:
           
           docker run --rm --privileged -v $PWD:/workspace -e ISO_NAME="${{ env.ISO_NAME }}" builder bash -c '
           set -euo pipefail
-          cp -r /usr/share/archiso/configs/releng /build/cybr && cd /build/cybr
+          cp -r /usr/share/archiso/configs/releng /build/cybr
+          cd /build/cybr
           
           # Copy package list from workspace
           cp /workspace/packages.x86_64 .
           
           # Setup keyrings
-          pacman-key --init && pacman-key --populate archlinux
+          pacman-key --init
+          pacman-key --populate archlinux
           
           # Install BlackArch using official strap.sh method
           curl -O https://blackarch.org/strap.sh
@@ -101,7 +103,7 @@ jobs:
           
           # OS Release
           mkdir -p airootfs/etc
-          cat > airootfs/etc/os-release <<OS
+          cat > airootfs/etc/os-release <<"EOF"
           NAME="Cybr Linux"
           PRETTY_NAME="Cybr Linux - Dawn Light Shines Upon the Arches"
           ID=cybr
@@ -110,45 +112,45 @@ jobs:
           ANSI_COLOR="38;2;23;147;209"
           HOME_URL="https://wolfos.uk/"
           LOGO=archlinux-logo
-          OS
+          EOF
           
           # Configure mkinitcpio for archiso
           mkdir -p airootfs/etc/mkinitcpio.conf.d
-          cat > airootfs/etc/mkinitcpio.conf.d/archiso.conf <<MKINIT
+          cat > airootfs/etc/mkinitcpio.conf.d/archiso.conf <<"EOF"
           MODULES=()
           BINARIES=()
           FILES=()
           HOOKS=(base udev modconf kms keyboard keymap consolefont block filesystems archiso)
           COMPRESSION="xz"
           COMPRESSION_OPTIONS=(-9e)
-          MKINIT
+          EOF
           
           # Create LTS kernel preset for archiso
           mkdir -p airootfs/etc/mkinitcpio.d
-          cat > airootfs/etc/mkinitcpio.d/linux-lts.preset <<PRESET
+          cat > airootfs/etc/mkinitcpio.d/linux-lts.preset <<"EOF"
           # mkinitcpio preset file for linux-lts with archiso
           
           ALL_config="/etc/mkinitcpio.conf.d/archiso.conf"
           ALL_kver="/boot/vmlinuz-linux-lts"
           
-          PRESETS=('default' 'fallback')
+          PRESETS=("default" "fallback")
           
           default_image="/boot/initramfs-linux-lts.img"
           
           fallback_image="/boot/initramfs-linux-lts-fallback.img"
           fallback_options="-S autodetect"
-          PRESET
+          EOF
           
           # Create boot directory structure
           mkdir -p airootfs/boot
           
           # Ensure mkinitcpio runs during build to generate initramfs
-          cat > airootfs/root/customize_airootfs.sh <<'ENDCUSTOMIZE'
+          cat > airootfs/root/customize_airootfs.sh <<"EOF"
           #!/usr/bin/env bash
           set -e
           
           # Find the actual kernel version
-          KVER=$(file -bL /boot/vmlinuz-linux-lts | grep -o 'version [^ ]*' | cut -d' ' -f2)
+          KVER=$(file -bL /boot/vmlinuz-linux-lts | grep -o "version [^ ]*" | cut -d" " -f2)
           echo "Detected kernel version: $KVER"
           
           # Generate initramfs for linux-lts
@@ -170,103 +172,107 @@ jobs:
           
           echo "Kernel and initramfs verified successfully"
           ls -lh /boot/vmlinuz-linux-lts /boot/initramfs-linux-lts.img
-ENDCUSTOMIZE
+          EOF
           chmod +x airootfs/root/customize_airootfs.sh
           
           # Modify profiledef.sh to ensure kernel is copied
-          cat >> profiledef.sh <<PROFILE
+          cat >> profiledef.sh <<"EOF"
           
           # Custom function to ensure kernel files are copied
           _make_boot_extra() {
-            local _bootdir="\${work_dir}/iso/arch/boot"
-            mkdir -p "\${_bootdir}/x86_64"
+            local _bootdir="${work_dir}/iso/arch/boot"
+            mkdir -p "${_bootdir}/x86_64"
             
             # Copy kernel and initramfs from airootfs
-            cp -v "\${work_dir}/x86_64/airootfs/boot/vmlinuz-linux-lts" "\${_bootdir}/x86_64/vmlinuz-linux-lts"
-            cp -v "\${work_dir}/x86_64/airootfs/boot/initramfs-linux-lts.img" "\${_bootdir}/x86_64/initramfs-linux-lts.img"
+            cp -v "${work_dir}/x86_64/airootfs/boot/vmlinuz-linux-lts" "${_bootdir}/x86_64/vmlinuz-linux-lts"
+            cp -v "${work_dir}/x86_64/airootfs/boot/initramfs-linux-lts.img" "${_bootdir}/x86_64/initramfs-linux-lts.img"
             
             # Create symlinks for standard names
-            ln -sf vmlinuz-linux-lts "\${_bootdir}/x86_64/vmlinuz"
-            ln -sf initramfs-linux-lts.img "\${_bootdir}/x86_64/initramfs.img"
+            ln -sf vmlinuz-linux-lts "${_bootdir}/x86_64/vmlinuz"
+            ln -sf initramfs-linux-lts.img "${_bootdir}/x86_64/initramfs.img"
             
             echo "Kernel files copied to ISO boot directory:"
-            ls -lh "\${_bootdir}/x86_64/"
+            ls -lh "${_bootdir}/x86_64/"
           }
-          PROFILE
+          EOF
           
           # Update grub config to use correct kernel paths
           mkdir -p grub
-          cat > grub/grub.cfg <<GRUB
+          cat > grub/grub.cfg <<"EOF"
           set timeout=30
           set default=0
           
           menuentry "Cybr Linux - Dawn Light (x86_64, UEFI)" {
               set gfxpayload=keep
-              linux /arch/boot/x86_64/vmlinuz-linux-lts archisobasedir=arch archisolabel=CYBR_$(date +%Y%m) quiet splash
+              linux /arch/boot/x86_64/vmlinuz-linux-lts archisobasedir=arch archisolabel=CYBR_202601 quiet splash
               initrd /arch/boot/x86_64/initramfs-linux-lts.img
           }
           
           menuentry "Cybr Linux - Dawn Light (x86_64, UEFI, no nouveau)" {
               set gfxpayload=keep
-              linux /arch/boot/x86_64/vmlinuz-linux-lts archisobasedir=arch archisolabel=CYBR_$(date +%Y%m) nouveau.modeset=0 quiet splash
+              linux /arch/boot/x86_64/vmlinuz-linux-lts archisobasedir=arch archisolabel=CYBR_202601 nouveau.modeset=0 quiet splash
               initrd /arch/boot/x86_64/initramfs-linux-lts.img
           }
           
           menuentry "Cybr Linux - Dawn Light (x86_64, UEFI, copy to RAM)" {
               set gfxpayload=keep
-              linux /arch/boot/x86_64/vmlinuz-linux-lts archisobasedir=arch archisolabel=CYBR_$(date +%Y%m) copytoram quiet splash
+              linux /arch/boot/x86_64/vmlinuz-linux-lts archisobasedir=arch archisolabel=CYBR_202601 copytoram quiet splash
               initrd /arch/boot/x86_64/initramfs-linux-lts.img
           }
-          GRUB
+          EOF
           
           # Update syslinux config for BIOS boot
           mkdir -p syslinux
-          cat > syslinux/archiso_sys.cfg <<SYSLINUX
+          cat > syslinux/archiso_sys.cfg <<"EOF"
           LABEL cybr
           MENU LABEL Cybr Linux - Dawn Light (x86_64, BIOS)
           LINUX /arch/boot/x86_64/vmlinuz-linux-lts
           INITRD /arch/boot/x86_64/initramfs-linux-lts.img
-          APPEND archisobasedir=arch archisolabel=CYBR_$(date +%Y%m) quiet splash
+          APPEND archisobasedir=arch archisolabel=CYBR_202601 quiet splash
           
           LABEL cybr_nomodeset
           MENU LABEL Cybr Linux - Dawn Light (x86_64, BIOS, nomodeset)
           LINUX /arch/boot/x86_64/vmlinuz-linux-lts
           INITRD /arch/boot/x86_64/initramfs-linux-lts.img
-          APPEND archisobasedir=arch archisolabel=CYBR_$(date +%Y%m) nomodeset quiet splash
-          SYSLINUX
+          APPEND archisobasedir=arch archisolabel=CYBR_202601 nomodeset quiet splash
+          EOF
           
           # Auto-update service
           mkdir -p airootfs/etc/systemd/system
-          cat > airootfs/etc/systemd/system/cybr-autoupdate.service <<SVC
+          cat > airootfs/etc/systemd/system/cybr-autoupdate.service <<"EOF"
           [Unit]
           Description=Cybr Auto Update
           After=network-online.target
           ConditionACPower=true
+          
           [Service]
           Type=oneshot
           Nice=19
           IOSchedulingClass=idle
           ExecStart=/usr/local/bin/cybr-autoupdate.sh
           TimeoutSec=3600
+          
           [Install]
           WantedBy=multi-user.target
-          SVC
+          EOF
           
-          cat > airootfs/etc/systemd/system/cybr-autoupdate.timer <<TMR
+          cat > airootfs/etc/systemd/system/cybr-autoupdate.timer <<"EOF"
           [Unit]
           Description=Cybr Auto Update Timer
+          
           [Timer]
           OnCalendar=daily
           OnCalendar=03:00
           RandomizedDelaySec=30min
           Persistent=true
+          
           [Install]
           WantedBy=timers.target
-          TMR
+          EOF
           
           # Auto-update script
           mkdir -p airootfs/usr/local/bin
-          cat > airootfs/usr/local/bin/cybr-autoupdate.sh <<"SCRIPT"
+          cat > airootfs/usr/local/bin/cybr-autoupdate.sh <<"EOF"
           #!/bin/bash
           LOG="/var/log/cybr-autoupdate.log"
           LOCK="/var/run/cybr-autoupdate.lock"
@@ -302,12 +308,12 @@ ENDCUSTOMIZE
           paccache -rk3 2>&1|tee -a "$LOG"
           [[ ! -f /usr/lib/modules/$(uname -r) ]] && log "WARNING: Reboot recommended (kernel updated)"
           log "Update complete"
-          SCRIPT
+          EOF
           chmod +x airootfs/usr/local/bin/cybr-autoupdate.sh
           
           # UI Customization setup script
           mkdir -p airootfs/usr/local/bin
-          cat > airootfs/usr/local/bin/setup-modern-ui.sh <<"UISCRIPT"
+          cat > airootfs/usr/local/bin/setup-modern-ui.sh <<"EOF"
           #!/bin/bash
           # Cybr Modern UI Setup
           echo "Setting up modern UI with rounded corners and blur effects..."
@@ -359,13 +365,13 @@ ENDCUSTOMIZE
           echo "  - System Settings > Workspace Behavior > Desktop Effects"
           echo "  - Right-click panel > Configure Panel (set to floating and centered)"
           echo "  - Kvantum Manager for transparency settings"
-          UISCRIPT
+          EOF
           chmod +x airootfs/usr/local/bin/setup-modern-ui.sh
           
           # Installation helper
-          cat > airootfs/root/install-cybr.sh <<"INSTALL"
+          cat > airootfs/root/install-cybr.sh <<"EOF"
           #!/bin/bash
-          cat <<INFO
+          cat <<"INFO"
           ╔════════════════════════════════════════════╗
           ║   Cybr Linux Installation Helper          ║
           ║   Dawn Light Shines Upon the Arches       ║
@@ -399,7 +405,7 @@ ENDCUSTOMIZE
             • View: journalctl -u cybr-autoupdate
           INFO
           read -p "Press Enter..."
-          INSTALL
+          EOF
           chmod +x airootfs/root/install-cybr.sh
           
           # Enable services
@@ -456,6 +462,7 @@ ENDCUSTOMIZE
       - uses: actions/download-artifact@v4
         with:
           name: "${{ env.ISO_NAME }}"
+      
       - name: Upload to SourceForge
         env:
           SF_USER: ${{ secrets.SF_USER }}
