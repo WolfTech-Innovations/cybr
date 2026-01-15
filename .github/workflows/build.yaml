@@ -143,7 +143,7 @@ jobs:
           mkdir -p airootfs/boot
           
           # Ensure mkinitcpio runs during build to generate initramfs
-          cat > airootfs/root/customize_airootfs.sh <<'CUSTOMIZE'
+          cat > airootfs/root/customize_airootfs.sh <<'ENDCUSTOMIZE'
           #!/usr/bin/env bash
           set -e
           
@@ -170,7 +170,7 @@ jobs:
           
           echo "Kernel and initramfs verified successfully"
           ls -lh /boot/vmlinuz-linux-lts /boot/initramfs-linux-lts.img
-          CUSTOMIZE
+ENDCUSTOMIZE
           chmod +x airootfs/root/customize_airootfs.sh
           
           # Modify profiledef.sh to ensure kernel is copied
