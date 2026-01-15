@@ -1,4 +1,5 @@
 name: "Cybr Build"
+
 on:
   workflow_dispatch:
   push:
@@ -142,7 +143,7 @@ jobs:
           mkdir -p airootfs/boot
           
           # Ensure mkinitcpio runs during build to generate initramfs
-          cat > airootfs/root/customize_airootfs.sh <<"CUSTOMIZE"
+          cat > airootfs/root/customize_airootfs.sh <<'CUSTOMIZE'
           #!/usr/bin/env bash
           set -e
           
@@ -467,4 +468,4 @@ jobs:
               "${{ env.ISO_NAME }}.iso" "$SF_USER@frs.sourceforge.net:/home/frs/project/wolfos/plasma/" && break
             [[ $i -eq 3 ]] && exit 1
             sleep 30
-          done 
+          done
