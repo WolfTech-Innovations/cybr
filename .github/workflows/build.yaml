@@ -111,6 +111,109 @@ jobs:
           LOGO=archlinux-logo
           OS
           
+          # Configure mkinitcpio for archiso
+          mkdir -p airootfs/etc
+          cat > airootfs/etc/mkinitcpio.conf <<MKINIT
+          MODULES=()
+          BINARIES=()
+          FILES=()
+          HOOKS=(base udev modconf kms keyboard keymap consolefont block filesystems archiso)
+          COMPRESSION="xz"
+          COMPRESSION_OPTIONS=(-9e)
+          MKINIT
+          
+          # Create boot directory structure
+          mkdir -p airootfs/boot
+          
+          # Ensure mkinitcpio runs during build to generate initramfs
+          cat > airootfs/root/customize_airootfs.sh <<"CUSTOMIZE"
+          #!/usr/bin/env bash
+          set -e
+          
+          # Generate initramfs
+          echo "Generating initramfs..."
+          mkinitcpio -P
+          
+          # Verify kernel and initramfs exist
+          if [[ ! -f /boot/vmlinuz-linux-lts ]]; then
+            echo "ERROR: vmlinuz-linux-lts not found!"
+            ls -la /boot/
+            exit 1
+          fi
+          
+          if [[ ! -f /boot/initramfs-linux-lts.img ]]; then
+            echo "ERROR: initramfs-linux-lts.img not found!"
+            ls -la /boot/
+            exit 1
+          fi
+          
+          echo "Kernel and initramfs verified successfully"
+          ls -lh /boot/vmlinuz-linux-lts /boot/initramfs-linux-lts.img
+          CUSTOMIZE
+          chmod +x airootfs/root/customize_airootfs.sh
+          
+          # Modify profiledef.sh to ensure kernel is copied
+          cat >> profiledef.sh <<PROFILE
+          
+          # Custom function to ensure kernel files are copied
+          _make_boot_extra() {
+            local _bootdir="\${work_dir}/iso/arch/boot"
+            mkdir -p "\${_bootdir}/x86_64"
+            
+            # Copy kernel and initramfs from airootfs
+            cp -v "\${work_dir}/x86_64/airootfs/boot/vmlinuz-linux-lts" "\${_bootdir}/x86_64/vmlinuz-linux-lts"
+            cp -v "\${work_dir}/x86_64/airootfs/boot/initramfs-linux-lts.img" "\${_bootdir}/x86_64/initramfs-linux-lts.img"
+            
+            # Create symlinks for standard names
+            ln -sf vmlinuz-linux-lts "\${_bootdir}/x86_64/vmlinuz"
+            ln -sf initramfs-linux-lts.img "\${_bootdir}/x86_64/initramfs.img"
+            
+            echo "Kernel files copied to ISO boot directory:"
+            ls -lh "\${_bootdir}/x86_64/"
+          }
+          PROFILE
+          
+          # Update grub config to use correct kernel paths
+          mkdir -p grub
+          cat > grub/grub.cfg <<GRUB
+          set timeout=30
+          set default=0
+          
+          menuentry "Cybr Linux - Dawn Light (x86_64, UEFI)" {
+              set gfxpayload=keep
+              linux /arch/boot/x86_64/vmlinuz-linux-lts archisobasedir=arch archisolabel=CYBR_$(date +%Y%m) quiet splash
+              initrd /arch/boot/x86_64/initramfs-linux-lts.img
+          }
+          
+          menuentry "Cybr Linux - Dawn Light (x86_64, UEFI, no nouveau)" {
+              set gfxpayload=keep
+              linux /arch/boot/x86_64/vmlinuz-linux-lts archisobasedir=arch archisolabel=CYBR_$(date +%Y%m) nouveau.modeset=0 quiet splash
+              initrd /arch/boot/x86_64/initramfs-linux-lts.img
+          }
+          
+          menuentry "Cybr Linux - Dawn Light (x86_64, UEFI, copy to RAM)" {
+              set gfxpayload=keep
+              linux /arch/boot/x86_64/vmlinuz-linux-lts archisobasedir=arch archisolabel=CYBR_$(date +%Y%m) copytoram quiet splash
+              initrd /arch/boot/x86_64/initramfs-linux-lts.img
+          }
+          GRUB
+          
+          # Update syslinux config for BIOS boot
+          mkdir -p syslinux
+          cat > syslinux/archiso_sys.cfg <<SYSLINUX
+          LABEL cybr
+          MENU LABEL Cybr Linux - Dawn Light (x86_64, BIOS)
+          LINUX /arch/boot/x86_64/vmlinuz-linux-lts
+          INITRD /arch/boot/x86_64/initramfs-linux-lts.img
+          APPEND archisobasedir=arch archisolabel=CYBR_$(date +%Y%m) quiet splash
+          
+          LABEL cybr_nomodeset
+          MENU LABEL Cybr Linux - Dawn Light (x86_64, BIOS, nomodeset)
+          LINUX /arch/boot/x86_64/vmlinuz-linux-lts
+          INITRD /arch/boot/x86_64/initramfs-linux-lts.img
+          APPEND archisobasedir=arch archisolabel=CYBR_$(date +%Y%m) nomodeset quiet splash
+          SYSLINUX
+          
           # Auto-update service
           mkdir -p airootfs/etc/systemd/system
           cat > airootfs/etc/systemd/system/cybr-autoupdate.service <<SVC
@@ -292,6 +395,21 @@ jobs:
           echo "Building ISO with EXTREME compression settings..."
           echo "WARNING: This will take significantly longer but produce the smallest possible ISO"
           mkarchiso -v -w /tmp/work -o /tmp/out .
+          
+          # Verify kernel files in ISO
+          echo "Verifying kernel files in ISO..."
+          ISO_FILE=$(ls /tmp/out/*.iso)
+          mkdir -p /tmp/iso_mount
+          mount -o loop "$ISO_FILE" /tmp/iso_mount
+          ls -lh /tmp/iso_mount/arch/boot/x86_64/
+          if [[ ! -f /tmp/iso_mount/arch/boot/x86_64/vmlinuz-linux-lts ]]; then
+            echo "ERROR: vmlinuz-linux-lts missing from ISO!"
+            umount /tmp/iso_mount
+            exit 1
+          fi
+          echo "Kernel verified in ISO!"
+          umount /tmp/iso_mount
+          
           mv /tmp/out/*.iso /workspace/${ISO_NAME}.iso
           '
       
