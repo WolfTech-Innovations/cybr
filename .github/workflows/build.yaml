@@ -1,4 +1,4 @@
-name: "Cybr Linux - Dawn Light Shines Upon the Arches (Plasma Edition)"
+name: "Cybr Build"
 on:
   workflow_dispatch:
   push:
@@ -112,8 +112,8 @@ jobs:
           OS
           
           # Configure mkinitcpio for archiso
-          mkdir -p airootfs/etc
-          cat > airootfs/etc/mkinitcpio.conf <<MKINIT
+          mkdir -p airootfs/etc/mkinitcpio.conf.d
+          cat > airootfs/etc/mkinitcpio.conf.d/archiso.conf <<MKINIT
           MODULES=()
           BINARIES=()
           FILES=()
@@ -121,6 +121,22 @@ jobs:
           COMPRESSION="xz"
           COMPRESSION_OPTIONS=(-9e)
           MKINIT
+          
+          # Create LTS kernel preset for archiso
+          mkdir -p airootfs/etc/mkinitcpio.d
+          cat > airootfs/etc/mkinitcpio.d/linux-lts.preset <<PRESET
+          # mkinitcpio preset file for linux-lts with archiso
+          
+          ALL_config="/etc/mkinitcpio.conf.d/archiso.conf"
+          ALL_kver="/boot/vmlinuz-linux-lts"
+          
+          PRESETS=('default' 'fallback')
+          
+          default_image="/boot/initramfs-linux-lts.img"
+          
+          fallback_image="/boot/initramfs-linux-lts-fallback.img"
+          fallback_options="-S autodetect"
+          PRESET
           
           # Create boot directory structure
           mkdir -p airootfs/boot
@@ -130,9 +146,13 @@ jobs:
           #!/usr/bin/env bash
           set -e
           
-          # Generate initramfs
-          echo "Generating initramfs..."
-          mkinitcpio -P
+          # Find the actual kernel version
+          KVER=$(file -bL /boot/vmlinuz-linux-lts | grep -o 'version [^ ]*' | cut -d' ' -f2)
+          echo "Detected kernel version: $KVER"
+          
+          # Generate initramfs for linux-lts
+          echo "Generating initramfs for linux-lts..."
+          mkinitcpio -k "$KVER" -c /etc/mkinitcpio.conf.d/archiso.conf -g /boot/initramfs-linux-lts.img
           
           # Verify kernel and initramfs exist
           if [[ ! -f /boot/vmlinuz-linux-lts ]]; then
@@ -447,4 +467,4 @@ jobs:
               "${{ env.ISO_NAME }}.iso" "$SF_USER@frs.sourceforge.net:/home/frs/project/wolfos/plasma/" && break
             [[ $i -eq 3 ]] && exit 1
             sleep 30
-          done
+          done 
