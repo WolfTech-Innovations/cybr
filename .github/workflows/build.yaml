@@ -248,7 +248,7 @@ jobs:
           
           # Auto-update system
           mkdir -p airootfs/etc/systemd/system airootfs/usr/local/bin
-          cat > airootfs/etc/systemd/system/cybr-autoupdate.{service,timer} <<EOF
+          cat > airootfs/etc/systemd/system/cybr-autoupdate.service <<EOF
           [Unit]
           Description=Cybr Auto Update
           After=network-online.target
@@ -260,7 +260,9 @@ jobs:
           TimeoutSec=3600
           [Install]
           WantedBy=multi-user.target
+          EOF
           
+          cat > airootfs/etc/systemd/system/cybr-autoupdate.timer <<EOF
           [Unit]
           Description=Cybr Auto Update Timer
           [Timer]
