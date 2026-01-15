@@ -21,12 +21,53 @@ jobs:
       - name: Create package list
         run: |
           cat > packages.x86_64 <<'EOF'
-          linux-lts linux-firmware base base-devel syslinux edk2-shell memtest86+ memtest86+-efi
-          mkinitcpio mkinitcpio-archiso arch-install-scripts pacman-contrib archlinux-contrib
-          plasma-desktop plasma-workspace plasma-nm plasma-pa sddm dolphin konsole kate firefox kscreen
-          networkmanager pipewire pipewire-pulse pipewire-jack pipewire-alsa wireplumber
-          git curl wget xmlstarlet vim nano ttf-liberation noto-fonts noto-fonts-emoji
-          gparted ntfs-3g dosfstools exfatprogs xf86-input-wacom iwd kvantum papirus-icon-theme upx
+          linux-lts
+          linux-firmware
+          base
+          base-devel
+          syslinux
+          edk2-shell
+          memtest86+
+          memtest86+-efi
+          mkinitcpio
+          mkinitcpio-archiso
+          arch-install-scripts
+          pacman-contrib
+          archlinux-contrib
+          plasma-desktop
+          plasma-workspace
+          plasma-nm
+          plasma-pa
+          sddm
+          dolphin
+          konsole
+          kate
+          firefox
+          kscreen
+          networkmanager
+          pipewire
+          pipewire-pulse
+          pipewire-jack
+          pipewire-alsa
+          wireplumber
+          git
+          curl
+          wget
+          xmlstarlet
+          vim
+          nano
+          ttf-liberation
+          noto-fonts
+          noto-fonts-emoji
+          gparted
+          ntfs-3g
+          dosfstools
+          exfatprogs
+          xf86-input-wacom
+          iwd
+          kvantum
+          papirus-icon-theme
+          upx
           EOF
       
       - name: Build ISO
