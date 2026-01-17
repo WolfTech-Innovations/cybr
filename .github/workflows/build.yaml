@@ -227,17 +227,17 @@ jobs:
           MENU LABEL Cybr Linux - Dawn Light
           LINUX /%INSTALL_DIR%/boot/x86_64/vmlinuz-linux-lts
           INITRD /%INSTALL_DIR%/boot/x86_64/initramfs-linux-lts.img
-          APPEND archisobasedir=%INSTALL_DIR% archisosearchuuid=%ARCHISO_UUID% quiet splash
+          APPEND archisobasedir=%INSTALL_DIR% archisosearchuuid=%ARCHISO_UUID%
           LABEL arch64_nomodeset
           MENU LABEL Cybr Linux - Dawn Light (Safe Graphics)
           LINUX /%INSTALL_DIR%/boot/x86_64/vmlinuz-linux-lts
           INITRD /%INSTALL_DIR%/boot/x86_64/initramfs-linux-lts.img
-          APPEND archisobasedir=%INSTALL_DIR% archisosearchuuid=%ARCHISO_UUID% nomodeset quiet splash
+          APPEND archisobasedir=%INSTALL_DIR% archisosearchuuid=%ARCHISO_UUID% nomodeset
           LABEL arch64_copytoram
           MENU LABEL Cybr Linux - Dawn Light (Copy to RAM)
           LINUX /%INSTALL_DIR%/boot/x86_64/vmlinuz-linux-lts
           INITRD /%INSTALL_DIR%/boot/x86_64/initramfs-linux-lts.img
-          APPEND archisobasedir=%INSTALL_DIR% archisosearchuuid=%ARCHISO_UUID% copytoram quiet splash
+          APPEND archisobasedir=%INSTALL_DIR% archisosearchuuid=%ARCHISO_UUID% copytoram
           EOF
           cat > syslinux/syslinux.cfg <<EOF
           DEFAULT arch64
