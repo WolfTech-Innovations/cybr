@@ -222,8 +222,9 @@ jobs:
           [Daemon]
           Theme=cybr
           ShowDelay=0
+          DeviceTimeout=8
           PLYMCONF
-          plymouth-set-default-theme cybr
+          plymouth-set-default-theme cybr -R
           
           mkdir -p /home/liveuser/.config
           cat > /home/liveuser/.config/kdeglobals <<KDEGLOBALS
@@ -309,14 +310,14 @@ jobs:
           title   Cybr Linux
           linux   /%INSTALL_DIR%/boot/x86_64/vmlinuz-linux-lts
           initrd  /%INSTALL_DIR%/boot/x86_64/initramfs-linux-lts.img
-          options archisobasedir=%INSTALL_DIR% archisosearchuuid=%ARCHISO_UUID% quiet splash loglevel=3 rd.udev.log_priority=3 vt.global_cursor_default=0
+          options archisobasedir=%INSTALL_DIR% archisosearchuuid=%ARCHISO_UUID% splash plymouth.ignore-serial-consoles quiet loglevel=3 rd.udev.log_priority=3 vt.global_cursor_default=0
           ENTRY1
           
           cat > efiboot/loader/entries/02-cybr-safe.conf <<ENTRY2
           title   Cybr Linux (Safe Graphics)
           linux   /%INSTALL_DIR%/boot/x86_64/vmlinuz-linux-lts
           initrd  /%INSTALL_DIR%/boot/x86_64/initramfs-linux-lts.img
-          options archisobasedir=%INSTALL_DIR% archisosearchuuid=%ARCHISO_UUID% nomodeset quiet splash loglevel=3
+          options archisobasedir=%INSTALL_DIR% archisosearchuuid=%ARCHISO_UUID% nomodeset splash plymouth.ignore-serial-consoles quiet loglevel=3
           ENTRY2
           
           cat > syslinux/archiso_head.cfg <<SYSHEAD
@@ -335,13 +336,13 @@ jobs:
           MENU LABEL Cybr Linux
           LINUX /%INSTALL_DIR%/boot/x86_64/vmlinuz-linux-lts
           INITRD /%INSTALL_DIR%/boot/x86_64/initramfs-linux-lts.img
-          APPEND archisobasedir=%INSTALL_DIR% archisosearchuuid=%ARCHISO_UUID% quiet splash loglevel=3
+          APPEND archisobasedir=%INSTALL_DIR% archisosearchuuid=%ARCHISO_UUID% splash plymouth.ignore-serial-consoles quiet loglevel=3
           
           LABEL arch64_nomodeset
           MENU LABEL Cybr Linux (Safe Graphics)
           LINUX /%INSTALL_DIR%/boot/x86_64/vmlinuz-linux-lts
           INITRD /%INSTALL_DIR%/boot/x86_64/initramfs-linux-lts.img
-          APPEND archisobasedir=%INSTALL_DIR% archisosearchuuid=%ARCHISO_UUID% nomodeset quiet splash loglevel=3
+          APPEND archisobasedir=%INSTALL_DIR% archisosearchuuid=%ARCHISO_UUID% nomodeset splash plymouth.ignore-serial-consoles quiet loglevel=3
           SYSSYS
           
           cat > syslinux/syslinux.cfg <<SYSCFG
