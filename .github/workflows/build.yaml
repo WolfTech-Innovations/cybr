@@ -58,7 +58,6 @@ jobs:
           pipewire-jack
           pipewire-alsa
           wireplumber
-          calamares
           git
           curl
           wget
@@ -76,8 +75,10 @@ jobs:
           iwd
           kvantum
           papirus-icon-theme
-          latte-dock
           breeze-gtk
+          kcalc
+          spectacle
+          gwenview
           EOF
       
       - name: Build ISO
@@ -197,6 +198,9 @@ jobs:
           sudo -u liveuser makepkg -si --noconfirm
           cd /
           rm -rf /tmp/yay-bin
+          
+          # Install Calamares and Latte Dock from AUR
+          sudo -u liveuser yay -S --noconfirm calamares latte-dock
           
           # SDDM autologin
           mkdir -p /etc/sddm.conf.d
