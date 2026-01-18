@@ -1,5 +1,5 @@
 # Welcome to Cybr Linux - Dawn Light Shines Upon the Arches
-
+![cybr screenshot](https://raw.githubusercontent.com/WolfTech-Innovations/cybr/master/images/IMG_20260117_212458235.jpg)
 [![Cybr Plasma Build System](https://github.com/WolfTech-Innovations/cybr/actions/workflows/build.yaml/badge.svg)](https://github.com/WolfTech-Innovations/cybr/actions/workflows/build.yaml)
 
 Cybr Linux is an Arch-based distribution designed for all users, from newcomers to professionals. Whether you need a security-focused workstation or a regular desktop system, Cybr provides a polished experience for all walks of life.
