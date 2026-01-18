@@ -39,6 +39,9 @@ jobs:
           plasma-workspace
           plasma-nm
           plasma-pa
+          bluedevil
+          bluez
+          bluez-utils
           sddm
           dolphin
           konsole
@@ -360,7 +363,7 @@ jobs:
           
           # Enable services
           mkdir -p airootfs/etc/systemd/system/{multi-user.target.wants,timers.target.wants}
-          ln -sf /usr/lib/systemd/system/{sddm.service,NetworkManager.service} airootfs/etc/systemd/system/multi-user.target.wants/
+          ln -sf /usr/lib/systemd/system/{sddm.service,NetworkManager.service,bluetooth.service} airootfs/etc/systemd/system/multi-user.target.wants/
           ln -sf /usr/lib/systemd/system/sddm.service airootfs/etc/systemd/system/display-manager.service
           ln -sf /etc/systemd/system/cybr-autoupdate.timer airootfs/etc/systemd/system/timers.target.wants/
           
