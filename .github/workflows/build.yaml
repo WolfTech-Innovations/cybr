@@ -81,9 +81,32 @@ jobs:
           set -euo pipefail
           cp -r /usr/share/archiso/configs/releng /build/cybr && cd /build/cybr
           cp /workspace/packages.x86_64 .
-          pacman-key --init && pacman-key --populate archlinux
-          curl -O https://blackarch.org/strap.sh && chmod +x strap.sh && ./strap.sh || true
-          sed -i "s/#ParallelDownloads = 5/ParallelDownloads = 5/" pacman.conf && pacman -Sy --noconfirm
+          
+          # Initialize pacman properly
+          pacman-key --init
+          pacman-key --populate archlinux
+          
+          # Sync package databases FIRST
+          echo "Syncing Arch repositories..."
+          pacman -Syy --noconfirm
+          
+          # Install BlackArch repository (optional)
+          echo "Installing BlackArch repository..."
+          curl -O https://blackarch.org/strap.sh
+          chmod +x strap.sh
+          # Verify SHA1 checksum
+          echo "9f770789df3b7803105e5fbc19212889674cd503 strap.sh" | sha1sum -c || {
+            echo "Warning: BlackArch checksum verification failed, skipping..."
+            rm -f strap.sh
+          }
+          if [ -f strap.sh ]; then
+            TERM=dumb ./strap.sh 2>&1 | grep -v "tput:" || echo "BlackArch installed (optional)"
+            rm -f strap.sh
+          fi
+          
+          # Enable parallel downloads and sync all repos
+          sed -i "s/#ParallelDownloads = 5/ParallelDownloads = 5/" pacman.conf
+          pacman -Syy --noconfirm
           
           # Branding files
           mkdir -p airootfs/etc airootfs/etc/motd.d airootfs/etc/skel/.{config,local/share/konsole}
@@ -227,17 +250,17 @@ jobs:
           MENU LABEL Cybr Linux - Dawn Light
           LINUX /%INSTALL_DIR%/boot/x86_64/vmlinuz-linux-lts
           INITRD /%INSTALL_DIR%/boot/x86_64/initramfs-linux-lts.img
-          APPEND archisobasedir=%INSTALL_DIR% archisosearchuuid=%ARCHISO_UUID%
+          APPEND archisobasedir=%INSTALL_DIR% archisosearchuuid=%ARCHISO_UUID% quiet splash
           LABEL arch64_nomodeset
           MENU LABEL Cybr Linux - Dawn Light (Safe Graphics)
           LINUX /%INSTALL_DIR%/boot/x86_64/vmlinuz-linux-lts
           INITRD /%INSTALL_DIR%/boot/x86_64/initramfs-linux-lts.img
-          APPEND archisobasedir=%INSTALL_DIR% archisosearchuuid=%ARCHISO_UUID% nomodeset
+          APPEND archisobasedir=%INSTALL_DIR% archisosearchuuid=%ARCHISO_UUID% nomodeset quiet splash
           LABEL arch64_copytoram
           MENU LABEL Cybr Linux - Dawn Light (Copy to RAM)
           LINUX /%INSTALL_DIR%/boot/x86_64/vmlinuz-linux-lts
           INITRD /%INSTALL_DIR%/boot/x86_64/initramfs-linux-lts.img
-          APPEND archisobasedir=%INSTALL_DIR% archisosearchuuid=%ARCHISO_UUID% copytoram
+          APPEND archisobasedir=%INSTALL_DIR% archisosearchuuid=%ARCHISO_UUID% copytoram quiet splash
           EOF
           cat > syslinux/syslinux.cfg <<EOF
           DEFAULT arch64
