@@ -149,9 +149,15 @@ jobs:
           default_image="/boot/initramfs-linux-lts.img"
           PRESET
           
+          # Remove the regular linux preset to avoid conflicts
+          rm -f airootfs/etc/mkinitcpio.d/linux.preset 2>/dev/null || true
+          
           cat > airootfs/root/customize_airootfs.sh <<'\''CUSTOMIZE'\''
           #!/usr/bin/env bash
           set -e
+          
+          # Remove non-LTS kernel preset if it exists
+          rm -f /etc/mkinitcpio.d/linux.preset
           
           KVER=$(file -bL /boot/vmlinuz-linux-lts | grep -o "version [^ ]*" | cut -d" " -f2)
           mkinitcpio -k "$KVER" -c /etc/mkinitcpio.conf.d/archiso.conf -g /boot/initramfs-linux-lts.img
@@ -222,9 +228,8 @@ jobs:
           [Daemon]
           Theme=cybr
           ShowDelay=0
-          DeviceTimeout=8
           PLYMCONF
-          plymouth-set-default-theme cybr -R
+          plymouth-set-default-theme cybr
           
           mkdir -p /home/liveuser/.config
           cat > /home/liveuser/.config/kdeglobals <<KDEGLOBALS
@@ -336,13 +341,13 @@ jobs:
           MENU LABEL Cybr Linux
           LINUX /%INSTALL_DIR%/boot/x86_64/vmlinuz-linux-lts
           INITRD /%INSTALL_DIR%/boot/x86_64/initramfs-linux-lts.img
-          APPEND archisobasedir=%INSTALL_DIR% archisosearchuuid=%ARCHISO_UUID% splash plymouth.ignore-serial-consoles quiet loglevel=3
+          APPEND archisobasedir=%INSTALL_DIR% archisosearchuuid=%ARCHISO_UUID% quiet splash loglevel=3
           
           LABEL arch64_nomodeset
           MENU LABEL Cybr Linux (Safe Graphics)
           LINUX /%INSTALL_DIR%/boot/x86_64/vmlinuz-linux-lts
           INITRD /%INSTALL_DIR%/boot/x86_64/initramfs-linux-lts.img
-          APPEND archisobasedir=%INSTALL_DIR% archisosearchuuid=%ARCHISO_UUID% nomodeset splash plymouth.ignore-serial-consoles quiet loglevel=3
+          APPEND archisobasedir=%INSTALL_DIR% archisosearchuuid=%ARCHISO_UUID% nomodeset quiet splash loglevel=3
           SYSSYS
           
           cat > syslinux/syslinux.cfg <<SYSCFG
