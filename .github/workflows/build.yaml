@@ -82,13 +82,32 @@ jobs:
       
       - name: Build ISO
         run: |
+          # Free up disk space on GitHub Actions runner
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
+          sudo rm -rf /usr/local/share/boost /usr/lib/jvm /opt/az
+          sudo rm -rf "$AGENT_TOOLSDIRECTORY"
+          sudo docker image prune -af
+          sudo apt-get clean
+          sudo apt-get autoremove -y
+          
+          # Show available space
+          df -h
+          
+          # Configure Docker to use more space
+          sudo systemctl stop docker
+          sudo rm -rf /var/lib/docker
+          sudo mkdir -p /mnt/docker
+          sudo ln -s /mnt/docker /var/lib/docker
+          sudo systemctl start docker
+          
           docker build -t builder - <<'DOCKERFILE'
           FROM archlinux:latest
           RUN pacman -Syu --noconfirm && pacman -S --noconfirm archiso git && pacman -Scc --noconfirm
           WORKDIR /build
           DOCKERFILE
           
-          docker run --rm --privileged -v "$PWD:/workspace" -e ISO_NAME="${{ env.ISO_NAME }}" builder bash -c '
+          # Run with more storage allocated
+          docker run --rm --privileged --storage-opt size=50G -v "$PWD:/workspace" -e ISO_NAME="${{ env.ISO_NAME }}" builder bash -c '
           set -euo pipefail
           
           cp -r /usr/share/archiso/configs/releng /build/cybr
@@ -103,7 +122,7 @@ jobs:
           
           mkdir -p airootfs/etc/pacman.d/hooks
           mkdir -p airootfs/usr/local/bin
-          mkdir -p airootfs/etc/skel/.config/autostart
+          mkdir -p airootfs/etc/skel/.config
           mkdir -p airootfs/etc/skel/.local/share/konsole
           
           cat > airootfs/etc/os-release <<'OSREL'
