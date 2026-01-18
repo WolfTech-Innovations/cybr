@@ -220,7 +220,6 @@ jobs:
           
           # Set Plymouth theme
           plymouth-set-default-theme spinner
-          PLYM
           EOF
           chmod +x airootfs/root/customize_airootfs.sh
           
