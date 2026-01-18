@@ -34,6 +34,7 @@ jobs:
           arch-install-scripts
           pacman-contrib
           archlinux-contrib
+          plymouth
           plasma-desktop
           plasma-workspace
           plasma-nm
@@ -172,7 +173,7 @@ jobs:
           MODULES=()
           BINARIES=()
           FILES=()
-          HOOKS=(base udev modconf kms keyboard keymap consolefont block filesystems archiso)
+          HOOKS=(base udev plymouth modconf kms keyboard keymap consolefont block filesystems archiso)
           COMPRESSION="xz"
           COMPRESSION_OPTIONS=(-9e)
           EOF
@@ -192,9 +193,13 @@ jobs:
           KVER=\$(file -bL /boot/vmlinuz-linux-lts | grep -o "version [^ ]*" | cut -d" " -f2)
           mkinitcpio -k "\$KVER" -c /etc/mkinitcpio.conf.d/archiso.conf -g /boot/initramfs-linux-lts.img
           [[ ! -f /boot/vmlinuz-linux-lts || ! -f /boot/initramfs-linux-lts.img ]] && exit 1
+          
+          # Create live user
           useradd -m -G wheel,audio,video,optical,storage,network -s /bin/bash liveuser
           echo "liveuser:live" | chpasswd && echo "root:root" | chpasswd
           echo "%wheel ALL=(ALL:ALL) NOPASSWD: ALL" > /etc/sudoers.d/wheel && chmod 440 /etc/sudoers.d/wheel
+          
+          # Configure SDDM for autologin
           mkdir -p /etc/sddm.conf.d
           cat > /etc/sddm.conf.d/autologin.conf <<SDDM
           [Autologin]
@@ -204,6 +209,18 @@ jobs:
           HaltCommand=/usr/bin/systemctl poweroff
           RebootCommand=/usr/bin/systemctl reboot
           SDDM
+          
+          # Configure Plymouth
+          mkdir -p /etc/plymouth
+          cat > /etc/plymouth/plymouthd.conf <<PLYM
+          [Daemon]
+          Theme=spinner
+          ShowDelay=0
+          PLYM
+          
+          # Set Plymouth theme
+          plymouth-set-default-theme spinner
+          PLYM
           EOF
           chmod +x airootfs/root/customize_airootfs.sh
           
