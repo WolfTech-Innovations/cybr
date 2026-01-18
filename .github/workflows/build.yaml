@@ -97,9 +97,9 @@ jobs:
           pacman-key --init && pacman-key --populate archlinux
           pacman -Syy --noconfirm
           
-          # BlackArch (optional)
+          # BlackArch (optional) - Skip checksum verification as it changes frequently
           curl -O https://blackarch.org/strap.sh && chmod +x strap.sh
-          echo "9f770789df3b7803105e5fbc19212889674cd503 strap.sh" | sha1sum -c && TERM=dumb ./strap.sh 2>&1 | grep -v "tput:" || true
+          TERM=dumb ./strap.sh 2>&1 | grep -v "tput:" || echo "BlackArch skipped (optional)"
           rm -f strap.sh
           sed -i "s/#ParallelDownloads = 5/ParallelDownloads = 5/" pacman.conf && pacman -Syy --noconfirm
           
@@ -163,13 +163,13 @@ jobs:
           EOF
           
           # Live user, services, and theming
-          cat > airootfs/root/customize_airootfs.sh <<EOF
+          cat > airootfs/root/customize_airootfs.sh <<"ENDCUSTOMIZE"
           #!/usr/bin/env bash
           set -e
           
           # Build initramfs
-          KVER=\\$(file -bL /boot/vmlinuz-linux-lts | grep -o "version [^ ]*" | cut -d" " -f2)
-          mkinitcpio -k "\\$KVER" -c /etc/mkinitcpio.conf.d/archiso.conf -g /boot/initramfs-linux-lts.img
+          KVER=$(file -bL /boot/vmlinuz-linux-lts | grep -o "version [^ ]*" | cut -d" " -f2)
+          mkinitcpio -k "$KVER" -c /etc/mkinitcpio.conf.d/archiso.conf -g /boot/initramfs-linux-lts.img
           [[ ! -f /boot/vmlinuz-linux-lts || ! -f /boot/initramfs-linux-lts.img ]] && exit 1
           
           # Create live user
@@ -278,7 +278,7 @@ jobs:
           
           # Enable Flatpak repo
           flatpak remote-add --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo || true
-          EOF
+ENDCUSTOMIZE
           chmod +x airootfs/root/customize_airootfs.sh
           
           # Calamares config
