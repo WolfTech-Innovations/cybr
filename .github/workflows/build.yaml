@@ -8,7 +8,7 @@ on:
     - cron: '0 2 * * 0'
 
 env:
-  ISO_NAME: "cybr-arch-plasma-v${{ github.run_number }}"
+  ISO_NAME: "cybr-linux-v${{ github.run_number }}"
 
 jobs:
   build:
@@ -48,12 +48,17 @@ jobs:
           kate
           firefox
           kscreen
+          discover
+          packagekit-qt6
+          flatpak
+          fwupd
           networkmanager
           pipewire
           pipewire-pulse
           pipewire-jack
           pipewire-alsa
           wireplumber
+          calamares
           git
           curl
           wget
@@ -71,6 +76,8 @@ jobs:
           iwd
           kvantum
           papirus-icon-theme
+          latte-dock
+          breeze-gtk
           EOF
       
       - name: Build ISO
@@ -86,91 +93,58 @@ jobs:
           cp -r /usr/share/archiso/configs/releng /build/cybr && cd /build/cybr
           cp /workspace/packages.x86_64 .
           
-          # Initialize pacman properly
-          pacman-key --init
-          pacman-key --populate archlinux
-          
-          # Sync package databases FIRST
-          echo "Syncing Arch repositories..."
+          # Initialize pacman
+          pacman-key --init && pacman-key --populate archlinux
           pacman -Syy --noconfirm
           
-          # Install BlackArch repository (optional)
-          echo "Installing BlackArch repository..."
-          curl -O https://blackarch.org/strap.sh
-          chmod +x strap.sh
-          # Verify SHA1 checksum
-          echo "9f770789df3b7803105e5fbc19212889674cd503 strap.sh" | sha1sum -c || {
-            echo "Warning: BlackArch checksum verification failed, skipping..."
-            rm -f strap.sh
-          }
-          if [ -f strap.sh ]; then
-            TERM=dumb ./strap.sh 2>&1 | grep -v "tput:" || echo "BlackArch installed (optional)"
-            rm -f strap.sh
-          fi
+          # BlackArch (optional)
+          curl -O https://blackarch.org/strap.sh && chmod +x strap.sh
+          echo "9f770789df3b7803105e5fbc19212889674cd503 strap.sh" | sha1sum -c && TERM=dumb ./strap.sh 2>&1 | grep -v "tput:" || true
+          rm -f strap.sh
+          sed -i "s/#ParallelDownloads = 5/ParallelDownloads = 5/" pacman.conf && pacman -Syy --noconfirm
           
-          # Enable parallel downloads and sync all repos
-          sed -i "s/#ParallelDownloads = 5/ParallelDownloads = 5/" pacman.conf
-          pacman -Syy --noconfirm
-          
-          # Branding files
-          mkdir -p airootfs/etc airootfs/etc/motd.d airootfs/etc/skel/.{config,local/share/konsole}
-          mkdir -p airootfs/usr/share/plasma/look-and-feel/org.cybr.desktop/contents/{previews,splash/images}
+          # Branding
+          mkdir -p airootfs/etc airootfs/etc/motd.d airootfs/etc/skel/.{config,local/share/{konsole,plasma/desktoptheme,kservices5}}
           cat > airootfs/etc/os-release <<EOF
           NAME="Cybr Linux"
-          PRETTY_NAME="Cybr Linux - Dawn Light Shines Upon the Arches"
+          PRETTY_NAME="Cybr Linux"
           ID=cybr
           ID_LIKE=arch
           BUILD_ID=rolling
           ANSI_COLOR="38;2;23;147;209"
           HOME_URL="https://wolfos.uk/"
-          LOGO=archlinux-logo
+          LOGO=cybr-logo
           EOF
+          
           cat > airootfs/etc/lsb-release <<EOF
           DISTRIB_ID="Cybr"
           DISTRIB_RELEASE="rolling"
-          DISTRIB_DESCRIPTION="Cybr Linux - Dawn Light Shines Upon the Arches"
+          DISTRIB_DESCRIPTION="Cybr Linux"
           EOF
+          
           echo "cybr-live" > airootfs/etc/hostname
+          
           cat > airootfs/etc/issue <<EOF
           
-          Cybr Linux - Dawn Light Shines Upon the Arches
-          ================================================
+          Cybr Linux
+          ==========
           Welcome to the Live Environment
           
           EOF
+          
           cat > airootfs/etc/motd.d/00-cybr <<EOF
           
-          ╔════════════════════════════════════════════════════════════╗
-          ║        Cybr Linux - Dawn Light Shines Upon the Arches     ║
-          ║  Built for performance, security, and ease of use         ║
-          ║  • Install: archinstall or /root/install-cybr.sh          ║
-          ║  • Modern UI: /usr/local/bin/setup-modern-ui.sh           ║
-          ╚════════════════════════════════════════════════════════════╝
+          ╔══════════════════════════════════════╗
+          ║          Cybr Linux                  ║
+          ║  Modern • Elegant • User-Friendly    ║
+          ║                                      ║
+          ║  Install: calamares or archinstall   ║
+          ║  Support: https://wolfos.uk/         ║
+          ╚══════════════════════════════════════╝
           
           EOF
-          cat > airootfs/etc/skel/.config/kscreenlockerrc <<EOF
-          [Greeter][Wallpaper][org.kde.image][General]
-          Image=/usr/share/wallpapers/cybr-wallpaper.png
-          EOF
-          cat > airootfs/etc/skel/.local/share/konsole/Cybr.profile <<EOF
-          [Appearance]
-          ColorScheme=Breeze
-          [General]
-          Name=Cybr
-          Parent=FALLBACK/
-          EOF
-          cat > airootfs/usr/share/plasma/look-and-feel/org.cybr.desktop/metadata.desktop <<EOF
-          [Desktop Entry]
-          Name=Cybr Linux
-          Comment=Cybr Linux - Dawn Light Shines Upon the Arches
-          Type=Service
-          X-KDE-ServiceTypes=Plasma/LookAndFeel
-          X-KDE-PluginInfo-Name=org.cybr.desktop
-          X-KDE-PluginInfo-Version=1.0
-          X-Plasma-MainScript=defaults
-          EOF
           
-          # Kernel config
+          # Kernel config with Plymouth
           mkdir -p airootfs/etc/mkinitcpio.{conf.d,d} airootfs/boot
           cat > airootfs/etc/mkinitcpio.conf.d/archiso.conf <<EOF
           MODULES=()
@@ -180,21 +154,22 @@ jobs:
           COMPRESSION="xz"
           COMPRESSION_OPTIONS=(-9e)
           EOF
+          
           cat > airootfs/etc/mkinitcpio.d/linux-lts.preset <<EOF
           ALL_config="/etc/mkinitcpio.conf.d/archiso.conf"
           ALL_kver="/boot/vmlinuz-linux-lts"
-          PRESETS=("default" "fallback")
+          PRESETS=("default")
           default_image="/boot/initramfs-linux-lts.img"
-          fallback_image="/boot/initramfs-linux-lts-fallback.img"
-          fallback_options="-S autodetect"
           EOF
           
-          # Live user setup
+          # Live user, services, and theming
           cat > airootfs/root/customize_airootfs.sh <<EOF
           #!/usr/bin/env bash
           set -e
-          KVER=\$(file -bL /boot/vmlinuz-linux-lts | grep -o "version [^ ]*" | cut -d" " -f2)
-          mkinitcpio -k "\$KVER" -c /etc/mkinitcpio.conf.d/archiso.conf -g /boot/initramfs-linux-lts.img
+          
+          # Build initramfs
+          KVER=\\$(file -bL /boot/vmlinuz-linux-lts | grep -o "version [^ ]*" | cut -d" " -f2)
+          mkinitcpio -k "\\$KVER" -c /etc/mkinitcpio.conf.d/archiso.conf -g /boot/initramfs-linux-lts.img
           [[ ! -f /boot/vmlinuz-linux-lts || ! -f /boot/initramfs-linux-lts.img ]] && exit 1
           
           # Create live user
@@ -202,7 +177,14 @@ jobs:
           echo "liveuser:live" | chpasswd && echo "root:root" | chpasswd
           echo "%wheel ALL=(ALL:ALL) NOPASSWD: ALL" > /etc/sudoers.d/wheel && chmod 440 /etc/sudoers.d/wheel
           
-          # Configure SDDM for autologin
+          # Install yay for liveuser
+          cd /tmp
+          sudo -u liveuser git clone https://aur.archlinux.org/yay-bin.git
+          cd yay-bin
+          sudo -u liveuser makepkg -si --noconfirm
+          cd / && rm -rf /tmp/yay-bin
+          
+          # SDDM autologin
           mkdir -p /etc/sddm.conf.d
           cat > /etc/sddm.conf.d/autologin.conf <<SDDM
           [Autologin]
@@ -211,20 +193,150 @@ jobs:
           [General]
           HaltCommand=/usr/bin/systemctl poweroff
           RebootCommand=/usr/bin/systemctl reboot
+          [Theme]
+          Current=breeze
           SDDM
           
-          # Configure Plymouth
+          # Plymouth
           mkdir -p /etc/plymouth
           cat > /etc/plymouth/plymouthd.conf <<PLYM
           [Daemon]
           Theme=spinner
           ShowDelay=0
           PLYM
-          
-          # Set Plymouth theme
           plymouth-set-default-theme spinner
+          
+          # Dark mode defaults for liveuser
+          mkdir -p /home/liveuser/.config
+          cat > /home/liveuser/.config/kdeglobals <<KDE
+          [General]
+          ColorScheme=BreezeDark
+          
+          [KDE]
+          LookAndFeelPackage=org.kde.breezedark.desktop
+          
+          [Icons]
+          Theme=Papirus-Dark
+          KDE
+          
+          # Plasma panel config - ChromeOS style bottom dock
+          mkdir -p /home/liveuser/.config
+          cat > /home/liveuser/.config/lattedockrc <<LATTE
+          [UniversalSettings]
+          canDisableBorders=true
+          currentLayout=Cybr
+          lastNonAssignedLayout=Cybr
+          version=2
+          LATTE
+          
+          # Konsole dark theme
+          mkdir -p /home/liveuser/.local/share/konsole
+          cat > /home/liveuser/.local/share/konsole/Cybr.profile <<KONSOLE
+          [Appearance]
+          ColorScheme=Breeze
+          Font=Monospace,11,-1,5,50,0,0,0,0,0
+          [General]
+          Name=Cybr
+          Parent=FALLBACK/
+          KONSOLE
+          
+          # Desktop icon for Calamares
+          cat > /home/liveuser/Desktop/calamares.desktop <<DESK
+          [Desktop Entry]
+          Type=Application
+          Version=1.0
+          Name=Install Cybr Linux
+          GenericName=System Installer
+          Keywords=calamares;system;installer;
+          TryExec=calamares
+          Exec=sudo calamares
+          Comment=Install the operating system to disk
+          Icon=calamares
+          Terminal=false
+          StartupNotify=true
+          Categories=Qt;System;
+          X-AppStream-Ignore=true
+          DESK
+          chmod +x /home/liveuser/Desktop/calamares.desktop
+          
+          # Desktop icon for Discover (App Store)
+          cat > /home/liveuser/Desktop/discover.desktop <<DESK2
+          [Desktop Entry]
+          Type=Application
+          Name=App Store
+          GenericName=Software Center
+          Comment=Browse and install applications
+          Exec=plasma-discover
+          Icon=plasmadiscover
+          Terminal=false
+          Categories=Qt;KDE;System;PackageManager;
+          DESK2
+          chmod +x /home/liveuser/Desktop/discover.desktop
+          
+          # Fix permissions
+          chown -R liveuser:liveuser /home/liveuser
+          
+          # Enable Flatpak repo
+          flatpak remote-add --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo || true
           EOF
           chmod +x airootfs/root/customize_airootfs.sh
+          
+          # Calamares config
+          mkdir -p airootfs/etc/calamares
+          cat > airootfs/etc/calamares/settings.conf <<CALA
+          modules-search: [ local ]
+          instances: [ ]
+          sequence:
+            - show:
+              - welcome
+              - locale
+              - keyboard
+              - partition
+              - users
+              - summary
+            - exec:
+              - partition
+              - mount
+              - unpackfs
+              - machineid
+              - fstab
+              - locale
+              - keyboard
+              - localecfg
+              - users
+              - displaymanager
+              - networkcfg
+              - hwclock
+              - services-systemd
+              - bootloader
+              - umount
+            - show:
+              - finished
+          branding: cybr
+          prompt-install: true
+          dont-chroot: false
+          CALA
+          
+          mkdir -p airootfs/etc/calamares/branding/cybr
+          cat > airootfs/etc/calamares/branding/cybr/branding.desc <<BRAND
+          componentName: cybr
+          strings:
+            productName: Cybr Linux
+            shortProductName: Cybr
+            version: Rolling
+            shortVersion: Rolling
+            versionedName: Cybr Linux
+            shortVersionedName: Cybr
+            bootloaderEntryName: Cybr
+            productUrl: https://wolfos.uk/
+          images:
+            productLogo: "logo.png"
+            productIcon: "logo.png"
+          slideshow: "show.qml"
+          style:
+            sidebarBackground: "#1793D1"
+            sidebarText: "#FFFFFF"
+          BRAND
           
           # systemd-boot (UEFI)
           mkdir -p efiboot/loader/entries
@@ -234,29 +346,25 @@ jobs:
           console-mode max
           editor no
           EOF
+          
           cat > efiboot/loader/entries/01-cybr.conf <<EOF
-          title   Cybr Linux - Dawn Light Shines Upon the Arches
+          title   Cybr Linux
           linux   /%INSTALL_DIR%/boot/x86_64/vmlinuz-linux-lts
           initrd  /%INSTALL_DIR%/boot/x86_64/initramfs-linux-lts.img
-          options archisobasedir=%INSTALL_DIR% archisosearchuuid=%ARCHISO_UUID% quiet splash
+          options archisobasedir=%INSTALL_DIR% archisosearchuuid=%ARCHISO_UUID% quiet splash loglevel=3 rd.udev.log_priority=3 vt.global_cursor_default=0
           EOF
-          cat > efiboot/loader/entries/02-cybr-nomodeset.conf <<EOF
-          title   Cybr Linux - Dawn Light (Safe Graphics)
+          
+          cat > efiboot/loader/entries/02-cybr-safe.conf <<EOF
+          title   Cybr Linux (Safe Graphics)
           linux   /%INSTALL_DIR%/boot/x86_64/vmlinuz-linux-lts
           initrd  /%INSTALL_DIR%/boot/x86_64/initramfs-linux-lts.img
-          options archisobasedir=%INSTALL_DIR% archisosearchuuid=%ARCHISO_UUID% nomodeset quiet splash
-          EOF
-          cat > efiboot/loader/entries/03-cybr-copytoram.conf <<EOF
-          title   Cybr Linux - Dawn Light (Copy to RAM)
-          linux   /%INSTALL_DIR%/boot/x86_64/vmlinuz-linux-lts
-          initrd  /%INSTALL_DIR%/boot/x86_64/initramfs-linux-lts.img
-          options archisobasedir=%INSTALL_DIR% archisosearchuuid=%ARCHISO_UUID% copytoram quiet splash
+          options archisobasedir=%INSTALL_DIR% archisosearchuuid=%ARCHISO_UUID% nomodeset quiet splash loglevel=3
           EOF
           
           # Syslinux (BIOS)
           cat > syslinux/archiso_head.cfg <<EOF
           UI vesamenu.c32
-          MENU TITLE Cybr Linux - Dawn Light Shines Upon the Arches
+          MENU TITLE Cybr Linux
           MENU WIDTH 78
           MENU MARGIN 4
           MENU ROWS 7
@@ -264,23 +372,21 @@ jobs:
           MENU COLOR sel 7;37;40 #e0ffffff #201793D1 all
           TIMEOUT 150
           EOF
+          
           cat > syslinux/archiso_sys.cfg <<EOF
           LABEL arch64
-          MENU LABEL Cybr Linux - Dawn Light
+          MENU LABEL Cybr Linux
           LINUX /%INSTALL_DIR%/boot/x86_64/vmlinuz-linux-lts
           INITRD /%INSTALL_DIR%/boot/x86_64/initramfs-linux-lts.img
-          APPEND archisobasedir=%INSTALL_DIR% archisosearchuuid=%ARCHISO_UUID% quiet splash
+          APPEND archisobasedir=%INSTALL_DIR% archisosearchuuid=%ARCHISO_UUID% quiet splash loglevel=3
+          
           LABEL arch64_nomodeset
-          MENU LABEL Cybr Linux - Dawn Light (Safe Graphics)
+          MENU LABEL Cybr Linux (Safe Graphics)
           LINUX /%INSTALL_DIR%/boot/x86_64/vmlinuz-linux-lts
           INITRD /%INSTALL_DIR%/boot/x86_64/initramfs-linux-lts.img
-          APPEND archisobasedir=%INSTALL_DIR% archisosearchuuid=%ARCHISO_UUID% nomodeset quiet splash
-          LABEL arch64_copytoram
-          MENU LABEL Cybr Linux - Dawn Light (Copy to RAM)
-          LINUX /%INSTALL_DIR%/boot/x86_64/vmlinuz-linux-lts
-          INITRD /%INSTALL_DIR%/boot/x86_64/initramfs-linux-lts.img
-          APPEND archisobasedir=%INSTALL_DIR% archisosearchuuid=%ARCHISO_UUID% copytoram quiet splash
+          APPEND archisobasedir=%INSTALL_DIR% archisosearchuuid=%ARCHISO_UUID% nomodeset quiet splash loglevel=3
           EOF
+          
           cat > syslinux/syslinux.cfg <<EOF
           DEFAULT arch64
           INCLUDE archiso_head.cfg
@@ -288,90 +394,16 @@ jobs:
           INCLUDE archiso_tail.cfg
           EOF
           
-          # Auto-update system
-          mkdir -p airootfs/etc/systemd/system airootfs/usr/local/bin
-          cat > airootfs/etc/systemd/system/cybr-autoupdate.service <<EOF
-          [Unit]
-          Description=Cybr Auto Update
-          After=network-online.target
-          ConditionACPower=true
-          [Service]
-          Type=oneshot
-          Nice=19
-          ExecStart=/usr/local/bin/cybr-autoupdate.sh
-          TimeoutSec=3600
-          [Install]
-          WantedBy=multi-user.target
-          EOF
-          
-          cat > airootfs/etc/systemd/system/cybr-autoupdate.timer <<EOF
-          [Unit]
-          Description=Cybr Auto Update Timer
-          [Timer]
-          OnCalendar=daily
-          OnCalendar=03:00
-          RandomizedDelaySec=30min
-          [Install]
-          WantedBy=timers.target
-          EOF
-          
-          cat > airootfs/usr/local/bin/cybr-autoupdate.sh <<EOF
-          #!/bin/bash
-          LOG="/var/log/cybr-autoupdate.log"
-          LOCK="/var/run/cybr-autoupdate.lock"
-          log() { echo "[\$(date +"%Y-%m-%d %H:%M:%S")] \$1" | tee -a "\$LOG"; }
-          [[ -f "\$LOCK" && \$((\\$(date +%s)-\\$(stat -c %Y "\$LOCK" 2>/dev/null||echo 0))) -lt 86400 ]] && log "Running" && exit 1
-          touch "\$LOCK" && trap "rm -f \$LOCK" EXIT
-          log "===== Cybr Auto-Update ====="
-          ping -c1 -W5 archlinux.org &>/dev/null || { log "No network"; exit 1; }
-          pacman -Sy --noconfirm --needed archlinux-keyring 2>&1|tee -a "\$LOG"
-          UPDATES=\\$(checkupdates 2>/dev/null|grep -cv "^\\$")
-          [[ \$UPDATES -eq 0 ]] && log "Up to date" && exit 0
-          log "Found \$UPDATES updates"
-          pacman -Su --noconfirm 2>&1|tee -a "\$LOG" && paccache -rk3 2>&1|tee -a "\$LOG"
-          log "Complete"
-          EOF
-          chmod +x airootfs/usr/local/bin/cybr-autoupdate.sh
-          
-          # UI setup script
-          cat > airootfs/usr/local/bin/setup-modern-ui.sh <<EOF
-          #!/bin/bash
-          cd /tmp && git clone https://github.com/matinlotfali/KDE-Rounded-Corners && cd KDE-Rounded-Corners
-          mkdir build && cd build && cmake .. -DCMAKE_INSTALL_PREFIX=/usr && make -j\\$(nproc) && sudo make install
-          cd /tmp && git clone https://github.com/taj-ny/kwin-effects-forceblur && cd kwin-effects-forceblur
-          mkdir build && cd build && cmake .. -DCMAKE_INSTALL_PREFIX=/usr && make -j\\$(nproc) && sudo make install
-          kwriteconfig5 --file kwinrc --group Plugins --key kwin4_effect_shapecornersEnabled true
-          kwriteconfig5 --file kwinrc --group Plugins --key blurEnabled true
-          kwin_x11 --replace & plasmashell --replace &
-          EOF
-          chmod +x airootfs/usr/local/bin/setup-modern-ui.sh
-          
-          # Install helper
-          cat > airootfs/root/install-cybr.sh <<EOF
-          #!/bin/bash
-          cat <<INFO
-          ╔════════════════════════════════════════════╗
-          ║   Cybr Linux Installation Helper          ║
-          ╚════════════════════════════════════════════╝
-          Quick: archinstall
-          Manual: cfdisk -> mkfs.ext4 -> mount -> pacstrap -> genfstab -> arch-chroot
-          Modern UI: /usr/local/bin/setup-modern-ui.sh
-          INFO
-          read -p "Press Enter..."
-          EOF
-          chmod +x airootfs/root/install-cybr.sh
-          
           # Enable services
-          mkdir -p airootfs/etc/systemd/system/{multi-user.target.wants,timers.target.wants}
+          mkdir -p airootfs/etc/systemd/system/multi-user.target.wants
           ln -sf /usr/lib/systemd/system/{sddm.service,NetworkManager.service,bluetooth.service} airootfs/etc/systemd/system/multi-user.target.wants/
           ln -sf /usr/lib/systemd/system/sddm.service airootfs/etc/systemd/system/display-manager.service
-          ln -sf /etc/systemd/system/cybr-autoupdate.timer airootfs/etc/systemd/system/timers.target.wants/
           
           # Compression & build
           sed -i "s/airootfs_image_tool_options=()/airootfs_image_tool_options=(\"-comp\" \"xz\" \"-Xbcj\" \"x86\" \"-b\" \"1M\" \"-Xdict-size\" \"100%\" \"-no-recovery\" \"-always-use-fragments\" \"-no-duplicates\")/" profiledef.sh
           mkarchiso -v -w /tmp/work -o /tmp/out .
           
-          # Verify & export
+          # Verify
           ISO_FILE=$(ls /tmp/out/*.iso)
           mkdir -p /tmp/m && mount -o loop "$ISO_FILE" /tmp/m
           [[ ! -f /tmp/m/arch/boot/x86_64/vmlinuz-linux-lts ]] && echo "ERROR: Kernel missing!" && exit 1
