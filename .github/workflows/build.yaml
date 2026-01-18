@@ -149,12 +149,12 @@ jobs:
           default_image="/boot/initramfs-linux-lts.img"
           PRESET
           
-          cat > airootfs/root/customize_airootfs.sh <<CUSTOMIZE
+          cat > airootfs/root/customize_airootfs.sh <<'\''CUSTOMIZE'\''
           #!/usr/bin/env bash
           set -e
           
-          KVER=\$(file -bL /boot/vmlinuz-linux-lts | grep -o "version [^ ]*" | cut -d" " -f2)
-          mkinitcpio -k "\$KVER" -c /etc/mkinitcpio.conf.d/archiso.conf -g /boot/initramfs-linux-lts.img
+          KVER=$(file -bL /boot/vmlinuz-linux-lts | grep -o "version [^ ]*" | cut -d" " -f2)
+          mkinitcpio -k "$KVER" -c /etc/mkinitcpio.conf.d/archiso.conf -g /boot/initramfs-linux-lts.img
           
           if [ ! -f /boot/vmlinuz-linux-lts ]; then
             echo "ERROR: Kernel missing"
@@ -331,9 +331,9 @@ jobs:
           echo "Building ISO..."
           mkarchiso -v -w /tmp/work -o /tmp/out .
           
-          ISO_FILE=\$(ls /tmp/out/*.iso)
+          ISO_FILE=$(ls /tmp/out/*.iso)
           mkdir -p /tmp/m
-          mount -o loop "\$ISO_FILE" /tmp/m
+          mount -o loop "$ISO_FILE" /tmp/m
           
           if [ ! -f /tmp/m/arch/boot/x86_64/vmlinuz-linux-lts ]; then
             echo "ERROR: Kernel missing from ISO"
@@ -343,7 +343,7 @@ jobs:
           
           echo "Kernel verified successfully"
           umount /tmp/m
-          mv "\$ISO_FILE" "/workspace/${ISO_NAME}.iso"
+          mv "$ISO_FILE" "/workspace/${ISO_NAME}.iso"
           '
       
       - name: Generate checksums
