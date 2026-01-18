@@ -191,16 +191,93 @@ jobs:
           echo "%wheel ALL=(ALL:ALL) NOPASSWD: ALL" > /etc/sudoers.d/wheel
           chmod 440 /etc/sudoers.d/wheel
           
-          # Install yay for liveuser
-          cd /tmp
-          sudo -u liveuser git clone https://aur.archlinux.org/yay-bin.git
-          cd yay-bin
-          sudo -u liveuser makepkg -si --noconfirm
-          cd /
-          rm -rf /tmp/yay-bin
+          # Copy yay installation script for after network setup
+          cat > /usr/local/bin/setup-aur.sh <<"AURSETUP"
+          #!/bin/bash
+          # Install yay AUR helper
+          if ! command -v yay &> /dev/null; then
+            cd /tmp
+            sudo -u liveuser git clone https://aur.archlinux.org/yay-bin.git
+            cd yay-bin
+            sudo -u liveuser makepkg -si --noconfirm
+            cd /
+            rm -rf /tmp/yay-bin
+          fi
           
-          # Install Calamares and Latte Dock from AUR
+          # Install AUR packages
           sudo -u liveuser yay -S --noconfirm calamares latte-dock
+          AURSETUP
+          chmod +x /usr/local/bin/setup-aur.sh
+          
+          # Create welcome script that requires network
+          cat > /usr/local/bin/cybr-welcome.sh <<"WELCOME"
+          #!/bin/bash
+          
+          # Check if we already completed setup
+          if [[ -f /var/lib/cybr-welcome-done ]]; then
+            exit 0
+          fi
+          
+          # Check if we have internet
+          if ping -c 1 -W 2 archlinux.org &> /dev/null; then
+            # We have internet, install AUR packages
+            kdialog --title "Cybr Linux" --passivepopup "Setting up additional software..." 5 &
+            /usr/local/bin/setup-aur.sh
+            kdialog --title "Cybr Linux" --msgbox "Welcome to Cybr Linux!\n\nYour system is ready. Additional software including Calamares installer has been installed."
+            touch /var/lib/cybr-welcome-done
+            exit 0
+          fi
+          
+          # No internet - require connection
+          while true; do
+            kdialog --title "Cybr Linux - Network Required" --msgbox \
+            "Welcome to Cybr Linux!
+            
+            An internet connection is required to complete setup and install essential software (Calamares installer, themes, etc.).
+            
+            Please connect to the internet to continue."
+            
+            # Open network manager
+            kcmshell6 kcm_networkmanagement
+            
+            # Wait a moment for user to connect
+            sleep 3
+            
+            # Check if connected now
+            if ping -c 1 -W 2 archlinux.org &> /dev/null; then
+              kdialog --title "Cybr Linux" --passivepopup "Connected! Installing additional software..." 5 &
+              /usr/local/bin/setup-aur.sh
+              kdialog --title "Cybr Linux" --msgbox "Setup complete!\n\nYour system is ready with all additional software installed."
+              touch /var/lib/cybr-welcome-done
+              break
+            else
+              kdialog --title "Connection Failed" --warningyesno \
+              "Unable to detect internet connection.\n\nWould you like to try connecting again?" \
+              --yes-label "Try Again" --no-label "Use Offline Mode"
+              
+              if [[ \$? -ne 0 ]]; then
+                # User chose offline mode
+                kdialog --title "Offline Mode" --msgbox "Running in offline mode.\n\nSome features (Calamares installer) will not be available.\n\nYou can use 'archinstall' from the terminal to install the system."
+                touch /var/lib/cybr-welcome-done
+                break
+              fi
+            fi
+          done
+          WELCOME
+          chmod +x /usr/local/bin/cybr-welcome.sh
+          
+          # Create autostart entry for welcome script
+          mkdir -p /home/liveuser/.config/autostart
+          cat > /home/liveuser/.config/autostart/cybr-welcome.desktop <<"AUTOSTART"
+          [Desktop Entry]
+          Type=Application
+          Name=Cybr Welcome
+          Exec=/usr/local/bin/cybr-welcome.sh
+          Hidden=false
+          NoDisplay=true
+          X-GNOME-Autostart-enabled=true
+          X-KDE-autostart-after=panel
+          AUTOSTART
           
           # SDDM autologin
           mkdir -p /etc/sddm.conf.d
@@ -239,7 +316,8 @@ jobs:
           Theme=Papirus-Dark
           KDE
           
-          # Latte Dock config
+          # Latte Dock config - ChromeOS style bottom dock
+          mkdir -p /home/liveuser/.config/latte
           cat > /home/liveuser/.config/lattedockrc <<"LATTE"
           [UniversalSettings]
           canDisableBorders=true
@@ -247,6 +325,24 @@ jobs:
           lastNonAssignedLayout=Cybr
           version=2
           LATTE
+          
+          # Plasma panel configuration for ChromeOS-like experience
+          mkdir -p /home/liveuser/.config/plasma-org.kde.plasma.desktop-appletsrc
+          cat > /home/liveuser/.config/kwinrc <<"KWIN"
+          [Desktops]
+          Number=1
+          Rows=1
+          
+          [Effect-Blur]
+          BlurStrength=8
+          
+          [Plugins]
+          blurEnabled=true
+          
+          [Windows]
+          FocusPolicy=FocusFollowsMouse
+          RollOverDesktops=true
+          KWIN
           
           # Konsole profile
           mkdir -p /home/liveuser/.local/share/konsole
@@ -262,22 +358,21 @@ jobs:
           
           # Desktop icons
           mkdir -p /home/liveuser/Desktop
-          cat > /home/liveuser/Desktop/calamares.desktop <<"DESK1"
+          cat > /home/liveuser/Desktop/install.desktop <<"DESK1"
           [Desktop Entry]
           Type=Application
           Version=1.0
           Name=Install Cybr Linux
           GenericName=System Installer
-          TryExec=calamares
-          Exec=sudo calamares
           Comment=Install the operating system to disk
-          Icon=calamares
+          Exec=sh -c 'if command -v calamares &> /dev/null; then sudo calamares; else konsole -e sudo archinstall; fi'
+          Icon=system-software-install
           Terminal=false
           StartupNotify=true
           Categories=Qt;System;
           X-AppStream-Ignore=true
           DESK1
-          chmod +x /home/liveuser/Desktop/calamares.desktop
+          chmod +x /home/liveuser/Desktop/install.desktop
           
           cat > /home/liveuser/Desktop/discover.desktop <<"DESK2"
           [Desktop Entry]
