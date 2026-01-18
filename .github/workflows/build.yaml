@@ -159,6 +159,49 @@ jobs:
           # Remove non-LTS kernel preset if it exists
           rm -f /etc/mkinitcpio.d/linux.preset
           
+          # Set up Plymouth theme FIRST
+          mkdir -p /usr/share/plymouth/themes/cybr
+          cat > /usr/share/plymouth/themes/cybr/cybr.plymouth <<'PLYM'
+          [Plymouth Theme]
+          Name=Cybr
+          Description=Cybr Linux Boot
+          ModuleName=script
+          [script]
+          ImageDir=/usr/share/plymouth/themes/cybr
+          ScriptFile=/usr/share/plymouth/themes/cybr/cybr.script
+          PLYM
+          
+          cat > /usr/share/plymouth/themes/cybr/cybr.script <<'SCPT'
+          Window.SetBackgroundTopColor(0,0,0);Window.SetBackgroundBottomColor(0,0,0);
+          w=Window.GetWidth();h=Window.GetHeight();sz=80;sp=15;
+          dot=Sprite(Image.Text("●",1,1,1,1,"Sans 50"));
+          letters=[];reveals=[];sprites=[];
+          for(i=0;i<4;i++){letters[i]=["C","y","b","r"][i];reveals[i]=0;sprites[i]=Sprite(Image.Text(letters[i],1,1,1,0,"Sans "+sz));}
+          lw=sprites[0].GetImage().GetWidth();tw=(lw*4)+(sp*3);sx=(w-tw)/2;sy=(h/2)-(sz/2);
+          for(i=0;i<4;i++)sprites[i].SetPosition(sx+(lw+sp)*i,sy,1);
+          tag=Sprite(Image.Text("Simple. Fast. Secure.",0.5,0.5,0.5,0,"Sans 20"));
+          tag.SetPosition((w-tag.GetImage().GetWidth())/2,sy+sz+40,1);
+          dx=sx-120;de=sx+tw+120;dy=sy+(sz/2)-25;done=0;shown=0;
+          fun refresh_callback(){
+          t=Plymouth.GetTime();
+          if(t<2.5&&done==0){r=t/2.5;x=dx+((de-dx)*r);dot.SetPosition(x,dy,10);
+          for(i=0;i<4;i++){if(x>=sx+(lw+sp)*i+(lw/2)&&reveals[i]==0){sprites[i].SetImage(Image.Text(letters[i],1,1,1,1,"Sans "+sz));reveals[i]=1;}}}
+          else if(done==0){dot.SetOpacity(0);done=1;}
+          if(t>2.8&&shown==0){tag.SetImage(Image.Text("Simple. Fast. Secure.",0.5,0.5,0.5,1,"Sans 20"));shown=1;}}
+          Plymouth.SetRefreshFunction(refresh_callback);
+          SCPT
+          
+          mkdir -p /etc/plymouth
+          cat > /etc/plymouth/plymouthd.conf <<'PLYMCONF'
+          [Daemon]
+          Theme=cybr
+          ShowDelay=0
+          DeviceTimeout=8
+          PLYMCONF
+          
+          plymouth-set-default-theme -R cybr
+          
+          # Now build initramfs with Plymouth theme included
           KVER=$(file -bL /boot/vmlinuz-linux-lts | grep -o "version [^ ]*" | cut -d" " -f2)
           mkinitcpio -k "$KVER" -c /etc/mkinitcpio.conf.d/archiso.conf -g /boot/initramfs-linux-lts.img
           
