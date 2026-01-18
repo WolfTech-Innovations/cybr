@@ -61,7 +61,6 @@ jobs:
           git
           curl
           wget
-          xmlstarlet
           vim
           nano
           ttf-liberation
@@ -89,28 +88,25 @@ jobs:
           WORKDIR /build
           DOCKERFILE
           
-          docker run --rm --privileged -v $PWD:/workspace -e ISO_NAME="${{ env.ISO_NAME }}" builder bash -c '
+          docker run --rm --privileged -v "$PWD:/workspace" -e ISO_NAME="${{ env.ISO_NAME }}" builder bash <<'BUILDSCRIPT'
           set -euo pipefail
+          
           cp -r /usr/share/archiso/configs/releng /build/cybr
           cd /build/cybr
           cp /workspace/packages.x86_64 .
           
-          # Initialize pacman
           pacman-key --init
           pacman-key --populate archlinux
           pacman -Syy --noconfirm
-          
-          # Enable parallel downloads
-          sed -i "s/#ParallelDownloads = 5/ParallelDownloads = 5/" pacman.conf
+          sed -i 's/#ParallelDownloads = 5/ParallelDownloads = 5/' pacman.conf
           pacman -Syy --noconfirm
           
-          # Branding files
-          mkdir -p airootfs/etc airootfs/etc/motd.d
-          mkdir -p airootfs/etc/skel/.config
+          mkdir -p airootfs/etc/pacman.d/hooks
+          mkdir -p airootfs/usr/local/bin
+          mkdir -p airootfs/etc/skel/.config/autostart
           mkdir -p airootfs/etc/skel/.local/share/konsole
-          mkdir -p airootfs/etc/skel/.local/share/plasma/desktoptheme
           
-          cat > airootfs/etc/os-release <<"EOF"
+          cat > airootfs/etc/os-release <<'OSREL'
           NAME="Cybr Linux"
           PRETTY_NAME="Cybr Linux"
           ID=cybr
@@ -119,149 +115,83 @@ jobs:
           ANSI_COLOR="38;2;23;147;209"
           HOME_URL="https://wolfos.uk/"
           LOGO=cybr-logo
-          EOF
+          OSREL
           
-          cat > airootfs/etc/lsb-release <<"EOF"
+          cat > airootfs/etc/lsb-release <<'LSBREL'
           DISTRIB_ID="Cybr"
           DISTRIB_RELEASE="rolling"
           DISTRIB_DESCRIPTION="Cybr Linux"
-          EOF
+          LSBREL
           
           echo "cybr-live" > airootfs/etc/hostname
           
-          cat > airootfs/etc/issue <<"EOF"
-          
-          Cybr Linux
-          ==========
-          Welcome to the Live Environment
-          
-          EOF
-          
-          cat > airootfs/etc/motd.d/00-cybr <<"EOF"
-          
-          ╔══════════════════════════════════════╗
-          ║          Cybr Linux                  ║
-          ║  Modern • Elegant • User-Friendly    ║
-          ║                                      ║
-          ║  Install: calamares or archinstall   ║
-          ║  Support: https://wolfos.uk/         ║
-          ╚══════════════════════════════════════╝
-          
-          EOF
-          
-          # Kernel config with Plymouth
-          mkdir -p airootfs/etc/mkinitcpio.conf.d
-          mkdir -p airootfs/etc/mkinitcpio.d
-          mkdir -p airootfs/boot
-          
-          cat > airootfs/etc/mkinitcpio.conf.d/archiso.conf <<"EOF"
+          cat > airootfs/etc/mkinitcpio.conf.d/archiso.conf <<'MKINIT'
           MODULES=()
           BINARIES=()
           FILES=()
           HOOKS=(base udev plymouth modconf kms keyboard keymap consolefont block filesystems archiso)
           COMPRESSION="xz"
           COMPRESSION_OPTIONS=(-9e)
-          EOF
+          MKINIT
           
-          cat > airootfs/etc/mkinitcpio.d/linux-lts.preset <<"EOF"
+          cat > airootfs/etc/mkinitcpio.d/linux-lts.preset <<'PRESET'
           ALL_config="/etc/mkinitcpio.conf.d/archiso.conf"
           ALL_kver="/boot/vmlinuz-linux-lts"
           PRESETS=("default")
           default_image="/boot/initramfs-linux-lts.img"
-          EOF
+          PRESET
           
-          # Live user setup script
-          cat > airootfs/root/customize_airootfs.sh <<"ENDSCRIPT"
-          #!/usr/bin/env bash
-          set -e
-          
-          # Build initramfs
-          KVER=$(file -bL /boot/vmlinuz-linux-lts | grep -o "version [^ ]*" | cut -d" " -f2)
-          mkinitcpio -k "$KVER" -c /etc/mkinitcpio.conf.d/archiso.conf -g /boot/initramfs-linux-lts.img
-          
-          if [[ ! -f /boot/vmlinuz-linux-lts || ! -f /boot/initramfs-linux-lts.img ]]; then
-            echo "ERROR: Kernel files missing"
-            exit 1
-          fi
-          
-          # Create live user
-          useradd -m -G wheel,audio,video,optical,storage,network -s /bin/bash liveuser
-          echo "liveuser:live" | chpasswd
-          echo "root:root" | chpasswd
-          echo "%wheel ALL=(ALL:ALL) NOPASSWD: ALL" > /etc/sudoers.d/wheel
-          chmod 440 /etc/sudoers.d/wheel
-          
-          # Copy yay installation script for after network setup
-          cat > /usr/local/bin/setup-aur.sh <<"AURSETUP"
+          cat > airootfs/usr/local/bin/setup-aur.sh <<'AURSCRIPT'
           #!/bin/bash
-          # Install yay AUR helper
-          if ! command -v yay &> /dev/null; then
+          if ! command -v yay >/dev/null 2>&1; then
             cd /tmp
             sudo -u liveuser git clone https://aur.archlinux.org/yay-bin.git
             cd yay-bin
             sudo -u liveuser makepkg -si --noconfirm
-            cd /
             rm -rf /tmp/yay-bin
           fi
-          
-          # Install AUR packages
           sudo -u liveuser yay -S --noconfirm calamares latte-dock
-          AURSETUP
-          chmod +x /usr/local/bin/setup-aur.sh
+          AURSCRIPT
+          chmod +x airootfs/usr/local/bin/setup-aur.sh
           
-          # Create welcome script that requires network
-          cat > /usr/local/bin/cybr-welcome.sh <<"WELCOME"
+          cat > airootfs/usr/local/bin/cybr-welcome.sh <<'WELCOMESCRIPT'
           #!/bin/bash
-          
-          # Check if we already completed setup
-          if [[ -f /var/lib/cybr-welcome-done ]]; then
+          if [ -f /var/lib/cybr-welcome-done ]; then
             exit 0
           fi
           
-          # Check if we have internet
-          if ping -c 1 -W 2 archlinux.org &> /dev/null; then
-            # We have internet, install AUR packages
+          if ping -c 1 -W 2 1.1.1.1 >/dev/null 2>&1; then
             kdialog --title "Cybr Linux" --passivepopup "Setting up additional software..." 5 &
-            /usr/local/bin/setup-aur.sh
-            kdialog --title "Cybr Linux" --msgbox "Welcome to Cybr Linux! Your system is ready. Additional software including Calamares installer has been installed."
+            /usr/local/bin/setup-aur.sh >/dev/null 2>&1
+            kdialog --title "Cybr Linux" --msgbox "Welcome to Cybr Linux! Your system is ready."
             touch /var/lib/cybr-welcome-done
             exit 0
           fi
           
-          # No internet - require connection
           while true; do
-            kdialog --title "Cybr Linux - Network Required" --msgbox "Welcome to Cybr Linux! An internet connection is required to complete setup and install essential software (Calamares installer, themes, etc.). Please connect to the internet to continue."
-            
-            # Open network manager
+            kdialog --title "Network Required" --msgbox "Welcome to Cybr Linux! Internet connection required to install Calamares and additional software. Click OK to connect."
             kcmshell6 kcm_networkmanagement
-            
-            # Wait a moment for user to connect
             sleep 3
             
-            # Check if connected now
-            if ping -c 1 -W 2 archlinux.org &> /dev/null; then
-              kdialog --title "Cybr Linux" --passivepopup "Connected! Installing additional software..." 5 &
-              /usr/local/bin/setup-aur.sh
-              kdialog --title "Cybr Linux" --msgbox "Setup complete! Your system is ready with all additional software installed."
+            if ping -c 1 -W 2 1.1.1.1 >/dev/null 2>&1; then
+              kdialog --title "Cybr Linux" --passivepopup "Installing software..." 5 &
+              /usr/local/bin/setup-aur.sh >/dev/null 2>&1
+              kdialog --title "Setup Complete" --msgbox "System ready with all software installed."
               touch /var/lib/cybr-welcome-done
               break
             else
-              kdialog --title "Connection Failed" --warningyesno "Unable to detect internet connection. Would you like to try connecting again?" --yes-label "Try Again" --no-label "Use Offline Mode"
-              
-              if [[ $? -ne 0 ]]; then
-                # User chose offline mode
-                kdialog --title "Offline Mode" --msgbox "Running in offline mode. Some features (Calamares installer) will not be available. You can use archinstall from the terminal to install the system."
+              kdialog --title "Connection Failed" --warningyesno "No internet detected. Try again?" --yes-label "Retry" --no-label "Skip"
+              if [ $? -ne 0 ]; then
+                kdialog --title "Offline Mode" --msgbox "Running offline. Use archinstall from terminal to install."
                 touch /var/lib/cybr-welcome-done
                 break
               fi
             fi
           done
-          WELCOME
-          chmod +x /usr/local/bin/cybr-welcome.sh
+          WELCOMESCRIPT
+          chmod +x airootfs/usr/local/bin/cybr-welcome.sh
           
-          # Create autostart entry for welcome script
-          mkdir -p /home/liveuser/.config/autostart
-          cat > /home/liveuser/.config/autostart/cybr-welcome.desktop <<"AUTOSTART"
+          cat > airootfs/etc/skel/.config/autostart/cybr-welcome.desktop <<'AUTOSTART'
           [Desktop Entry]
           Type=Application
           Name=Cybr Welcome
@@ -272,9 +202,24 @@ jobs:
           X-KDE-autostart-after=panel
           AUTOSTART
           
-          # SDDM autologin
+          cat > airootfs/root/customize_airootfs.sh <<'CUSTOMIZE'
+          #!/usr/bin/env bash
+          set -e
+          
+          KVER=$(file -bL /boot/vmlinuz-linux-lts | grep -o 'version [^ ]*' | cut -d' ' -f2)
+          mkinitcpio -k "$KVER" -c /etc/mkinitcpio.conf.d/archiso.conf -g /boot/initramfs-linux-lts.img
+          
+          [ ! -f /boot/vmlinuz-linux-lts ] && exit 1
+          [ ! -f /boot/initramfs-linux-lts.img ] && exit 1
+          
+          useradd -m -G wheel,audio,video,optical,storage,network -s /bin/bash liveuser
+          echo 'liveuser:live' | chpasswd
+          echo 'root:root' | chpasswd
+          echo '%wheel ALL=(ALL:ALL) NOPASSWD: ALL' > /etc/sudoers.d/wheel
+          chmod 440 /etc/sudoers.d/wheel
+          
           mkdir -p /etc/sddm.conf.d
-          cat > /etc/sddm.conf.d/autologin.conf <<"SDDM"
+          cat > /etc/sddm.conf.d/autologin.conf <<'SDDMCONF'
           [Autologin]
           User=liveuser
           Session=plasma
@@ -285,20 +230,18 @@ jobs:
           
           [Theme]
           Current=breeze
-          SDDM
+          SDDMCONF
           
-          # Plymouth config
           mkdir -p /etc/plymouth
-          cat > /etc/plymouth/plymouthd.conf <<"PLYM"
+          cat > /etc/plymouth/plymouthd.conf <<'PLYMCONF'
           [Daemon]
           Theme=spinner
           ShowDelay=0
-          PLYM
+          PLYMCONF
           plymouth-set-default-theme spinner
           
-          # Dark mode defaults for liveuser
           mkdir -p /home/liveuser/.config
-          cat > /home/liveuser/.config/kdeglobals <<"KDE"
+          cat > /home/liveuser/.config/kdeglobals <<'KDEGLOBALS'
           [General]
           ColorScheme=BreezeDark
           
@@ -307,21 +250,10 @@ jobs:
           
           [Icons]
           Theme=Papirus-Dark
-          KDE
+          KDEGLOBALS
           
-          # Latte Dock config - ChromeOS style bottom dock
-          mkdir -p /home/liveuser/.config/latte
-          cat > /home/liveuser/.config/lattedockrc <<"LATTE"
-          [UniversalSettings]
-          canDisableBorders=true
-          currentLayout=Cybr
-          lastNonAssignedLayout=Cybr
-          version=2
-          LATTE
-          
-          # Plasma panel configuration for ChromeOS-like experience
-          mkdir -p /home/liveuser/.config/plasma-org.kde.plasma.desktop-appletsrc
-          cat > /home/liveuser/.config/kwinrc <<"KWIN"
+          mkdir -p /home/liveuser/.config
+          cat > /home/liveuser/.config/kwinrc <<'KWINCONF'
           [Desktops]
           Number=1
           Rows=1
@@ -331,145 +263,67 @@ jobs:
           
           [Plugins]
           blurEnabled=true
+          KWINCONF
           
-          [Windows]
-          FocusPolicy=FocusFollowsMouse
-          RollOverDesktops=true
-          KWIN
-          
-          # Konsole profile
           mkdir -p /home/liveuser/.local/share/konsole
-          cat > /home/liveuser/.local/share/konsole/Cybr.profile <<"KONSOLE"
+          cat > /home/liveuser/.local/share/konsole/Cybr.profile <<'KONSOLEPROF'
           [Appearance]
           ColorScheme=Breeze
-          Font=Monospace,11,-1,5,50,0,0,0,0,0
           
           [General]
           Name=Cybr
           Parent=FALLBACK/
-          KONSOLE
+          KONSOLEPROF
           
-          # Desktop icons
           mkdir -p /home/liveuser/Desktop
-          cat > /home/liveuser/Desktop/install.desktop <<"DESK1"
+          cat > /home/liveuser/Desktop/install.desktop <<'INSTALLDESK'
           [Desktop Entry]
           Type=Application
-          Version=1.0
           Name=Install Cybr Linux
-          GenericName=System Installer
-          Comment=Install the operating system to disk
-          Exec=sh -c 'if command -v calamares &> /dev/null; then sudo calamares; else konsole -e sudo archinstall; fi'
+          Exec=sh -c 'if command -v calamares; then sudo calamares; else konsole -e sudo archinstall; fi'
           Icon=system-software-install
           Terminal=false
-          StartupNotify=true
-          Categories=Qt;System;
-          X-AppStream-Ignore=true
-          DESK1
+          INSTALLDESK
           chmod +x /home/liveuser/Desktop/install.desktop
           
-          cat > /home/liveuser/Desktop/discover.desktop <<"DESK2"
+          cat > /home/liveuser/Desktop/discover.desktop <<'DISCOVERDESK'
           [Desktop Entry]
           Type=Application
           Name=App Store
-          GenericName=Software Center
-          Comment=Browse and install applications
           Exec=plasma-discover
           Icon=plasmadiscover
           Terminal=false
-          Categories=Qt;KDE;System;PackageManager;
-          DESK2
+          DISCOVERDESK
           chmod +x /home/liveuser/Desktop/discover.desktop
           
-          # Fix permissions
           chown -R liveuser:liveuser /home/liveuser
-          
-          # Enable Flatpak repo
           flatpak remote-add --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo || true
-          ENDSCRIPT
+          CUSTOMIZE
           chmod +x airootfs/root/customize_airootfs.sh
           
-          # Calamares config
-          mkdir -p airootfs/etc/calamares
-          cat > airootfs/etc/calamares/settings.conf <<"CALA"
-          modules-search: [ local ]
-          instances: [ ]
-          sequence:
-            - show:
-              - welcome
-              - locale
-              - keyboard
-              - partition
-              - users
-              - summary
-            - exec:
-              - partition
-              - mount
-              - unpackfs
-              - machineid
-              - fstab
-              - locale
-              - keyboard
-              - localecfg
-              - users
-              - displaymanager
-              - networkcfg
-              - hwclock
-              - services-systemd
-              - bootloader
-              - umount
-            - show:
-              - finished
-          branding: cybr
-          prompt-install: true
-          dont-chroot: false
-          CALA
-          
-          mkdir -p airootfs/etc/calamares/branding/cybr
-          cat > airootfs/etc/calamares/branding/cybr/branding.desc <<"BRAND"
-          componentName: cybr
-          strings:
-            productName: Cybr Linux
-            shortProductName: Cybr
-            version: Rolling
-            shortVersion: Rolling
-            versionedName: Cybr Linux
-            shortVersionedName: Cybr
-            bootloaderEntryName: Cybr
-            productUrl: https://wolfos.uk/
-          images:
-            productLogo: "logo.png"
-            productIcon: "logo.png"
-          slideshow: "show.qml"
-          style:
-            sidebarBackground: "#1793D1"
-            sidebarText: "#FFFFFF"
-          BRAND
-          
-          # systemd-boot (UEFI)
           mkdir -p efiboot/loader/entries
-          cat > efiboot/loader/loader.conf <<"EOF"
+          cat > efiboot/loader/loader.conf <<'LOADERCONF'
           timeout 15
           default 01-cybr.conf
           console-mode max
           editor no
-          EOF
+          LOADERCONF
           
-          cat > efiboot/loader/entries/01-cybr.conf <<"EOF"
+          cat > efiboot/loader/entries/01-cybr.conf <<'ENTRY1'
           title   Cybr Linux
           linux   /%INSTALL_DIR%/boot/x86_64/vmlinuz-linux-lts
           initrd  /%INSTALL_DIR%/boot/x86_64/initramfs-linux-lts.img
           options archisobasedir=%INSTALL_DIR% archisosearchuuid=%ARCHISO_UUID% quiet splash loglevel=3 rd.udev.log_priority=3 vt.global_cursor_default=0
-          EOF
+          ENTRY1
           
-          cat > efiboot/loader/entries/02-cybr-safe.conf <<"EOF"
+          cat > efiboot/loader/entries/02-cybr-safe.conf <<'ENTRY2'
           title   Cybr Linux (Safe Graphics)
           linux   /%INSTALL_DIR%/boot/x86_64/vmlinuz-linux-lts
           initrd  /%INSTALL_DIR%/boot/x86_64/initramfs-linux-lts.img
           options archisobasedir=%INSTALL_DIR% archisosearchuuid=%ARCHISO_UUID% nomodeset quiet splash loglevel=3
-          EOF
+          ENTRY2
           
-          # Syslinux (BIOS)
-          cat > syslinux/archiso_head.cfg <<"EOF"
+          cat > syslinux/archiso_head.cfg <<'SYSHEAD'
           UI vesamenu.c32
           MENU TITLE Cybr Linux
           MENU WIDTH 78
@@ -478,9 +332,9 @@ jobs:
           MENU COLOR title 1;36;44 #1793D1 #a0000000 std
           MENU COLOR sel 7;37;40 #e0ffffff #201793D1 all
           TIMEOUT 150
-          EOF
+          SYSHEAD
           
-          cat > syslinux/archiso_sys.cfg <<"EOF"
+          cat > syslinux/archiso_sys.cfg <<'SYSSYS'
           LABEL arch64
           MENU LABEL Cybr Linux
           LINUX /%INSTALL_DIR%/boot/x86_64/vmlinuz-linux-lts
@@ -492,44 +346,38 @@ jobs:
           LINUX /%INSTALL_DIR%/boot/x86_64/vmlinuz-linux-lts
           INITRD /%INSTALL_DIR%/boot/x86_64/initramfs-linux-lts.img
           APPEND archisobasedir=%INSTALL_DIR% archisosearchuuid=%ARCHISO_UUID% nomodeset quiet splash loglevel=3
-          EOF
+          SYSSYS
           
-          cat > syslinux/syslinux.cfg <<"EOF"
+          cat > syslinux/syslinux.cfg <<'SYSCFG'
           DEFAULT arch64
           INCLUDE archiso_head.cfg
           INCLUDE archiso_sys.cfg
           INCLUDE archiso_tail.cfg
-          EOF
+          SYSCFG
           
-          # Enable services
           mkdir -p airootfs/etc/systemd/system/multi-user.target.wants
           ln -sf /usr/lib/systemd/system/sddm.service airootfs/etc/systemd/system/multi-user.target.wants/
           ln -sf /usr/lib/systemd/system/NetworkManager.service airootfs/etc/systemd/system/multi-user.target.wants/
           ln -sf /usr/lib/systemd/system/bluetooth.service airootfs/etc/systemd/system/multi-user.target.wants/
           ln -sf /usr/lib/systemd/system/sddm.service airootfs/etc/systemd/system/display-manager.service
           
-          # Extreme compression
-          sed -i "s/airootfs_image_tool_options=()/airootfs_image_tool_options=(\"-comp\" \"xz\" \"-Xbcj\" \"x86\" \"-b\" \"1M\" \"-Xdict-size\" \"100%\" \"-no-recovery\" \"-always-use-fragments\" \"-no-duplicates\")/" profiledef.sh
+          sed -i 's/airootfs_image_tool_options=()/airootfs_image_tool_options=("-comp" "xz" "-Xbcj" "x86" "-b" "1M" "-Xdict-size" "100%" "-no-recovery" "-always-use-fragments" "-no-duplicates")/' profiledef.sh
           
-          # Build ISO
-          echo "Building ISO..."
           mkarchiso -v -w /tmp/work -o /tmp/out .
           
-          # Verify kernel exists
           ISO_FILE=$(ls /tmp/out/*.iso)
           mkdir -p /tmp/m
           mount -o loop "$ISO_FILE" /tmp/m
           
-          if [[ ! -f /tmp/m/arch/boot/x86_64/vmlinuz-linux-lts ]]; then
-            echo "ERROR: Kernel missing from ISO"
+          if [ ! -f /tmp/m/arch/boot/x86_64/vmlinuz-linux-lts ]; then
+            echo "ERROR: Kernel missing"
             umount /tmp/m
             exit 1
           fi
           
-          echo "Kernel verified successfully"
           umount /tmp/m
-          mv "$ISO_FILE" /workspace/${ISO_NAME}.iso
-          '
+          mv "$ISO_FILE" "/workspace/${ISO_NAME}.iso"
+          BUILDSCRIPT
       
       - name: Generate checksums
         run: |
@@ -552,16 +400,24 @@ jobs:
       - uses: actions/download-artifact@v4
         with:
           name: "${{ env.ISO_NAME }}"
+      
       - name: Upload to SourceForge
         env:
           SF_USER: ${{ secrets.SF_USER }}
           SF_PASS: ${{ secrets.SF_PASS }}
         run: |
-          [[ -z "$SF_USER" || -z "$SF_PASS" ]] && echo "Configure SF secrets" && exit 0
+          if [ -z "$SF_USER" ] || [ -z "$SF_PASS" ]; then
+            echo "Configure SF secrets"
+            exit 0
+          fi
           sudo apt-get update && sudo apt-get install -y sshpass rsync
-          for i in {1..3}; do
-            timeout 1800 sshpass -p "$SF_PASS" rsync -avP -e "ssh -o StrictHostKeyChecking=no" \
-              "${{ env.ISO_NAME }}.iso" "$SF_USER@frs.sourceforge.net:/home/frs/project/wolfos/plasma/" && break
-            [[ $i -eq 3 ]] && exit 1
+          for i in 1 2 3; do
+            if timeout 1800 sshpass -p "$SF_PASS" rsync -avP -e "ssh -o StrictHostKeyChecking=no" \
+              "${{ env.ISO_NAME }}.iso" "$SF_USER@frs.sourceforge.net:/home/frs/project/wolfos/plasma/"; then
+              break
+            fi
+            if [ $i -eq 3 ]; then
+              exit 1
+            fi
             sleep 30
           done
