@@ -72,9 +72,8 @@ jobs:
           cp -r /usr/share/archiso/configs/releng /build/cybr
           cd /build/cybr
           
-          # Core packages
+          # Core packages (replaced linux-lts with linux-firmware, base packages)
           cat > packages.x86_64 <<'\''PKG'\''
-          linux-lts
           linux-firmware
           base
           base-devel
@@ -164,15 +163,26 @@ jobs:
             rm -rf /tmp/*
           }
           
-          # Build Calamares from AUR as builder user
+          # Build AUR packages (including Liquorix kernel)
           sudo -u builder bash <<'\''AURB'\''
           cd /tmp
+          
+          echo "=== Building Liquorix Kernel ==="
+          git clone --depth 1 https://aur.archlinux.org/linux-lqx.git
+          cd linux-lqx
+          makepkg -s --noconfirm
+          sudo pacman -U --noconfirm linux-lqx-*.pkg.tar.zst linux-lqx-headers-*.pkg.tar.zst
+          mkdir -p /build/cybr/airootfs/root/aur_packages
+          cp linux-lqx-*.pkg.tar.zst /build/cybr/airootfs/root/aur_packages/
+          cd ..
+          rm -rf linux-lqx
           
           echo "=== Building ckbcomp ==="
           git clone --depth 1 https://aur.archlinux.org/ckbcomp.git
           cd ckbcomp
           makepkg -s --noconfirm
           sudo pacman -U --noconfirm ckbcomp-*.pkg.tar.zst
+          cp ckbcomp-*.pkg.tar.zst /build/cybr/airootfs/root/aur_packages/
           cd ..
           rm -rf ckbcomp
           
@@ -181,6 +191,7 @@ jobs:
           cd plasma-framework5
           makepkg -s --noconfirm --skipinteg
           sudo pacman -U --noconfirm plasma-framework5-*.pkg.tar.zst
+          cp plasma-framework5-*.pkg.tar.zst /build/cybr/airootfs/root/aur_packages/
           cd ..
           rm -rf plasma-framework5
           
@@ -189,14 +200,11 @@ jobs:
           cd calamares
           makepkg -s --noconfirm
           sudo pacman -U --noconfirm calamares-*.pkg.tar.zst
-          
-          # Copy only the final packages
-          mkdir -p /build/cybr/airootfs/root/aur_packages
-          cp /tmp/calamares/calamares-*.pkg.tar.zst /build/cybr/airootfs/root/aur_packages/
+          cp calamares-*.pkg.tar.zst /build/cybr/airootfs/root/aur_packages/
           
           # Cleanup build artifacts
           cd /tmp
-          rm -rf ckbcomp plasma-framework5 calamares
+          rm -rf calamares
           sudo pacman -Scc --noconfirm
           AURB
           
@@ -217,7 +225,7 @@ jobs:
           
           echo "cybr-live" > airootfs/etc/hostname
           
-          # Plymouth config
+          # Plymouth config for Liquorix kernel
           mkdir -p airootfs/etc/mkinitcpio.conf.d
           cat > airootfs/etc/mkinitcpio.conf.d/plymouth.conf <<'\''MKINIT'\''
           MODULES=()
@@ -227,44 +235,11 @@ jobs:
           COMPRESSION="xz"
           MKINIT
           
-          # Plymouth theme
-          mkdir -p airootfs/usr/share/plymouth/themes/cybr
-          cat > airootfs/usr/share/plymouth/themes/cybr/cybr.plymouth <<'\''PLYM'\''
-          [Plymouth Theme]
-          Name=Cybr
-          Description=Cybr Boot Animation
-          ModuleName=script
-          
-          [script]
-          ImageDir=/usr/share/plymouth/themes/cybr
-          ScriptFile=/usr/share/plymouth/themes/cybr/cybr.script
-          PLYM
-          
-          cat > airootfs/usr/share/plymouth/themes/cybr/cybr.script <<'\''SCPT'\''
-          Window.SetBackgroundTopColor(0,0,0);
-          Window.SetBackgroundBottomColor(0,0,0);
-          w=Window.GetWidth();h=Window.GetHeight();sz=80;sp=15;
-          dot=Sprite(Image.Text("●",1,1,1,1,"Sans 50"));
-          letters=[];reveals=[];sprites=[];
-          for(i=0;i<4;i++){letters[i]=["C","y","b","r"][i];reveals[i]=0;sprites[i]=Sprite(Image.Text(letters[i],1,1,1,0,"Sans "+sz));}
-          lw=sprites[0].GetImage().GetWidth();tw=(lw*4)+(sp*3);sx=(w-tw)/2;sy=(h/2)-(sz/2);
-          for(i=0;i<4;i++)sprites[i].SetPosition(sx+(lw+sp)*i,sy,1);
-          tag=Sprite(Image.Text("Simple. Fast. Secure.",0.5,0.5,0.5,0,"Sans 20"));
-          tag.SetPosition((w-tag.GetImage().GetWidth())/2,sy+sz+40,1);
-          dx=sx-120;de=sx+tw+120;dy=sy+(sz/2)-25;done=0;shown=0;
-          fun refresh_callback(){
-            t=Plymouth.GetTime();
-            if(t<2.5&&done==0){r=t/2.5;x=dx+((de-dx)*r);dot.SetPosition(x,dy,10);
-              for(i=0;i<4;i++){if(x>=sx+(lw+sp)*i+(lw/2)&&reveals[i]==0){sprites[i].SetImage(Image.Text(letters[i],1,1,1,1,"Sans "+sz));reveals[i]=1;}}}
-            else if(done==0){dot.SetOpacity(0);done=1;}
-            if(t>2.8&&shown==0){tag.SetImage(Image.Text("Simple. Fast. Secure.",0.5,0.5,0.5,1,"Sans 20"));shown=1;}}
-          Plymouth.SetRefreshFunction(refresh_callback);
-          SCPT
-          
+          # Use Plymouth spinner theme instead of custom script
           mkdir -p airootfs/etc/plymouth
           cat > airootfs/etc/plymouth/plymouthd.conf <<'\''PLYMCONF'\''
           [Daemon]
-          Theme=cybr
+          Theme=spinner
           ShowDelay=0
           DeviceTimeout=8
           PLYMCONF
@@ -307,14 +282,15 @@ jobs:
           #!/usr/bin/env bash
           set -e
           
-          # Install AUR packages
+          # Install AUR packages (including Liquorix kernel)
           pacman -U --noconfirm /root/aur_packages/*.pkg.tar.zst || true
           rm -rf /root/aur_packages
           
-          plymouth-set-default-theme -R cybr 2>/dev/null || true
+          plymouth-set-default-theme -R spinner 2>/dev/null || true
           
-          KVER=$(file -bL /boot/vmlinuz-linux-lts 2>/dev/null | grep -o "version [^ ]*" | cut -d" " -f2 || echo "")
-          [ -n "$KVER" ] && mkinitcpio -k "$KVER" -c /etc/mkinitcpio.conf.d/plymouth.conf -g /boot/initramfs-linux-lts.img
+          # Build initramfs for Liquorix kernel
+          KVER=$(file -bL /boot/vmlinuz-linux-lqx 2>/dev/null | grep -o "version [^ ]*" | cut -d" " -f2 || echo "")
+          [ -n "$KVER" ] && mkinitcpio -k "$KVER" -c /etc/mkinitcpio.conf.d/plymouth.conf -g /boot/initramfs-linux-lqx.img
           
           useradd -m -G wheel,audio,video,optical,storage,network -s /bin/bash liveuser || true
           echo "liveuser:live" | chpasswd
@@ -363,7 +339,7 @@ jobs:
           CUSTOM
           chmod +x airootfs/root/customize_airootfs.sh
           
-          # Boot entries
+          # Boot entries for Liquorix kernel
           mkdir -p efiboot/loader/entries
           cat > efiboot/loader/loader.conf <<'\''LOADER'\''
           timeout 15
@@ -373,9 +349,9 @@ jobs:
           LOADER
           
           cat > efiboot/loader/entries/01-cybr.conf <<'\''ENTRY'\''
-          title   Cybr Linux
-          linux   /%INSTALL_DIR%/boot/x86_64/vmlinuz-linux-lts
-          initrd  /%INSTALL_DIR%/boot/x86_64/initramfs-linux-lts.img
+          title   Cybr Linux (Liquorix)
+          linux   /%INSTALL_DIR%/boot/x86_64/vmlinuz-linux-lqx
+          initrd  /%INSTALL_DIR%/boot/x86_64/initramfs-linux-lqx.img
           options archisobasedir=%INSTALL_DIR% archisosearchuuid=%ARCHISO_UUID% splash quiet loglevel=3 rd.udev.log_priority=3 vt.global_cursor_default=0
           ENTRY
           
