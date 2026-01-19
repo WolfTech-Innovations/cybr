@@ -52,7 +52,7 @@ jobs:
           docker build --no-cache --pull -t builder - <<'DOCKERFILE'
           FROM archlinux:latest
           RUN pacman -Syu --noconfirm && \
-              pacman -S --noconfirm archiso git base-devel sudo && \
+              pacman -S --noconfirm archiso git base-devel sudo python && \
               pacman -Scc --noconfirm && \
               rm -rf /var/cache/pacman/pkg/* && \
               useradd -m -G wheel builder && \
@@ -130,27 +130,8 @@ jobs:
           kcalc
           spectacle
           gwenview
-          boost-libs
-          hwinfo
-          icu
-          kconfig5
-          kcoreaddons5
-          kiconthemes5
-          ki18n5
-          kio5
-          kparts5
-          kpmcore
-          kservice5
-          libpwquality
-          solid5
-          squashfs-tools
-          yaml-cpp
-          extra-cmake-modules
-          qt5-svg
-          qt5-tools
-          qt5-translations
-          qt5-xmlpatterns
-          polkit-qt5
+          python
+          python-pyqt5
           efibootmgr
           PKG
           
@@ -164,45 +145,27 @@ jobs:
             rm -rf /tmp/*
           }
           
-          # Build Calamares from AUR as builder user
+          # Build Zen Installer from AUR as builder user
           sudo -u builder bash <<'\''AURB'\''
           cd /tmp
           
-          echo "=== Building ckbcomp ==="
-          git clone --depth 1 https://aur.archlinux.org/ckbcomp.git
-          cd ckbcomp
-          makepkg -s --noconfirm
-          sudo pacman -U --noconfirm ckbcomp-*.pkg.tar.zst
-          cd ..
-          rm -rf ckbcomp
+          echo "=== Building Zen Installer ==="
+          git clone --depth 1 https://github.com/spookykidmm/zen_installer.git
+          cd zen_installer
           
-          echo "=== Building plasma-framework5 ==="
-          git clone --depth 1 https://aur.archlinux.org/plasma-framework5.git
-          cd plasma-framework5
-          makepkg -s --noconfirm --skipinteg
-          sudo pacman -U --noconfirm plasma-framework5-*.pkg.tar.zst
-          cd ..
-          rm -rf plasma-framework5
-          
-          echo "=== Building Calamares ==="
-          git clone --depth 1 https://aur.archlinux.org/calamares.git
-          cd calamares
-          makepkg -s --noconfirm
-          sudo pacman -U --noconfirm calamares-*.pkg.tar.zst
-          
-          # Copy only the final packages
-          mkdir -p /build/cybr/airootfs/root/aur_packages
-          cp /tmp/calamares/calamares-*.pkg.tar.zst /build/cybr/airootfs/root/aur_packages/
+          # Copy installer to build directory
+          mkdir -p /build/cybr/airootfs/usr/share/zen_installer
+          cp -r * /build/cybr/airootfs/usr/share/zen_installer/
           
           # Cleanup build artifacts
           cd /tmp
-          rm -rf ckbcomp plasma-framework5 calamares
+          rm -rf zen_installer
           sudo pacman -Scc --noconfirm
           AURB
           
           cleanup_cache
           
-          mkdir -p airootfs/etc airootfs/etc/skel/.config airootfs/etc/calamares
+          mkdir -p airootfs/etc airootfs/etc/skel/.config
           
           cat > airootfs/etc/os-release <<'\''OSREL'\''
           NAME="Cybr Linux"
@@ -227,91 +190,23 @@ jobs:
           COMPRESSION="xz"
           MKINIT
           
-          # Plymouth theme
-          mkdir -p airootfs/usr/share/plymouth/themes/cybr
-          cat > airootfs/usr/share/plymouth/themes/cybr/cybr.plymouth <<'\''PLYM'\''
-          [Plymouth Theme]
-          Name=Cybr
-          Description=Cybr Boot Animation
-          ModuleName=script
-          
-          [script]
-          ImageDir=/usr/share/plymouth/themes/cybr
-          ScriptFile=/usr/share/plymouth/themes/cybr/cybr.script
-          PLYM
-          
-          cat > airootfs/usr/share/plymouth/themes/cybr/cybr.script <<'\''SCPT'\''
-          Window.SetBackgroundTopColor(0,0,0);
-          Window.SetBackgroundBottomColor(0,0,0);
-          w=Window.GetWidth();h=Window.GetHeight();sz=80;sp=15;
-          dot=Sprite(Image.Text("●",1,1,1,1,"Sans 50"));
-          letters=[];reveals=[];sprites=[];
-          for(i=0;i<4;i++){letters[i]=["C","y","b","r"][i];reveals[i]=0;sprites[i]=Sprite(Image.Text(letters[i],1,1,1,0,"Sans "+sz));}
-          lw=sprites[0].GetImage().GetWidth();tw=(lw*4)+(sp*3);sx=(w-tw)/2;sy=(h/2)-(sz/2);
-          for(i=0;i<4;i++)sprites[i].SetPosition(sx+(lw+sp)*i,sy,1);
-          tag=Sprite(Image.Text("Simple. Fast. Secure.",0.5,0.5,0.5,0,"Sans 20"));
-          tag.SetPosition((w-tag.GetImage().GetWidth())/2,sy+sz+40,1);
-          dx=sx-120;de=sx+tw+120;dy=sy+(sz/2)-25;done=0;shown=0;
-          fun refresh_callback(){
-            t=Plymouth.GetTime();
-            if(t<2.5&&done==0){r=t/2.5;x=dx+((de-dx)*r);dot.SetPosition(x,dy,10);
-              for(i=0;i<4;i++){if(x>=sx+(lw+sp)*i+(lw/2)&&reveals[i]==0){sprites[i].SetImage(Image.Text(letters[i],1,1,1,1,"Sans "+sz));reveals[i]=1;}}}
-            else if(done==0){dot.SetOpacity(0);done=1;}
-            if(t>2.8&&shown==0){tag.SetImage(Image.Text("Simple. Fast. Secure.",0.5,0.5,0.5,1,"Sans 20"));shown=1;}}
-          Plymouth.SetRefreshFunction(refresh_callback);
-          SCPT
-          
+          # Use default Plymouth spinner theme
           mkdir -p airootfs/etc/plymouth
           cat > airootfs/etc/plymouth/plymouthd.conf <<'\''PLYMCONF'\''
           [Daemon]
-          Theme=cybr
+          Theme=spinner
           ShowDelay=0
           DeviceTimeout=8
           PLYMCONF
           
-          # Calamares config
-          cat > airootfs/etc/calamares/settings.conf <<'\''CALASET'\''
-          modules-search: [ local ]
-          sequence:
-            - show:
-              - welcome
-              - locale
-              - keyboard
-              - partition
-              - users
-              - summary
-            - exec:
-              - partition
-              - mount
-              - unpackfs
-              - machineid
-              - fstab
-              - locale
-              - keyboard
-              - localecfg
-              - users
-              - networkcfg
-              - hwclock
-              - services-systemd
-              - bootloader
-              - umount
-            - show:
-              - finished
-          branding: cybr
-          prompt-install: true
-          dont-chroot: false
-          CALASET
+          # Remove Calamares config section - no longer needed
           
           # Customization script
           cat > airootfs/root/customize_airootfs.sh <<'\''CUSTOM'\''
           #!/usr/bin/env bash
           set -e
           
-          # Install AUR packages
-          pacman -U --noconfirm /root/aur_packages/*.pkg.tar.zst || true
-          rm -rf /root/aur_packages
-          
-          plymouth-set-default-theme -R cybr 2>/dev/null || true
+          plymouth-set-default-theme -R spinner 2>/dev/null || true
           
           KVER=$(file -bL /boot/vmlinuz-linux-lts 2>/dev/null | grep -o "version [^ ]*" | cut -d" " -f2 || echo "")
           [ -n "$KVER" ] && mkinitcpio -k "$KVER" -c /etc/mkinitcpio.conf.d/plymouth.conf -g /boot/initramfs-linux-lts.img
@@ -349,7 +244,7 @@ jobs:
           [Desktop Entry]
           Type=Application
           Name=Install Cybr Linux
-          Exec=pkexec calamares
+          Exec=python3 /usr/share/zen_installer/zen_installer.py
           Icon=system-software-install
           Terminal=false
           DESK
