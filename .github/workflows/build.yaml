@@ -54,7 +54,7 @@ jobs:
           docker build --no-cache --pull -t builder - <<'DOCKERFILE'
           FROM archlinux:latest
           RUN pacman -Syu --noconfirm && \
-              pacman -S --noconfirm archiso git base-devel sudo python && \
+              pacman -S --noconfirm archiso git base-devel sudo python imagemagick wget && \
               pacman -Scc --noconfirm && \
               rm -rf /var/cache/pacman/pkg/* && \
               useradd -m -G wheel builder && \
@@ -167,7 +167,12 @@ jobs:
           
           cleanup_cache
           
-          mkdir -p airootfs/etc airootfs/etc/skel/.config
+          mkdir -p airootfs/etc airootfs/etc/skel/.config airootfs/usr/share/plymouth
+          
+          # Download Cybr logo for Plymouth watermark
+          echo "=== Downloading Cybr logo ==="
+          wget -O airootfs/usr/share/plymouth/cybr-logo.png "https://a.fsdn.com/allura/p/wolfos/icon?w=96&1748003641" || \
+            curl -L -o airootfs/usr/share/plymouth/cybr-logo.png "https://a.fsdn.com/allura/p/wolfos/icon?w=96&1748003641"
           
           cat > airootfs/etc/os-release <<'\''OSREL'\''
           NAME="Cybr Linux"
@@ -205,7 +210,7 @@ jobs:
           COMPRESSION="xz"
           MKINIT
           
-          # Use default Plymouth spinner theme
+          # Use spinner theme with custom logo
           mkdir -p airootfs/etc/plymouth
           cat > airootfs/etc/plymouth/plymouthd.conf <<'\''PLYMCONF'\''
           [Daemon]
@@ -218,6 +223,14 @@ jobs:
           cat > airootfs/root/customize_airootfs.sh <<'\''CUSTOM'\''
           #!/usr/bin/env bash
           set -e
+          
+          # Replace the Arch logo watermark with Cybr logo in spinner theme
+          if [ -f /usr/share/plymouth/cybr-logo.png ]; then
+            cp /usr/share/plymouth/cybr-logo.png /usr/share/plymouth/themes/spinner/watermark.png
+            echo "Plymouth watermark replaced with Cybr logo"
+          else
+            echo "Warning: Cybr logo not found, Plymouth will use default"
+          fi
           
           plymouth-set-default-theme -R spinner 2>/dev/null || true
           
@@ -305,7 +318,28 @@ jobs:
           options archisobasedir=%INSTALL_DIR% archisolabel=%ARCHISO_LABEL% nomodeset
           NOMODESET
           
-          # SYSLINUX config for BIOS boot
+          # Download Cybr logo for SYSLINUX splash (or create fallback)
+          if wget -O /tmp/cybr-syslinux-logo.png "https://a.fsdn.com/allura/p/wolfos/icon?w=96&1748003641"; then
+            # Convert to 640x480 with logo centered
+            convert -size 640x480 xc:"#0a0a0a" \
+              /tmp/cybr-syslinux-logo.png -gravity center -composite \
+              -pointsize 24 -fill "#ffffff" -gravity south -annotate +0+100 "CYBR LINUX" \
+              -pointsize 16 -fill "#888888" -annotate +0+60 "wolfos.uk" \
+              syslinux/splash.png
+          else
+            # Fallback: create text-based splash
+            convert -size 640x480 xc:"#0a0a0a" \
+              -gravity center \
+              -pointsize 72 -fill "#1793D1" -font "DejaVu-Sans-Bold" \
+              -annotate +0-80 "CYBR" \
+              -pointsize 24 -fill "#ffffff" \
+              -annotate +0-20 "L I N U X" \
+              -pointsize 16 -fill "#888888" \
+              -annotate +0+40 "wolfos.uk" \
+              syslinux/splash.png
+          fi
+          
+          # SYSLINUX config for BIOS boot with custom splash
           cat > syslinux/syslinux.cfg <<'\''SYSLINUX'\''
           UI vesamenu.c32
           MENU TITLE Cybr Linux Boot Menu
