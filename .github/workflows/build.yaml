@@ -147,6 +147,9 @@ jobs:
             rm -rf /tmp/*
           }
           
+          # Create directory structure BEFORE building as builder user
+          mkdir -p airootfs/usr/share/zen_installer
+          
           # Build Zen Installer from AUR as builder user
           sudo -u builder bash <<'\''AURB'\''
           cd /tmp
@@ -155,8 +158,7 @@ jobs:
           git clone --depth 1 https://github.com/spookykidmm/zen_installer.git
           cd zen_installer
           
-          # Copy installer to build directory
-          mkdir -p /build/cybr/airootfs/usr/share/zen_installer
+          # Copy installer to build directory (already created with proper permissions)
           cp -r * /build/cybr/airootfs/usr/share/zen_installer/
           
           # Cleanup build artifacts
@@ -321,38 +323,19 @@ jobs:
           # Download Cybr logo for SYSLINUX splash
           wget -O /tmp/cybr-syslinux-logo.png "https://a.fsdn.com/allura/p/wolfos/icon?w=96&1748003641" || true
           
-          # Create SYSLINUX splash with logo
+          # Create SYSLINUX splash with logo (using simpler approach to avoid font issues)
           if [ -f /tmp/cybr-syslinux-logo.png ]; then
-            magick -size 640x480 xc:"#0a0a0a" \
-              /tmp/cybr-syslinux-logo.png -gravity center -composite \
-              -pointsize 24 -fill "#ffffff" -gravity south -annotate +0+100 "CYBR LINUX" \
-              -pointsize 16 -fill "#888888" -annotate +0+60 "wolfos.uk" \
-              syslinux/splash.png 2>/dev/null || \
+            # Simple approach with logo only
             convert -size 640x480 xc:"#0a0a0a" \
               /tmp/cybr-syslinux-logo.png -gravity center -composite \
-              -pointsize 24 -fill "#ffffff" -gravity south -annotate +0+100 "CYBR LINUX" \
-              -pointsize 16 -fill "#888888" -annotate +0+60 "wolfos.uk" \
+              syslinux/splash.png 2>/dev/null || \
+            magick -size 640x480 xc:"#0a0a0a" \
+              /tmp/cybr-syslinux-logo.png -gravity center -composite \
               syslinux/splash.png
           else
-            # Fallback if logo download fails
-            magick -size 640x480 xc:"#0a0a0a" \
-              -gravity center \
-              -pointsize 72 -fill "#1793D1" \
-              -annotate +0-80 "CYBR" \
-              -pointsize 24 -fill "#ffffff" \
-              -annotate +0-20 "L I N U X" \
-              -pointsize 16 -fill "#888888" \
-              -annotate +0+40 "wolfos.uk" \
-              syslinux/splash.png 2>/dev/null || \
-            convert -size 640x480 xc:"#0a0a0a" \
-              -gravity center \
-              -pointsize 72 -fill "#1793D1" \
-              -annotate +0-80 "CYBR" \
-              -pointsize 24 -fill "#ffffff" \
-              -annotate +0-20 "L I N U X" \
-              -pointsize 16 -fill "#888888" \
-              -annotate +0+40 "wolfos.uk" \
-              syslinux/splash.png
+            # Fallback: create simple black background
+            convert -size 640x480 xc:"#0a0a0a" syslinux/splash.png 2>/dev/null || \
+            magick -size 640x480 xc:"#0a0a0a" syslinux/splash.png
           fi
           
           # SYSLINUX config for BIOS boot with custom splash
