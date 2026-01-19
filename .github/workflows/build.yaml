@@ -49,6 +49,8 @@ jobs:
           sudo systemctl start docker
           df -h
           
+      - name: Build Cybr Linux ISO
+        run: |
           docker build --no-cache --pull -t builder - <<'DOCKERFILE'
           FROM archlinux:latest
           RUN pacman -Syu --noconfirm && \
@@ -180,6 +182,19 @@ jobs:
           
           echo "cybr-live" > airootfs/etc/hostname
           
+          cat > airootfs/etc/issue <<'\''ISSUE'\''
+          
+          ░█████╗░██╗░░░██╗██████╗░██████╗░  ██╗░░░░░██╗███╗░░██╗██╗░░░██╗██╗░░██╗
+          ██╔══██╗╚██╗░██╔╝██╔══██╗██╔══██╗  ██║░░░░░██║████╗░██║██║░░░██║╚██╗██╔╝
+          ██║░░╚═╝░╚████╔╝░██████╦╝██████╔╝  ██║░░░░░██║██╔██╗██║██║░░░██║░╚███╔╝░
+          ██║░░██╗░░╚██╔╝░░██╔══██╗██╔══██╗  ██║░░░░░██║██║╚████║██║░░░██║░██╔██╗░
+          ╚█████╔╝░░░██║░░░██████╦╝██║░░██║  ███████╗██║██║░╚███║╚██████╔╝██╔╝╚██╗
+          ░╚════╝░░░░╚═╝░░░╚═════╝░╚═╝░░╚═╝  ╚══════╝╚═╝╚═╝░░╚══╝░╚═════╝░╚═╝░░╚═╝
+          
+          Welcome to Cybr Linux - Live Environment
+          
+          ISSUE
+          
           # Plymouth config
           mkdir -p airootfs/etc/mkinitcpio.conf.d
           cat > airootfs/etc/mkinitcpio.conf.d/plymouth.conf <<'\''MKINIT'\''
@@ -198,8 +213,6 @@ jobs:
           ShowDelay=0
           DeviceTimeout=8
           PLYMCONF
-          
-          # Remove Calamares config section - no longer needed
           
           # Customization script
           cat > airootfs/root/customize_airootfs.sh <<'\''CUSTOM'\''
@@ -233,6 +246,7 @@ jobs:
           cat > /home/liveuser/.config/kdeglobals <<KDE
           [General]
           ColorScheme=BreezeDark
+          Name=Cybr
           [KDE]
           LookAndFeelPackage=org.kde.breezedark.desktop
           [Icons]
@@ -244,9 +258,11 @@ jobs:
           [Desktop Entry]
           Type=Application
           Name=Install Cybr Linux
+          Comment=Install Cybr Linux to your system
           Exec=python3 /usr/share/zen_installer/zen_installer.py
           Icon=system-software-install
           Terminal=false
+          Categories=System;
           DESK
           chmod +x /home/liveuser/Desktop/install.desktop
           
@@ -258,21 +274,86 @@ jobs:
           CUSTOM
           chmod +x airootfs/root/customize_airootfs.sh
           
-          # Boot entries
-          mkdir -p efiboot/loader/entries
+          # Boot entries with Cybr branding
+          mkdir -p efiboot/loader/entries syslinux
+          
           cat > efiboot/loader/loader.conf <<'\''LOADER'\''
           timeout 15
-          default 01-cybr.conf
+          default 01-cybr-live.conf
           console-mode max
           editor no
           LOADER
           
-          cat > efiboot/loader/entries/01-cybr.conf <<'\''ENTRY'\''
-          title   Cybr Linux
+          cat > efiboot/loader/entries/01-cybr-live.conf <<'\''ENTRY'\''
+          title   Cybr Linux (Live)
           linux   /%INSTALL_DIR%/boot/x86_64/vmlinuz-linux-lts
           initrd  /%INSTALL_DIR%/boot/x86_64/initramfs-linux-lts.img
-          options archisobasedir=%INSTALL_DIR% archisosearchuuid=%ARCHISO_UUID% splash quiet loglevel=3 rd.udev.log_priority=3 vt.global_cursor_default=0
+          options archisobasedir=%INSTALL_DIR% archisolabel=%ARCHISO_LABEL% splash quiet loglevel=3 rd.udev.log_priority=3 vt.global_cursor_default=0
           ENTRY
+
+          cat > efiboot/loader/entries/02-cybr-fallback.conf <<'\''FALLBACK'\''
+          title   Cybr Linux (Fallback)
+          linux   /%INSTALL_DIR%/boot/x86_64/vmlinuz-linux-lts
+          initrd  /%INSTALL_DIR%/boot/x86_64/initramfs-linux-lts-fallback.img
+          options archisobasedir=%INSTALL_DIR% archisolabel=%ARCHISO_LABEL%
+          FALLBACK
+
+          cat > efiboot/loader/entries/03-cybr-nomodeset.conf <<'\''NOMODESET'\''
+          title   Cybr Linux (Safe Graphics)
+          linux   /%INSTALL_DIR%/boot/x86_64/vmlinuz-linux-lts
+          initrd  /%INSTALL_DIR%/boot/x86_64/initramfs-linux-lts.img
+          options archisobasedir=%INSTALL_DIR% archisolabel=%ARCHISO_LABEL% nomodeset
+          NOMODESET
+          
+          # SYSLINUX config for BIOS boot
+          cat > syslinux/syslinux.cfg <<'\''SYSLINUX'\''
+          UI vesamenu.c32
+          MENU TITLE Cybr Linux Boot Menu
+          MENU BACKGROUND splash.png
+          
+          MENU COLOR border       30;44   #40ffffff #a0000000 std
+          MENU COLOR title        1;36;44 #9033ccff #a0000000 std
+          MENU COLOR sel          7;37;40 #e0ffffff #20ff8000 all
+          MENU COLOR unsel        37;44   #50ffffff #a0000000 std
+          MENU COLOR help         37;40   #c0ffffff #a0000000 std
+          MENU COLOR timeout_msg  37;40   #80ffffff #00000000 std
+          MENU COLOR timeout      1;37;40 #c0ffffff #00000000 std
+          MENU COLOR msg07        37;40   #90ffffff #a0000000 std
+          MENU COLOR tabmsg       31;40   #30ffffff #00000000 std
+          
+          DEFAULT cybr
+          TIMEOUT 150
+          
+          LABEL cybr
+              MENU LABEL Cybr Linux (Live)
+              LINUX /%INSTALL_DIR%/boot/x86_64/vmlinuz-linux-lts
+              INITRD /%INSTALL_DIR%/boot/x86_64/initramfs-linux-lts.img
+              APPEND archisobasedir=%INSTALL_DIR% archisolabel=%ARCHISO_LABEL% splash quiet
+          
+          LABEL cybr-fallback
+              MENU LABEL Cybr Linux (Fallback)
+              LINUX /%INSTALL_DIR%/boot/x86_64/vmlinuz-linux-lts
+              INITRD /%INSTALL_DIR%/boot/x86_64/initramfs-linux-lts-fallback.img
+              APPEND archisobasedir=%INSTALL_DIR% archisolabel=%ARCHISO_LABEL%
+          
+          LABEL cybr-nomodeset
+              MENU LABEL Cybr Linux (Safe Graphics)
+              LINUX /%INSTALL_DIR%/boot/x86_64/vmlinuz-linux-lts
+              INITRD /%INSTALL_DIR%/boot/x86_64/initramfs-linux-lts.img
+              APPEND archisobasedir=%INSTALL_DIR% archisolabel=%ARCHISO_LABEL% nomodeset
+          
+          LABEL memtest
+              MENU LABEL Memory Test (memtest86+)
+              LINUX /%INSTALL_DIR%/boot/memtest86+/memtest.bin
+          
+          LABEL reboot
+              MENU LABEL Reboot
+              COM32 reboot.c32
+          
+          LABEL poweroff
+              MENU LABEL Power Off
+              COM32 poweroff.c32
+          SYSLINUX
           
           # Systemd services
           mkdir -p airootfs/etc/systemd/system/multi-user.target.wants
@@ -281,6 +362,12 @@ jobs:
           ln -sf /usr/lib/systemd/system/bluetooth.service airootfs/etc/systemd/system/multi-user.target.wants/
           
           sed -i "s/airootfs_image_tool_options=()/airootfs_image_tool_options=(\"-comp\" \"xz\" \"-Xbcj\" \"x86\" \"-b\" \"1M\" \"-Xdict-size\" \"100%\")/" profiledef.sh
+          
+          # Update profiledef.sh with Cybr branding
+          sed -i "s/iso_name=\"archlinux\"/iso_name=\"cybr\"/" profiledef.sh
+          sed -i "s/iso_label=\"ARCH_\$(date +%Y%m)\"/iso_label=\"CYBR_\$(date +%Y%m)\"/" profiledef.sh
+          sed -i "s/iso_publisher=\"Arch Linux <https:\/\/archlinux.org>\"/iso_publisher=\"Cybr Linux <https:\/\/wolfos.uk>\"/" profiledef.sh
+          sed -i "s/iso_application=\"Arch Linux Live\/Rescue CD\"/iso_application=\"Cybr Linux Live Environment\"/" profiledef.sh
           
           echo "=== Starting ISO build ==="
           df -h
@@ -294,10 +381,16 @@ jobs:
           [ -f "$ISO_FILE" ] && mv "$ISO_FILE" "/workspace/${ISO_NAME}.iso"
           '
       
-      - name: Generate checksums
+      - name: Generate checksums and info
         run: |
           sha256sum "${{ env.ISO_NAME }}.iso" > "${{ env.ISO_NAME }}.iso.sha256"
-          echo "ISO Size: $(($(stat -c%s "${{ env.ISO_NAME }}.iso")/1024/1024))MB"
+          ISO_SIZE=$(($(stat -c%s "${{ env.ISO_NAME }}.iso")/1024/1024))
+          echo "ISO_SIZE=${ISO_SIZE}MB" >> $GITHUB_ENV
+          echo "### Cybr Linux Build Complete! 🎉" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**ISO Name:** ${{ env.ISO_NAME }}.iso" >> $GITHUB_STEP_SUMMARY
+          echo "**Size:** ${ISO_SIZE}MB" >> $GITHUB_STEP_SUMMARY
+          echo "**SHA256:** \`$(cat ${{ env.ISO_NAME }}.iso.sha256 | cut -d' ' -f1)\`" >> $GITHUB_STEP_SUMMARY
       
       - uses: actions/upload-artifact@v4
         with:
