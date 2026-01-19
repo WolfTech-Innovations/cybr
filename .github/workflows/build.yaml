@@ -36,11 +36,11 @@ jobs:
           WORKDIR /build
           DOCKERFILE
           
-          docker run --rm --privileged --shm-size=4gb -v "$PWD:/workspace" -e ISO_NAME="${{ env.ISO_NAME }}" builder bash -c '
+          docker run --rm --privileged --shm-size=4gb -v "$PWD:/workspace" -e ISO_NAME="${{ env.ISO_NAME }}" builder bash <<'BUILDSCRIPT'
           set -euo pipefail
           cp -r /usr/share/archiso/configs/releng /build/cybr && cd /build/cybr
           
-          cat > packages.x86_64 <<'\''PKG'\''
+          cat > packages.x86_64 <<'PKG'
           linux-firmware
           base
           base-devel
@@ -115,21 +115,18 @@ jobs:
           pacman-key --init && pacman-key --populate archlinux
           sed -i "s/#ParallelDownloads = 5/ParallelDownloads = 5/" pacman.conf
           
-          # Add Liquorix repo
-          cat >> pacman.conf <<'\''LQXREPO'\''
+          cat >> pacman.conf <<'LQXREPO'
 
 [liquorix]
 Server = https://liquorix.net/archlinux/$repo/$arch
 LQXREPO
           
-          # Import Liquorix key
           pacman-key --keyserver hkps://keyserver.ubuntu.com --recv-keys 9AE4078033F8024D
           pacman-key --lsign-key 9AE4078033F8024D
           
-          # Add Liquorix kernel to packages (replace linux-lts)
           sed -i "1s/^/linux-lqx\nlinux-lqx-headers\n/" packages.x86_64
           
-          sudo -u builder bash <<'\''AURB'\''
+          sudo -u builder bash <<'AURB'
           cd /tmp
           git clone --depth 1 https://github.com/spookykidmm/zen_installer.git
           mkdir -p /build/cybr/airootfs/usr/share/zen_installer
@@ -142,7 +139,7 @@ LQXREPO
           
           wget -O airootfs/usr/share/plymouth/cybr-logo.png "https://a.fsdn.com/allura/p/wolfos/icon?w=96&1748003641"
           
-          cat > airootfs/etc/os-release <<'\''OSREL'\''
+          cat > airootfs/etc/os-release <<'OSREL'
           NAME="Cybr Linux"
           PRETTY_NAME="Cybr Linux"
           ID=cybr
@@ -155,7 +152,7 @@ LQXREPO
           
           echo "cybr-live" > airootfs/etc/hostname
           
-          cat > airootfs/etc/issue <<'\''ISSUE'\''
+          cat > airootfs/etc/issue <<'ISSUE'
 
 ░█████╗░██╗░░░██╗██████╗░██████╗░  ██╗░░░░░██╗███╗░░██╗██╗░░░██╗██╗░░██╗
 ██╔══██╗╚██╗░██╔╝██╔══██╗██╔══██╗  ██║░░░░░██║████╗░██║██║░░░██║╚██╗██╔╝
@@ -168,8 +165,7 @@ Welcome to Cybr Linux - Powered by Liquorix Kernel
 
 ISSUE
           
-          # Cybr Control Center
-          cat > airootfs/usr/local/bin/cybr-control <<'\''CYBR'\''
+          cat > airootfs/usr/local/bin/cybr-control <<'CYBR'
 #!/usr/bin/env python3
 import sys
 from PyQt5.QtWidgets import *
@@ -253,7 +249,7 @@ CYBR
           chmod +x airootfs/usr/local/bin/cybr-control
           
           mkdir -p airootfs/etc/mkinitcpio.conf.d
-          cat > airootfs/etc/mkinitcpio.conf.d/plymouth.conf <<'\''MKINIT'\''
+          cat > airootfs/etc/mkinitcpio.conf.d/plymouth.conf <<'MKINIT'
 MODULES=()
 BINARIES=()
 FILES=()
@@ -262,14 +258,14 @@ COMPRESSION="xz"
 MKINIT
           
           mkdir -p airootfs/etc/plymouth
-          cat > airootfs/etc/plymouth/plymouthd.conf <<'\''PLYM'\''
+          cat > airootfs/etc/plymouth/plymouthd.conf <<'PLYM'
 [Daemon]
 Theme=spinner
 ShowDelay=0
 DeviceTimeout=8
 PLYM
           
-          cat > airootfs/root/customize_airootfs.sh <<'\''CUSTOM'\''
+          cat > airootfs/root/customize_airootfs.sh <<'CUSTOM'
 #!/usr/bin/env bash
 set -e
 [ -f /usr/share/plymouth/cybr-logo.png ] && cp /usr/share/plymouth/cybr-logo.png /usr/share/plymouth/themes/spinner/watermark.png
@@ -284,7 +280,7 @@ echo "%wheel ALL=(ALL:ALL) NOPASSWD: ALL" > /etc/sudoers.d/wheel
 chmod 440 /etc/sudoers.d/wheel
 
 mkdir -p /etc/sddm.conf.d
-cat > /etc/sddm.conf.d/autologin.conf <<SDDM
+cat > /etc/sddm.conf.d/autologin.conf <<"SDDM"
 [Autologin]
 User=liveuser
 Session=plasma
@@ -296,7 +292,7 @@ Current=breeze
 SDDM
 
 mkdir -p /home/liveuser/.config
-cat > /home/liveuser/.config/kdeglobals <<KDE
+cat > /home/liveuser/.config/kdeglobals <<"KDE"
 [General]
 ColorScheme=BreezeDark
 Name=Cybr
@@ -306,8 +302,7 @@ LookAndFeelPackage=org.kde.breezedark.desktop
 Theme=Papirus-Dark
 KDE
 
-# ZSH config
-cat > /home/liveuser/.zshrc <<ZSH
+cat > /home/liveuser/.zshrc <<"ZSH"
 HISTFILE=~/.histfile
 HISTSIZE=10000
 SAVEHIST=10000
@@ -323,7 +318,7 @@ fastfetch
 ZSH
 
 mkdir -p /home/liveuser/Desktop
-cat > /home/liveuser/Desktop/install.desktop <<DESK
+cat > /home/liveuser/Desktop/install.desktop <<"DESK"
 [Desktop Entry]
 Type=Application
 Name=Install Cybr Linux
@@ -334,7 +329,7 @@ Categories=System;
 DESK
 chmod +x /home/liveuser/Desktop/install.desktop
 
-cat > /home/liveuser/Desktop/cybr-control.desktop <<CC
+cat > /home/liveuser/Desktop/cybr-control.desktop <<"CC"
 [Desktop Entry]
 Type=Application
 Name=Cybr Control Center
@@ -353,28 +348,28 @@ CUSTOM
           chmod +x airootfs/root/customize_airootfs.sh
           
           mkdir -p efiboot/loader/entries syslinux
-          cat > efiboot/loader/loader.conf <<'\''LOAD'\''
+          cat > efiboot/loader/loader.conf <<'LOAD'
 timeout 15
 default 01-cybr-live.conf
 console-mode max
 editor no
 LOAD
           
-          cat > efiboot/loader/entries/01-cybr-live.conf <<'\''ENTRY'\''
+          cat > efiboot/loader/entries/01-cybr-live.conf <<'ENTRY'
 title   Cybr Linux (Live)
 linux   /%INSTALL_DIR%/boot/x86_64/vmlinuz-linux-lqx
 initrd  /%INSTALL_DIR%/boot/x86_64/initramfs-linux-lqx.img
 options archisobasedir=%INSTALL_DIR% archisolabel=%ARCHISO_LABEL% splash quiet loglevel=3 rd.udev.log_priority=3 vt.global_cursor_default=0
 ENTRY
 
-          cat > efiboot/loader/entries/02-cybr-fallback.conf <<'\''FALL'\''
+          cat > efiboot/loader/entries/02-cybr-fallback.conf <<'FALL'
 title   Cybr Linux (Fallback)
 linux   /%INSTALL_DIR%/boot/x86_64/vmlinuz-linux-lqx
 initrd  /%INSTALL_DIR%/boot/x86_64/initramfs-linux-lqx-fallback.img
 options archisobasedir=%INSTALL_DIR% archisolabel=%ARCHISO_LABEL%
 FALL
 
-          cat > efiboot/loader/entries/03-cybr-nomodeset.conf <<'\''NOMOD'\''
+          cat > efiboot/loader/entries/03-cybr-nomodeset.conf <<'NOMOD'
 title   Cybr Linux (Safe Graphics)
 linux   /%INSTALL_DIR%/boot/x86_64/vmlinuz-linux-lqx
 initrd  /%INSTALL_DIR%/boot/x86_64/initramfs-linux-lqx.img
@@ -388,7 +383,7 @@ NOMOD
             magick -size 640x480 xc:"#0a0a0a" -gravity center -pointsize 72 -fill "#1793D1" -annotate +0-80 "CYBR" -pointsize 24 -fill "#ffffff" -annotate +0-20 "LINUX" -pointsize 16 -fill "#888888" -annotate +0+40 "wolfos.uk" syslinux/splash.png 2>/dev/null || convert -size 640x480 xc:"#0a0a0a" -gravity center -pointsize 72 -fill "#1793D1" -annotate +0-80 "CYBR" -pointsize 24 -fill "#ffffff" -annotate +0-20 "LINUX" -pointsize 16 -fill "#888888" -annotate +0+40 "wolfos.uk" syslinux/splash.png
           fi
           
-          cat > syslinux/syslinux.cfg <<'\''SYSLIN'\''
+          cat > syslinux/syslinux.cfg <<'SYSLIN'
 UI vesamenu.c32
 MENU TITLE Cybr Linux Boot Menu
 MENU BACKGROUND splash.png
@@ -438,7 +433,7 @@ SYSLIN
           mkarchiso -v -w /tmp/work -o /tmp/out .
           ISO_FILE=$(ls /tmp/out/*.iso)
           [ -f "$ISO_FILE" ] && mv "$ISO_FILE" "/workspace/${ISO_NAME}.iso"
-          '
+          BUILDSCRIPT
       
       - name: Generate checksums
         run: |
