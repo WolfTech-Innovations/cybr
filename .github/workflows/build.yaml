@@ -1,4 +1,4 @@
-name: "Cybr Build"
+name: Cybr Build
 
 on:
   workflow_dispatch:
