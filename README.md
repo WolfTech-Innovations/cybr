@@ -7,14 +7,13 @@ Cybr Linux is an Arch-based distribution designed for all users, from newcomers 
 ## Editions
 
 ### Plasma Edition
-KDE Plasma desktop environment with the Dracula theme, featuring a complete suite of applications and BlackArch repository integration for security tools.
+KDE Plasma desktop environment with the Dracula theme, featuring minimal packages
 
 ## Features
 
 - **Base**: Arch Linux rolling release
 - **Desktop**: KDE Plasma with Wayland and X11 support
 - **Theme**: Dracula color scheme system-wide
-- **Security**: BlackArch repositories with 3000+ pentesting tools
 - **Audio**: PipeWire with full multimedia support
 - **Networking**: NetworkManager and Bluetooth ready out of the box
 
@@ -31,11 +30,8 @@ To install Cybr Linux, follow these steps:
 
 On first boot, Cybr automatically configures:
 - Dracula theme across all applications
-- BlackArch security tool repositories
-- System enhancements via Neo integration
 
-If automatic setup fails, run manually with: `/usr/local/bin/cybr-manual-setup`
-
+- 
 ## Downloads
 
 - [SourceForge](https://sourceforge.net/projects/wolfos/files/plasma/) - Primary download mirror
@@ -45,14 +41,13 @@ If automatic setup fails, run manually with: `/usr/local/bin/cybr-manual-setup`
 
 - Dracula Theme for the color scheme
 - KDE Community for Plasma Desktop
-- BlackArch Team for security tools
 - Arch Linux community
 
 ## Our Team
 
-- Christopher F. - CEO and Head of Cybr Development Team
-- Joseph D. - Head of HR and Marketing
-- Christopher (Development Team) - Programming Department
+- Christopher L Fox Jr - CEO and Head of Cybr Development Team
+- Joseph Daniels - Head of HR and Marketing
+- Christopher Fricks (Development Team) - Programming Department
 
 ## Legal
 
