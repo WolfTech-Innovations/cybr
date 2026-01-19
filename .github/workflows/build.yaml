@@ -18,9 +18,62 @@ jobs:
       - uses: actions/checkout@v4
       - uses: docker/setup-buildx-action@v3
 
-      - name: Create package list
+      - name: Free up disk space
         run: |
-          cat > packages.x86_64 <<'EOF'
+          echo "=== Before cleanup ==="
+          df -h
+          sudo rm -rf /usr/share/dotnet
+          sudo rm -rf /usr/local/lib/android
+          sudo rm -rf /opt/ghc
+          sudo rm -rf /usr/local/share/boost
+          sudo rm -rf /opt/hostedtoolcache
+          sudo rm -rf /usr/share/swift
+          sudo rm -rf /usr/local/.ghcup
+          sudo rm -rf /usr/local/share/powershell
+          sudo rm -rf /usr/share/kotlinc
+          sudo rm -rf /usr/local/lib/node_modules
+          sudo docker system prune -af --volumes
+          sudo apt-get purge -y '^aspnetcore-.*' '^dotnet-.*' '^llvm-.*' 'php.*' '^mongodb-.*' '^mysql-.*' azure-cli google-cloud-sdk hhvm google-chrome-stable firefox powershell mono-devel || true
+          sudo apt-get autoremove -y
+          sudo apt-get clean
+          echo "=== After cleanup ==="
+          df -h
+      
+      - name: Configure Docker for maximum space
+        run: |
+          sudo systemctl stop docker
+          sudo rm -rf /var/lib/docker
+          sudo mkdir -p /var/lib/docker
+          echo '{"data-root":"/mnt/docker","storage-driver":"overlay2"}' | sudo tee /etc/docker/daemon.json
+          sudo mkdir -p /mnt/docker
+          sudo systemctl start docker
+          df -h
+          
+          docker build --no-cache --pull -t builder - <<'DOCKERFILE'
+          FROM archlinux:latest
+          RUN pacman -Syu --noconfirm && \
+              pacman -S --noconfirm archiso git base-devel sudo && \
+              pacman -Scc --noconfirm && \
+              rm -rf /var/cache/pacman/pkg/* && \
+              useradd -m -G wheel builder && \
+              echo "builder ALL=(ALL) NOPASSWD: ALL" >> /etc/sudoers
+          WORKDIR /build
+          DOCKERFILE
+          
+          docker run --rm --privileged --shm-size=4gb -v "$PWD:/workspace" -e ISO_NAME="${{ env.ISO_NAME }}" builder bash -c '
+          set -euo pipefail
+          
+          echo "=== Disk space inside container ==="
+          df -h
+          
+          # Clean up any existing package cache
+          rm -rf /var/cache/pacman/pkg/*
+          
+          cp -r /usr/share/archiso/configs/releng /build/cybr
+          cd /build/cybr
+          
+          # Core packages
+          cat > packages.x86_64 <<'\''PKG'\''
           linux-lts
           linux-firmware
           base
@@ -76,31 +129,7 @@ jobs:
           kcalc
           spectacle
           gwenview
-          EOF
-      
-      - name: Build ISO with Calamares
-        run: |
-          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc
-          sudo docker image prune -af
-          sudo apt-get clean
-          
-          docker build -t builder - <<'DOCKERFILE'
-          FROM archlinux:latest
-          RUN pacman -Syu --noconfirm && pacman -S --noconfirm archiso git base-devel && pacman -Scc --noconfirm
-          WORKDIR /build
-          DOCKERFILE
-          
-          docker run --rm --privileged -v "$PWD:/workspace" -e ISO_NAME="${{ env.ISO_NAME }}" builder bash -c '
-          set -euo pipefail
-          
-          cp -r /usr/share/archiso/configs/releng /build/cybr
-          cd /build/cybr
-          cp /workspace/packages.x86_64 .
-          
-          # Add Calamares from AUR
-          cat >> packages.x86_64 <<CALA
           boost-libs
-          ckbcomp
           hwinfo
           icu
           kconfig5
@@ -112,24 +141,69 @@ jobs:
           kpmcore
           kservice5
           libpwquality
-          plasma-framework5
-          python
+          solid5
+          squashfs-tools
+          yaml-cpp
+          extra-cmake-modules
           qt5-svg
           qt5-tools
           qt5-translations
           qt5-xmlpatterns
-          solid5
-          squashfs-tools
-          yaml-cpp
-          CALA
+          polkit-qt5
+          efibootmgr
+          PKG
           
           pacman-key --init
           pacman-key --populate archlinux
           sed -i "s/#ParallelDownloads = 5/ParallelDownloads = 5/" pacman.conf
           
+          # Clean package cache after each major operation to save space
+          cleanup_cache() {
+            rm -rf /var/cache/pacman/pkg/*
+            rm -rf /tmp/*
+          }
+          
+          # Build Calamares from AUR as builder user
+          sudo -u builder bash <<'\''AURB'\''
+          cd /tmp
+          
+          echo "=== Building ckbcomp ==="
+          git clone --depth 1 https://aur.archlinux.org/ckbcomp.git
+          cd ckbcomp
+          makepkg -s --noconfirm
+          sudo pacman -U --noconfirm ckbcomp-*.pkg.tar.zst
+          cd ..
+          rm -rf ckbcomp
+          
+          echo "=== Building plasma-framework5 ==="
+          git clone --depth 1 https://aur.archlinux.org/plasma-framework5.git
+          cd plasma-framework5
+          makepkg -s --noconfirm --skipinteg
+          sudo pacman -U --noconfirm plasma-framework5-*.pkg.tar.zst
+          cd ..
+          rm -rf plasma-framework5
+          
+          echo "=== Building Calamares ==="
+          git clone --depth 1 https://aur.archlinux.org/calamares.git
+          cd calamares
+          makepkg -s --noconfirm
+          sudo pacman -U --noconfirm calamares-*.pkg.tar.zst
+          
+          # Copy only the final packages
+          mkdir -p /build/cybr/airootfs/root/aur_packages
+          cp /tmp/calamares/calamares-*.pkg.tar.zst /build/cybr/airootfs/root/aur_packages/
+          
+          # Cleanup build artifacts
+          cd /tmp
+          rm -rf ckbcomp plasma-framework5 calamares
+          sudo pacman -Scc --noconfirm
+          AURB
+          
+          cleanup_cache
+          
           mkdir -p airootfs/etc airootfs/etc/skel/.config airootfs/etc/calamares
           
-          cat > airootfs/etc/os-release <<OSREL
+          cat > airootfs/etc/os-release <<'\''OSREL'\''
           NAME="Cybr Linux"
           PRETTY_NAME="Cybr Linux"
           ID=cybr
@@ -142,9 +216,9 @@ jobs:
           
           echo "cybr-live" > airootfs/etc/hostname
           
-          # Plymouth configuration
+          # Plymouth config
           mkdir -p airootfs/etc/mkinitcpio.conf.d
-          cat > airootfs/etc/mkinitcpio.conf.d/plymouth.conf <<MKINIT
+          cat > airootfs/etc/mkinitcpio.conf.d/plymouth.conf <<'\''MKINIT'\''
           MODULES=()
           BINARIES=()
           FILES=()
@@ -152,9 +226,9 @@ jobs:
           COMPRESSION="xz"
           MKINIT
           
-          # Create Plymouth theme
+          # Plymouth theme
           mkdir -p airootfs/usr/share/plymouth/themes/cybr
-          cat > airootfs/usr/share/plymouth/themes/cybr/cybr.plymouth <<PLYM
+          cat > airootfs/usr/share/plymouth/themes/cybr/cybr.plymouth <<'\''PLYM'\''
           [Plymouth Theme]
           Name=Cybr
           Description=Cybr Boot Animation
@@ -168,63 +242,34 @@ jobs:
           cat > airootfs/usr/share/plymouth/themes/cybr/cybr.script <<'\''SCPT'\''
           Window.SetBackgroundTopColor(0,0,0);
           Window.SetBackgroundBottomColor(0,0,0);
-          w=Window.GetWidth();h=Window.GetHeight();
-          sz=80;sp=15;
-          
+          w=Window.GetWidth();h=Window.GetHeight();sz=80;sp=15;
           dot=Sprite(Image.Text("●",1,1,1,1,"Sans 50"));
           letters=[];reveals=[];sprites=[];
-          
-          for(i=0;i<4;i++){
-            letters[i]=["C","y","b","r"][i];
-            reveals[i]=0;
-            sprites[i]=Sprite(Image.Text(letters[i],1,1,1,0,"Sans "+sz));
-          }
-          
-          lw=sprites[0].GetImage().GetWidth();
-          tw=(lw*4)+(sp*3);
-          sx=(w-tw)/2;sy=(h/2)-(sz/2);
-          
+          for(i=0;i<4;i++){letters[i]=["C","y","b","r"][i];reveals[i]=0;sprites[i]=Sprite(Image.Text(letters[i],1,1,1,0,"Sans "+sz));}
+          lw=sprites[0].GetImage().GetWidth();tw=(lw*4)+(sp*3);sx=(w-tw)/2;sy=(h/2)-(sz/2);
           for(i=0;i<4;i++)sprites[i].SetPosition(sx+(lw+sp)*i,sy,1);
-          
           tag=Sprite(Image.Text("Simple. Fast. Secure.",0.5,0.5,0.5,0,"Sans 20"));
           tag.SetPosition((w-tag.GetImage().GetWidth())/2,sy+sz+40,1);
-          
-          dx=sx-120;de=sx+tw+120;dy=sy+(sz/2)-25;
-          done=0;shown=0;
-          
+          dx=sx-120;de=sx+tw+120;dy=sy+(sz/2)-25;done=0;shown=0;
           fun refresh_callback(){
             t=Plymouth.GetTime();
-            if(t<2.5&&done==0){
-              r=t/2.5;
-              x=dx+((de-dx)*r);
-              dot.SetPosition(x,dy,10);
-              for(i=0;i<4;i++){
-                if(x>=sx+(lw+sp)*i+(lw/2)&&reveals[i]==0){
-                  sprites[i].SetImage(Image.Text(letters[i],1,1,1,1,"Sans "+sz));
-                  reveals[i]=1;
-                }
-              }
-            }
+            if(t<2.5&&done==0){r=t/2.5;x=dx+((de-dx)*r);dot.SetPosition(x,dy,10);
+              for(i=0;i<4;i++){if(x>=sx+(lw+sp)*i+(lw/2)&&reveals[i]==0){sprites[i].SetImage(Image.Text(letters[i],1,1,1,1,"Sans "+sz));reveals[i]=1;}}}
             else if(done==0){dot.SetOpacity(0);done=1;}
-            if(t>2.8&&shown==0){
-              tag.SetImage(Image.Text("Simple. Fast. Secure.",0.5,0.5,0.5,1,"Sans 20"));
-              shown=1;
-            }
-          }
-          
+            if(t>2.8&&shown==0){tag.SetImage(Image.Text("Simple. Fast. Secure.",0.5,0.5,0.5,1,"Sans 20"));shown=1;}}
           Plymouth.SetRefreshFunction(refresh_callback);
           SCPT
           
           mkdir -p airootfs/etc/plymouth
-          cat > airootfs/etc/plymouth/plymouthd.conf <<PLYMCONF
+          cat > airootfs/etc/plymouth/plymouthd.conf <<'\''PLYMCONF'\''
           [Daemon]
           Theme=cybr
           ShowDelay=0
           DeviceTimeout=8
           PLYMCONF
           
-          # Calamares basic config
-          cat > airootfs/etc/calamares/settings.conf <<CALASET
+          # Calamares config
+          cat > airootfs/etc/calamares/settings.conf <<'\''CALASET'\''
           modules-search: [ local ]
           sequence:
             - show:
@@ -251,7 +296,6 @@ jobs:
               - umount
             - show:
               - finished
-          
           branding: cybr
           prompt-install: true
           dont-chroot: false
@@ -262,12 +306,14 @@ jobs:
           #!/usr/bin/env bash
           set -e
           
+          # Install AUR packages
+          pacman -U --noconfirm /root/aur_packages/*.pkg.tar.zst || true
+          rm -rf /root/aur_packages
+          
           plymouth-set-default-theme -R cybr 2>/dev/null || true
           
           KVER=$(file -bL /boot/vmlinuz-linux-lts 2>/dev/null | grep -o "version [^ ]*" | cut -d" " -f2 || echo "")
-          if [ -n "$KVER" ]; then
-            mkinitcpio -k "$KVER" -c /etc/mkinitcpio.conf.d/plymouth.conf -g /boot/initramfs-linux-lts.img
-          fi
+          [ -n "$KVER" ] && mkinitcpio -k "$KVER" -c /etc/mkinitcpio.conf.d/plymouth.conf -g /boot/initramfs-linux-lts.img
           
           useradd -m -G wheel,audio,video,optical,storage,network -s /bin/bash liveuser || true
           echo "liveuser:live" | chpasswd
@@ -280,11 +326,9 @@ jobs:
           [Autologin]
           User=liveuser
           Session=plasma
-          
           [General]
           HaltCommand=/usr/bin/systemctl poweroff
           RebootCommand=/usr/bin/systemctl reboot
-          
           [Theme]
           Current=breeze
           SDDM
@@ -293,10 +337,8 @@ jobs:
           cat > /home/liveuser/.config/kdeglobals <<KDE
           [General]
           ColorScheme=BreezeDark
-          
           [KDE]
           LookAndFeelPackage=org.kde.breezedark.desktop
-          
           [Icons]
           Theme=Papirus-Dark
           KDE
@@ -306,7 +348,7 @@ jobs:
           [Desktop Entry]
           Type=Application
           Name=Install Cybr Linux
-          Exec=calamares
+          Exec=pkexec calamares
           Icon=system-software-install
           Terminal=false
           DESK
@@ -322,14 +364,14 @@ jobs:
           
           # Boot entries
           mkdir -p efiboot/loader/entries
-          cat > efiboot/loader/loader.conf <<LOADER
+          cat > efiboot/loader/loader.conf <<'\''LOADER'\''
           timeout 15
           default 01-cybr.conf
           console-mode max
           editor no
           LOADER
           
-          cat > efiboot/loader/entries/01-cybr.conf <<ENTRY
+          cat > efiboot/loader/entries/01-cybr.conf <<'\''ENTRY'\''
           title   Cybr Linux
           linux   /%INSTALL_DIR%/boot/x86_64/vmlinuz-linux-lts
           initrd  /%INSTALL_DIR%/boot/x86_64/initramfs-linux-lts.img
@@ -342,10 +384,15 @@ jobs:
           ln -sf /usr/lib/systemd/system/NetworkManager.service airootfs/etc/systemd/system/multi-user.target.wants/
           ln -sf /usr/lib/systemd/system/bluetooth.service airootfs/etc/systemd/system/multi-user.target.wants/
           
-          # Compression settings
           sed -i "s/airootfs_image_tool_options=()/airootfs_image_tool_options=(\"-comp\" \"xz\" \"-Xbcj\" \"x86\" \"-b\" \"1M\" \"-Xdict-size\" \"100%\")/" profiledef.sh
           
+          echo "=== Starting ISO build ==="
+          df -h
+          
           mkarchiso -v -w /tmp/work -o /tmp/out .
+          
+          echo "=== ISO build complete ==="
+          df -h
           
           ISO_FILE=$(ls /tmp/out/*.iso)
           [ -f "$ISO_FILE" ] && mv "$ISO_FILE" "/workspace/${ISO_NAME}.iso"
