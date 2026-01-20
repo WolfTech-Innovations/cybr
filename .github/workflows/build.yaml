@@ -1,4 +1,4 @@
-name: "Cybr Build (DDE + Steam + Liquorix)"
+name: "Cybr Build (Phosh + Steam + Liquorix)"
 
 on:
   workflow_dispatch:
@@ -29,7 +29,7 @@ jobs:
           echo "=== After cleanup ==="
           df -h
 
-      - name: Build Cybr Linux ISO (DDE + Steam + Liquorix)
+      - name: Build Cybr ISO (Phosh + Steam + Liquorix)
         run: |
           docker build --no-cache --pull -t builder - <<'DOCKERFILE'
           FROM debian:bookworm
@@ -101,16 +101,16 @@ jobs:
             plymouth \
             plymouth-themes
           
-          # Install Phosh Mobile Desktop Environment
-          echo "Installing Phosh (GNOME mobile shell)..."
+          # Install Phosh (Mobile-optimized Desktop Environment)
+          echo "Installing Phosh mobile desktop environment..."
           apt-get install -y \
-            phosh \
-            phosh-core \
+            phosh-full \
             phoc \
             squeekboard \
-            gnome-calls \
             gnome-contacts \
-            epiphany-browser \
+            gnome-calls \
+            chatty \
+            firefox-esr \
             flatpak \
             gparted \
             ntfs-3g \
@@ -122,7 +122,7 @@ jobs:
             vim \
             nano \
             network-manager \
-            gnome-control-center
+            network-manager-gnome
           
           # Enable 32-bit architecture for Steam
           echo "=== Enabling 32-bit architecture for Steam ==="
@@ -276,8 +276,16 @@ jobs:
           mkdir -p /etc/gdm3
           cat > /etc/gdm3/custom.conf <<'\''GDM'\''
           [daemon]
-          AutomaticLoginEnable = true
-          AutomaticLogin = cybruser
+          AutomaticLoginEnable=true
+          AutomaticLogin=cybruser
+          
+          [security]
+          
+          [xdmcp]
+          
+          [chooser]
+          
+          [debug]
           GDM
           
           # Desktop launcher for installer
@@ -343,7 +351,7 @@ jobs:
           
           cat > iso/isolinux/isolinux.cfg <<ISOLINUX
           UI vesamenu.c32
-          MENU TITLE Cybr Mobile Gaming Edition - Boot Menu
+          MENU TITLE Cybr Mobile Gaming - Boot Menu
           MENU BACKGROUND splash.png
           MENU COLOR title 1;36;44 #9033ccff #a0000000
           MENU COLOR sel 7;37;40 #e0ffffff #20ff8000
@@ -436,7 +444,7 @@ jobs:
             -joliet \
             -joliet-long \
             -rational-rock \
-            -volid "CYBR_GAMING" \
+            -volid "CYBR_MOBILE" \
             -appid "Cybr Mobile Gaming Edition" \
             -publisher "https://wolfos.uk" \
             -preparer "Cybr Build System (Phosh + Steam + Liquorix)" \
@@ -455,7 +463,7 @@ jobs:
           
           echo "=== Build complete ==="
           echo "ISO created successfully: ${ISO_NAME}.iso"
-          echo "Desktop Environment: Phosh (GNOME mobile shell)"
+          echo "Desktop Environment: Phosh (GNOME-based mobile shell)"
           echo "Kernel: Liquorix (optimized for gaming)"
           echo "Gaming Platform: Steam included"
           echo "Boot method: SYSLINUX (BIOS) + SYSLINUX (UEFI) - NO GRUB!"
@@ -475,7 +483,7 @@ jobs:
           echo "### Cybr Mobile Gaming Edition Build Complete! 📱🎮🎉" >> $GITHUB_STEP_SUMMARY
           echo "**ISO:** ${{ env.ISO_NAME }}.iso" >> $GITHUB_STEP_SUMMARY
           echo "**Size:** ${ISO_SIZE}MB" >> $GITHUB_STEP_SUMMARY
-          echo "**Desktop:** Phosh (GNOME Mobile Shell)" >> $GITHUB_STEP_SUMMARY
+          echo "**Desktop:** Phosh (Mobile-optimized GNOME)" >> $GITHUB_STEP_SUMMARY
           echo "**Kernel:** Liquorix (Gaming Optimized)" >> $GITHUB_STEP_SUMMARY
           echo "**Gaming:** Steam Pre-installed" >> $GITHUB_STEP_SUMMARY
           echo "**Boot Method:** SYSLINUX (BIOS + UEFI) - NO GRUB" >> $GITHUB_STEP_SUMMARY
