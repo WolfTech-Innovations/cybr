@@ -116,7 +116,7 @@ The build process uses Docker and creates a bootable ISO with:
 
 - **Christopher L Fox Jr** - CEO and Head of Development
 - **Joseph Daniels** - Head of HR and Marketing
-- **Christopher Fricks** - Programming Department
+- **Christopher Ray Fricks** - Programming Department
 
 ## Legal
 
