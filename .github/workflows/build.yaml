@@ -47,7 +47,7 @@ jobs:
           mkdir -p iso/{live,boot/grub,isolinux,EFI/boot}
           
           # Bootstrap Debian base
-          debootstrap --arch=amd64 bookworm chroot http://deb.debian.org/debian/
+          debootstrap --arch=amd64 --variant=minbase bookworm chroot http://deb.debian.org/debian/
           
           # Configure chroot
           chroot chroot /bin/bash <<'\''CHROOT'\''
@@ -62,13 +62,46 @@ jobs:
           EOF
           
           apt-get update
-          apt-get install -y linux-image-amd64 live-boot systemd-sysv
+          
+          # Install kernel and live-boot with firmware
+          apt-get install -y \
+            linux-image-amd64 \
+            linux-headers-amd64 \
+            firmware-linux-free \
+            firmware-linux-nonfree \
+            live-boot \
+            live-boot-initramfs-tools \
+            systemd-sysv \
+            dbus
           
           # Install KDE Plasma
-          apt-get install -y kde-plasma-desktop sddm \
-            firefox-esr dolphin konsole kate gwenview ark kcalc kde-spectacle \
-            flatpak plasma-nm plasma-pa breeze-gtk-theme papirus-icon-theme \
-            gparted ntfs-3g dosfstools git curl wget vim nano network-manager
+          apt-get install -y \
+            kde-plasma-desktop \
+            sddm \
+            firefox-esr \
+            dolphin \
+            konsole \
+            kate \
+            gwenview \
+            ark \
+            kcalc \
+            kde-spectacle \
+            flatpak \
+            plasma-nm \
+            plasma-pa \
+            breeze-gtk-theme \
+            papirus-icon-theme \
+            gparted \
+            ntfs-3g \
+            dosfstools \
+            e2fsprogs \
+            git \
+            curl \
+            wget \
+            vim \
+            nano \
+            network-manager \
+            network-manager-gnome
           
           # Install Calamares
           apt-get install -y calamares calamares-settings-debian
@@ -84,7 +117,8 @@ jobs:
           OSREL
           
           # Download logo
-          wget -O /usr/share/pixmaps/cybr-logo.png "https://a.fsdn.com/allura/p/wolfos/icon?w=96&1748003641" || true
+          wget -O /usr/share/pixmaps/cybr-logo.png "https://a.fsdn.com/allura/p/wolfos/icon?w=96&1748003641" || \
+            echo "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==" | base64 -d > /usr/share/pixmaps/cybr-logo.png
           
           # Calamares config
           mkdir -p /etc/calamares
@@ -215,22 +249,30 @@ jobs:
           # Enable services
           systemctl enable sddm NetworkManager
           
+          # Update initramfs to include live-boot
+          update-initramfs -u
+          
           # Cleanup
           apt-get clean
-          rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
+          rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/* /var/cache/apt/archives/*.deb
           CHROOT
           
-          # Create squashfs
-          mksquashfs chroot iso/live/filesystem.squashfs -e boot -comp xz
+          # Create squashfs - DO NOT exclude boot, kernel modules are needed
+          mksquashfs chroot iso/live/filesystem.squashfs -comp xz -b 1M -Xdict-size 100%
           
           # Copy kernel and initrd
-          cp chroot/boot/vmlinuz-* iso/live/vmlinuz
-          cp chroot/boot/initrd.img-* iso/live/initrd
+          KERNEL=$(ls chroot/boot/vmlinuz-* | head -n1)
+          INITRD=$(ls chroot/boot/initrd.img-* | head -n1)
+          cp "$KERNEL" iso/live/vmlinuz
+          cp "$INITRD" iso/live/initrd
+          
+          echo "Kernel: $(basename $KERNEL)"
+          echo "Initrd: $(basename $INITRD)"
           
           # Download splash
           wget -O iso/isolinux/splash.png "https://a.fsdn.com/allura/p/wolfos/icon?w=96&1748003641" || true
           
-          # ISOLINUX config
+          # ISOLINUX config - FIXED boot parameters
           cat > iso/isolinux/isolinux.cfg <<'\''ISOLINUX'\''
           UI vesamenu.c32
           MENU TITLE Cybr Linux Boot Menu
@@ -243,30 +285,40 @@ jobs:
           LABEL live
             MENU LABEL Cybr Linux (Live)
             KERNEL /live/vmlinuz
-            APPEND initrd=/live/initrd boot=live components quiet splash
+            APPEND initrd=/live/initrd boot=live components quiet splash live-media-path=/live
           
           LABEL live-safe
             MENU LABEL Cybr Linux (Safe Graphics)
             KERNEL /live/vmlinuz
-            APPEND initrd=/live/initrd boot=live components nomodeset
+            APPEND initrd=/live/initrd boot=live components nomodeset live-media-path=/live
+          
+          LABEL live-failsafe
+            MENU LABEL Cybr Linux (Failsafe)
+            KERNEL /live/vmlinuz
+            APPEND initrd=/live/initrd boot=live components noapic noacpi nosplash irqpoll live-media-path=/live
           ISOLINUX
           
           # Copy isolinux files
           cp /usr/lib/ISOLINUX/isolinux.bin iso/isolinux/
           cp /usr/lib/syslinux/modules/bios/*.c32 iso/isolinux/
           
-          # GRUB config for EFI
+          # GRUB config for EFI - FIXED boot parameters
           cat > iso/boot/grub/grub.cfg <<'\''GRUB'\''
           set timeout=15
           set default=0
           
           menuentry "Cybr Linux (Live)" {
-            linux /live/vmlinuz boot=live components quiet splash
+            linux /live/vmlinuz boot=live components quiet splash live-media-path=/live
             initrd /live/initrd
           }
           
           menuentry "Cybr Linux (Safe Graphics)" {
-            linux /live/vmlinuz boot=live components nomodeset
+            linux /live/vmlinuz boot=live components nomodeset live-media-path=/live
+            initrd /live/initrd
+          }
+          
+          menuentry "Cybr Linux (Failsafe)" {
+            linux /live/vmlinuz boot=live components noapic noacpi nosplash irqpoll live-media-path=/live
             initrd /live/initrd
           }
           GRUB
@@ -279,22 +331,32 @@ jobs:
             --fonts="" \
             "boot/grub/grub.cfg=iso/boot/grub/grub.cfg"
           
-          # Create ISO
+          # Create ISO with proper boot configuration
           xorriso -as mkisofs \
             -iso-level 3 \
             -full-iso9660-filenames \
+            -joliet \
+            -joliet-long \
+            -rational-rock \
             -volid "CYBR_LINUX" \
             -appid "Cybr Linux Live" \
             -publisher "https://wolfos.uk" \
+            -preparer "Cybr Build System" \
             -eltorito-boot isolinux/isolinux.bin \
             -eltorito-catalog isolinux/boot.cat \
-            -no-emul-boot -boot-load-size 4 -boot-info-table \
+            -no-emul-boot \
+            -boot-load-size 4 \
+            -boot-info-table \
             -isohybrid-mbr /usr/lib/ISOLINUX/isohdpfx.bin \
             -eltorito-alt-boot \
             -e EFI/boot/bootx64.efi \
-            -no-emul-boot -isohybrid-gpt-basdat \
+            -no-emul-boot \
+            -isohybrid-gpt-basdat \
             -output "/workspace/${ISO_NAME}.iso" \
             iso/
+          
+          echo "ISO created successfully: ${ISO_NAME}.iso"
+          ls -lh "/workspace/${ISO_NAME}.iso"
           '
 
       - name: Generate checksums
