@@ -1,4 +1,4 @@
-name: "Cybr Build"
+name: "Cybr Build (DDE + Steam + Liquorix)"
 
 on:
   workflow_dispatch:
@@ -68,13 +68,18 @@ jobs:
           
           apt-get update
           
-          # Add Liquorix repository
+          # Add Liquorix repository using DEB822 format
           echo "=== Adding Liquorix kernel repository ==="
-          mkdir -p /etc/apt/keyrings
-          curl -fsSL https://liquorix.net/liquorix-keyring.gpg | tee /etc/apt/keyrings/liquorix-keyring.gpg > /dev/null
+          mkdir -p /usr/share/keyrings
+          curl -fsSL https://liquorix.net/liquorix-keyring.gpg -o /usr/share/keyrings/liquorix-archive-keyring.gpg
           
-          cat > /etc/apt/sources.list.d/liquorix.list <<'\''LIQSRC'\''
-          deb [signed-by=/etc/apt/keyrings/liquorix-keyring.gpg] https://liquorix.net/debian bookworm main
+          cat > /etc/apt/sources.list.d/liquorix.sources <<'\''LIQSRC'\''
+          Types: deb
+          URIs: https://liquorix.net/debian
+          Suites: bookworm
+          Components: main
+          Architectures: amd64
+          Signed-By: /usr/share/keyrings/liquorix-archive-keyring.gpg
           LIQSRC
           
           apt-get update
