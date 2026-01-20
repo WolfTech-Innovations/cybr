@@ -68,8 +68,8 @@ jobs:
           
           apt-get update
           
-          # Install kernel and live-boot with firmware
-          echo "Installing kernel and live-boot packages..."
+          # Install kernel and live-boot with firmware + Plymouth
+          echo "Installing kernel, live-boot packages, and Plymouth..."
           apt-get install -y \
             linux-image-amd64 \
             linux-headers-amd64 \
@@ -78,7 +78,9 @@ jobs:
             live-boot \
             live-boot-initramfs-tools \
             systemd-sysv \
-            dbus
+            dbus \
+            plymouth \
+            plymouth-themes
           
           # Install KDE Plasma
           echo "Installing KDE Plasma..."
@@ -126,6 +128,25 @@ jobs:
           # Download logo
           wget -O /usr/share/pixmaps/cybr-logo.png "https://a.fsdn.com/allura/p/wolfos/icon?w=96&1748003641" || \
             echo "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==" | base64 -d > /usr/share/pixmaps/cybr-logo.png
+          
+          # Configure Plymouth with spinner theme and Cybr watermark
+          echo "=== Configuring Plymouth ==="
+          
+          # Copy logo as watermark for spinner theme
+          cp /usr/share/pixmaps/cybr-logo.png /usr/share/plymouth/themes/spinner/watermark.png
+          
+          # Update spinner theme configuration to position watermark
+          cat >> /usr/share/plymouth/themes/spinner/spinner.plymouth <<'\''PLYMCONF'\''
+          
+          WatermarkHorizontalAlignment=.5
+          WatermarkVerticalAlignment=.96
+          PLYMCONF
+          
+          # Set Plymouth theme to spinner
+          plymouth-set-default-theme spinner
+          
+          # Update initramfs to include Plymouth
+          update-initramfs -u
           
           # Calamares config
           mkdir -p /etc/calamares
@@ -215,22 +236,22 @@ jobs:
           basicSetup: false
           DM
           
-          # Live user setup
-          useradd -m -s /bin/bash -G sudo,audio,video,netdev liveuser
-          echo "liveuser:live" | chpasswd
+          # Live user setup with custom name "Cybr Build"
+          useradd -m -s /bin/bash -G sudo,audio,video,netdev -c "Cybr Build" cybruser
+          echo "cybruser:live" | chpasswd
           echo "root:root" | chpasswd
           
-          # SDDM autologin for live
+          # SDDM autologin for live user
           mkdir -p /etc/sddm.conf.d
           cat > /etc/sddm.conf.d/autologin.conf <<'\''SDDM'\''
           [Autologin]
-          User=liveuser
+          User=cybruser
           Session=plasma
           SDDM
           
           # KDE config
-          mkdir -p /home/liveuser/.config
-          cat > /home/liveuser/.config/kdeglobals <<'\''KDE'\''
+          mkdir -p /home/cybruser/.config
+          cat > /home/cybruser/.config/kdeglobals <<'\''KDE'\''
           [General]
           ColorScheme=BreezeDark
           [KDE]
@@ -240,8 +261,8 @@ jobs:
           KDE
           
           # Desktop launcher
-          mkdir -p /home/liveuser/Desktop
-          cat > /home/liveuser/Desktop/calamares.desktop <<'\''DESK'\''
+          mkdir -p /home/cybruser/Desktop
+          cat > /home/cybruser/Desktop/calamares.desktop <<'\''DESK'\''
           [Desktop Entry]
           Type=Application
           Name=Install Cybr Linux
@@ -249,15 +270,12 @@ jobs:
           Icon=calamares
           Terminal=false
           DESK
-          chmod +x /home/liveuser/Desktop/calamares.desktop
+          chmod +x /home/cybruser/Desktop/calamares.desktop
           
-          chown -R liveuser:liveuser /home/liveuser
+          chown -R cybruser:cybruser /home/cybruser
           
           # Enable services
           systemctl enable sddm NetworkManager
-          
-          # Update initramfs to include live-boot
-          update-initramfs -u
           
           # Cleanup
           apt-get clean
@@ -288,7 +306,7 @@ jobs:
           # Download splash
           wget -O iso/isolinux/splash.png "https://a.fsdn.com/allura/p/wolfos/icon?w=96&1748003641" || true
           
-          # ISOLINUX config
+          # ISOLINUX config with Plymouth
           cat > iso/isolinux/isolinux.cfg <<ISOLINUX
           UI vesamenu.c32
           MENU TITLE Cybr Linux Boot Menu
@@ -301,17 +319,17 @@ jobs:
           LABEL live
             MENU LABEL Cybr Linux (Live)
             KERNEL /boot/vmlinuz-${KERNEL_VERSION}
-            APPEND initrd=/boot/initrd.img-${KERNEL_VERSION} boot=live components quiet splash live-media-path=/live
+            APPEND initrd=/boot/initrd.img-${KERNEL_VERSION} boot=live components quiet splash plymouth.ignore-serial-consoles live-media-path=/live
           
           LABEL live-safe
             MENU LABEL Cybr Linux (Safe Graphics)
             KERNEL /boot/vmlinuz-${KERNEL_VERSION}
-            APPEND initrd=/boot/initrd.img-${KERNEL_VERSION} boot=live components nomodeset live-media-path=/live
+            APPEND initrd=/boot/initrd.img-${KERNEL_VERSION} boot=live components nomodeset plymouth.ignore-serial-consoles live-media-path=/live
           
           LABEL live-failsafe
             MENU LABEL Cybr Linux (Failsafe)
             KERNEL /boot/vmlinuz-${KERNEL_VERSION}
-            APPEND initrd=/boot/initrd.img-${KERNEL_VERSION} boot=live components noapic noacpi nosplash irqpoll live-media-path=/live
+            APPEND initrd=/boot/initrd.img-${KERNEL_VERSION} boot=live components noapic noacpi nosplash nomodeset irqpoll live-media-path=/live
           ISOLINUX
           
           # Copy isolinux files
@@ -322,7 +340,7 @@ jobs:
           # Verify isolinux files
           ls -lh iso/isolinux/
           
-          # GRUB config for EFI
+          # GRUB config for EFI with Plymouth
           mkdir -p iso/boot/grub
           cat > iso/boot/grub/grub.cfg <<GRUB
           set timeout=15
@@ -332,17 +350,17 @@ jobs:
           insmod gfxterm
           
           menuentry "Cybr Linux (Live)" {
-            linux /boot/vmlinuz-${KERNEL_VERSION} boot=live components quiet splash live-media-path=/live
+            linux /boot/vmlinuz-${KERNEL_VERSION} boot=live components quiet splash plymouth.ignore-serial-consoles live-media-path=/live
             initrd /boot/initrd.img-${KERNEL_VERSION}
           }
           
           menuentry "Cybr Linux (Safe Graphics)" {
-            linux /boot/vmlinuz-${KERNEL_VERSION} boot=live components nomodeset live-media-path=/live
+            linux /boot/vmlinuz-${KERNEL_VERSION} boot=live components nomodeset plymouth.ignore-serial-consoles live-media-path=/live
             initrd /boot/initrd.img-${KERNEL_VERSION}
           }
           
           menuentry "Cybr Linux (Failsafe)" {
-            linux /boot/vmlinuz-${KERNEL_VERSION} boot=live components noapic noacpi nosplash irqpoll live-media-path=/live
+            linux /boot/vmlinuz-${KERNEL_VERSION} boot=live components noapic noacpi nosplash nomodeset irqpoll live-media-path=/live
             initrd /boot/initrd.img-${KERNEL_VERSION}
           }
           GRUB
