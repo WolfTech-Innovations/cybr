@@ -1,4 +1,4 @@
-name: "Cybr Build (No GRUB)"
+name: "Cybr Build (DDE + Steam + Liquorix)"
 
 on:
   workflow_dispatch:
@@ -29,13 +29,13 @@ jobs:
           echo "=== After cleanup ==="
           df -h
 
-      - name: Build Cybr Linux ISO (No GRUB)
+      - name: Build Cybr Linux ISO (DDE + Steam + Liquorix)
         run: |
           docker build --no-cache --pull -t builder - <<'DOCKERFILE'
           FROM debian:bookworm
           RUN apt-get update && \
               apt-get install -y debootstrap squashfs-tools xorriso isolinux syslinux-efi \
-                mtools wget file dosfstools && \
+                mtools wget file dosfstools gnupg2 curl && \
               apt-get clean && rm -rf /var/lib/apt/lists/*
           WORKDIR /build
           DOCKERFILE
@@ -59,7 +59,7 @@ jobs:
           set -e
           export DEBIAN_FRONTEND=noninteractive
           
-          # Setup sources
+          # Setup sources with contrib and non-free for Steam and Liquorix
           cat > /etc/apt/sources.list <<'\''EOF'\''
           deb http://deb.debian.org/debian bookworm main contrib non-free non-free-firmware
           deb http://deb.debian.org/debian-security bookworm-security main contrib non-free non-free-firmware
@@ -68,11 +68,22 @@ jobs:
           
           apt-get update
           
-          # Install kernel and live-boot with firmware + Plymouth
-          echo "Installing kernel, live-boot packages, and Plymouth..."
+          # Add Liquorix repository
+          echo "=== Adding Liquorix kernel repository ==="
+          mkdir -p /etc/apt/keyrings
+          curl -fsSL https://liquorix.net/liquorix-keyring.gpg | tee /etc/apt/keyrings/liquorix-keyring.gpg > /dev/null
+          
+          cat > /etc/apt/sources.list.d/liquorix.list <<'\''LIQSRC'\''
+          deb [signed-by=/etc/apt/keyrings/liquorix-keyring.gpg] https://liquorix.net/debian bookworm main
+          LIQSRC
+          
+          apt-get update
+          
+          # Install Liquorix kernel instead of standard kernel
+          echo "Installing Liquorix kernel, live-boot packages, and Plymouth..."
           apt-get install -y \
-            linux-image-amd64 \
-            linux-headers-amd64 \
+            linux-image-liquorix-amd64 \
+            linux-headers-liquorix-amd64 \
             firmware-linux-free \
             firmware-linux-nonfree \
             live-boot \
@@ -82,24 +93,13 @@ jobs:
             plymouth \
             plymouth-themes
           
-          # Install KDE Plasma
-          echo "Installing KDE Plasma..."
+          # Install Deepin Desktop Environment (DDE)
+          echo "Installing Deepin Desktop Environment..."
           apt-get install -y \
-            kde-plasma-desktop \
-            sddm \
+            deepin-desktop-environment \
+            lightdm \
             firefox-esr \
-            dolphin \
-            konsole \
-            kate \
-            gwenview \
-            ark \
-            kcalc \
-            kde-spectacle \
             flatpak \
-            plasma-nm \
-            plasma-pa \
-            breeze-gtk-theme \
-            papirus-icon-theme \
             gparted \
             ntfs-3g \
             dosfstools \
@@ -112,13 +112,29 @@ jobs:
             network-manager \
             network-manager-gnome
           
+          # Enable 32-bit architecture for Steam
+          echo "=== Enabling 32-bit architecture for Steam ==="
+          dpkg --add-architecture i386
+          apt-get update
+          
+          # Install Steam
+          echo "Installing Steam..."
+          apt-get install -y \
+            steam-installer \
+            libgl1-mesa-dri:amd64 \
+            libgl1-mesa-dri:i386 \
+            libgl1-mesa-glx:amd64 \
+            libgl1-mesa-glx:i386 \
+            mesa-vulkan-drivers:amd64 \
+            mesa-vulkan-drivers:i386
+          
           # Install Calamares
           apt-get install -y calamares calamares-settings-debian
           
           # Cybr branding
           cat > /etc/os-release <<'\''OSREL'\''
           NAME="Cybr Linux"
-          PRETTY_NAME="Cybr Linux"
+          PRETTY_NAME="Cybr Linux Gaming Edition"
           ID=cybr
           ID_LIKE=debian
           VERSION_ID="1"
@@ -194,7 +210,7 @@ jobs:
           componentName: cybr
           welcomeStyleCalamares: false
           strings:
-            productName: Cybr Linux
+            productName: Cybr Linux Gaming Edition
             productUrl: https://wolfos.uk/
             productLogo: cybr-logo.png
             productIcon: cybr-logo.png
@@ -235,35 +251,24 @@ jobs:
           
           cat > /etc/calamares/modules/displaymanager.conf <<'\''DM'\''
           displaymanagers:
-            - sddm
+            - lightdm
           basicSetup: false
           DM
           
-          # Live user setup with custom name "Cybr Build"
-          useradd -m -s /bin/bash -G sudo,audio,video,netdev -c "Cybr Build" cybruser
+          # Live user setup with custom name "Cybr Gamer"
+          useradd -m -s /bin/bash -G sudo,audio,video,netdev -c "Cybr Gamer" cybruser
           echo "cybruser:live" | chpasswd
           echo "root:root" | chpasswd
           
-          # SDDM autologin for live user
-          mkdir -p /etc/sddm.conf.d
-          cat > /etc/sddm.conf.d/autologin.conf <<'\''SDDM'\''
-          [Autologin]
-          User=cybruser
-          Session=plasma
-          SDDM
+          # LightDM autologin for live user (DDE uses LightDM)
+          mkdir -p /etc/lightdm/lightdm.conf.d
+          cat > /etc/lightdm/lightdm.conf.d/autologin.conf <<'\''LIGHTDM'\''
+          [Seat:*]
+          autologin-user=cybruser
+          autologin-user-timeout=0
+          LIGHTDM
           
-          # KDE config
-          mkdir -p /home/cybruser/.config
-          cat > /home/cybruser/.config/kdeglobals <<'\''KDE'\''
-          [General]
-          ColorScheme=BreezeDark
-          [KDE]
-          LookAndFeelPackage=org.kde.breezedark.desktop
-          [Icons]
-          Theme=Papirus-Dark
-          KDE
-          
-          # Desktop launcher
+          # Desktop launcher for installer
           mkdir -p /home/cybruser/Desktop
           cat > /home/cybruser/Desktop/calamares.desktop <<'\''DESK'\''
           [Desktop Entry]
@@ -275,10 +280,21 @@ jobs:
           DESK
           chmod +x /home/cybruser/Desktop/calamares.desktop
           
+          # Desktop launcher for Steam
+          cat > /home/cybruser/Desktop/steam.desktop <<'\''STEAM'\''
+          [Desktop Entry]
+          Type=Application
+          Name=Steam
+          Exec=steam
+          Icon=steam
+          Terminal=false
+          STEAM
+          chmod +x /home/cybruser/Desktop/steam.desktop
+          
           chown -R cybruser:cybruser /home/cybruser
           
           # Enable services
-          systemctl enable sddm NetworkManager
+          systemctl enable lightdm NetworkManager
           
           # Cleanup
           apt-get clean
@@ -295,9 +311,9 @@ jobs:
           echo "=== Verifying boot files ==="
           ls -lh iso/boot/
           
-          # Get kernel version
-          KERNEL_VERSION=$(ls iso/boot/vmlinuz-* | head -n1 | sed "s|iso/boot/vmlinuz-||")
-          echo "Kernel version: $KERNEL_VERSION"
+          # Get Liquorix kernel version
+          KERNEL_VERSION=$(ls iso/boot/vmlinuz-*-liquorix-amd64 | head -n1 | sed "s|iso/boot/vmlinuz-||")
+          echo "Liquorix Kernel version: $KERNEL_VERSION"
           
           echo "=== Creating squashfs ==="
           # Create squashfs - EXCLUDE boot since we copied it separately
@@ -315,7 +331,7 @@ jobs:
           
           cat > iso/isolinux/isolinux.cfg <<ISOLINUX
           UI vesamenu.c32
-          MENU TITLE Cybr Linux Boot Menu
+          MENU TITLE Cybr Linux Gaming Edition - Boot Menu
           MENU BACKGROUND splash.png
           MENU COLOR title 1;36;44 #9033ccff #a0000000
           MENU COLOR sel 7;37;40 #e0ffffff #20ff8000
@@ -323,7 +339,7 @@ jobs:
           TIMEOUT 150
           
           LABEL live
-            MENU LABEL Cybr Linux (Live)
+            MENU LABEL Cybr Linux (Live - Liquorix Kernel)
             KERNEL /boot/vmlinuz-${KERNEL_VERSION}
             APPEND initrd=/boot/initrd.img-${KERNEL_VERSION} boot=live components quiet splash plymouth.ignore-serial-consoles live-media-path=/live
           
@@ -408,10 +424,10 @@ jobs:
             -joliet \
             -joliet-long \
             -rational-rock \
-            -volid "CYBR_LINUX" \
-            -appid "Cybr Linux Live" \
+            -volid "CYBR_GAMING" \
+            -appid "Cybr Linux Gaming Edition" \
             -publisher "https://wolfos.uk" \
-            -preparer "Cybr Build System (SYSLINUX-only)" \
+            -preparer "Cybr Build System (DDE + Steam + Liquorix)" \
             -eltorito-boot isolinux/isolinux.bin \
             -eltorito-catalog isolinux/boot.cat \
             -no-emul-boot \
@@ -427,6 +443,9 @@ jobs:
           
           echo "=== Build complete ==="
           echo "ISO created successfully: ${ISO_NAME}.iso"
+          echo "Desktop Environment: Deepin Desktop Environment (DDE)"
+          echo "Kernel: Liquorix (optimized for gaming)"
+          echo "Gaming Platform: Steam included"
           echo "Boot method: SYSLINUX (BIOS) + SYSLINUX (UEFI) - NO GRUB!"
           ls -lh "/workspace/${ISO_NAME}.iso"
           '
@@ -441,9 +460,12 @@ jobs:
         run: |
           sha256sum "${{ env.ISO_NAME }}.iso" > "${{ env.ISO_NAME }}.iso.sha256"
           ISO_SIZE=$(($(stat -c%s "${{ env.ISO_NAME }}.iso")/1024/1024))
-          echo "### Cybr Linux Build Complete! 🎉" >> $GITHUB_STEP_SUMMARY
+          echo "### Cybr Linux Gaming Edition Build Complete! 🎮🎉" >> $GITHUB_STEP_SUMMARY
           echo "**ISO:** ${{ env.ISO_NAME }}.iso" >> $GITHUB_STEP_SUMMARY
           echo "**Size:** ${ISO_SIZE}MB" >> $GITHUB_STEP_SUMMARY
+          echo "**Desktop:** Deepin Desktop Environment (DDE)" >> $GITHUB_STEP_SUMMARY
+          echo "**Kernel:** Liquorix (Gaming Optimized)" >> $GITHUB_STEP_SUMMARY
+          echo "**Gaming:** Steam Pre-installed" >> $GITHUB_STEP_SUMMARY
           echo "**Boot Method:** SYSLINUX (BIOS + UEFI) - NO GRUB" >> $GITHUB_STEP_SUMMARY
           echo "**SHA256:** \`$(cat ${{ env.ISO_NAME }}.iso.sha256 | cut -d' ' -f1)\`" >> $GITHUB_STEP_SUMMARY
 
@@ -473,7 +495,7 @@ jobs:
           sudo apt-get update && sudo apt-get install -y sshpass rsync
           for i in 1 2 3; do
             timeout 1800 sshpass -p "$SF_PASS" rsync -avP -e "ssh -o StrictHostKeyChecking=no" \
-              "${{ env.ISO_NAME }}.iso" "$SF_USER@frs.sourceforge.net:/home/frs/project/wolfos/plasma/" && break
+              "${{ env.ISO_NAME }}.iso" "$SF_USER@frs.sourceforge.net:/home/frs/project/wolfos/gaming/" && break
             [ $i -eq 3 ] && exit 1
             sleep 30
           done
