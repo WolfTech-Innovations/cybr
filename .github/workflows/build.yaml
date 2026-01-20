@@ -44,7 +44,10 @@ jobs:
           set -euo pipefail
           
           cd /build
-          mkdir -p iso/{live,boot/grub,isolinux,EFI/boot}
+          
+          echo "=== Setting up ISO directory structure ==="
+          mkdir -p iso/live iso/boot/grub iso/isolinux iso/EFI/boot
+          ls -la iso/
           
           # Bootstrap Debian base
           echo "=== Bootstrapping Debian ==="
@@ -261,9 +264,19 @@ jobs:
           rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/* /var/cache/apt/archives/*.deb
           CHROOT
           
+          echo "=== Preparing ISO directories ==="
+          # Double-check all ISO directories exist inside the container
+          mkdir -p iso/live iso/boot/grub iso/isolinux iso/EFI/boot
+          echo "ISO directory structure:"
+          ls -la iso/
+          echo "Contents of iso/live before copy:"
+          ls -la iso/live/ || echo "iso/live is empty"
+          
           echo "=== Creating squashfs ==="
           # Create squashfs - DO NOT exclude boot, kernel modules are needed
           mksquashfs chroot iso/live/filesystem.squashfs -comp xz -b 1M -Xdict-size 100%
+          echo "Squashfs created:"
+          ls -lh iso/live/filesystem.squashfs
           
           echo "=== Copying kernel and initrd ==="
           # List what we have in chroot/boot
