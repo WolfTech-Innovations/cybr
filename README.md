@@ -1,62 +1,131 @@
-# Welcome to Cybr Linux - Dawn Light Shines Upon the Arches
-![cybr screenshot](https://raw.githubusercontent.com/WolfTech-Innovations/cybr/master/images/IMG_20260117_212458235.jpg)
-[![Cybr Plasma Build System](https://github.com/WolfTech-Innovations/cybr/actions/workflows/build.yaml/badge.svg)](https://github.com/WolfTech-Innovations/cybr/actions/workflows/build.yaml)
+# Welcome to Cybr Linux - Simple. Powerful. Debian-based.
 
-Cybr Linux is an Arch-based distribution designed for all users, from newcomers to professionals. Whether you need a security-focused workstation or a regular desktop system, Cybr provides a polished experience for all walks of life.
+![cybr screenshot](https://raw.githubusercontent.com/WolfTech-Innovations/cybr/master/images/Screenshot_2026-01-18_181457.png)
+[![Cybr Build System](https://github.com/WolfTech-Innovations/cybr/actions/workflows/build.yaml/badge.svg)](https://github.com/WolfTech-Innovations/cybr/actions/workflows/build.yaml)
 
-## Editions
-
-### Plasma Edition
-KDE Plasma desktop environment with the Dracula theme, featuring minimal packages
+Cybr Linux is a Debian-based distribution designed for all users, from newcomers to professionals. Built on the rock-solid foundation of Debian Bookworm with KDE Plasma, Cybr provides a polished, ready-to-use desktop experience.
 
 ## Features
 
-- **Base**: Arch Linux rolling release
+- **Base**: Debian Bookworm (stable)
 - **Desktop**: KDE Plasma with Wayland and X11 support
-- **Theme**: Dracula color scheme system-wide
+- **Installer**: Calamares graphical installer
 - **Audio**: PipeWire with full multimedia support
 - **Networking**: NetworkManager and Bluetooth ready out of the box
+- **Package Management**: APT + Flatpak support
+
+## What's Included
+
+### Desktop Environment
+- KDE Plasma Desktop with dark theme
+- SDDM display manager
+- Papirus icon theme
+- Breeze GTK theme
+
+### Pre-installed Applications
+- **Web Browser**: Firefox ESR
+- **File Manager**: Dolphin
+- **Terminal**: Konsole
+- **Text Editor**: Kate
+- **Image Viewer**: Gwenview
+- **Archive Manager**: Ark
+- **Calculator**: KCalc
+- **Screenshot Tool**: Spectacle
+- **Partition Editor**: GParted
+
+## System Requirements
+
+- **RAM**: 2GB minimum (4GB recommended)
+- **Storage**: 20GB minimum (40GB recommended)
+- **Processor**: 64-bit x86 processor
+- **Graphics**: Any GPU with KMS support
+- **Boot**: UEFI or Legacy BIOS
 
 ## Installation
 
-To install Cybr Linux, follow these steps:
+### Step 1: Download
+Download the ISO from the [SourceForge Mirror](https://sourceforge.net/projects/wolfos/files/plasma/)
 
-1. Download the ISO from the [SourceForge Mirror](https://sourceforge.net/projects/wolfos/files/plasma/)
-2. Create a bootable USB drive using your preferred tool (Rufus, Etcher, dd)
-3. Boot your computer from the USB drive
-4. Follow the on-screen instructions to install Cybr Linux
+### Step 2: Create Bootable Media
+Create a bootable USB drive using:
+- **Windows**: Rufus or Etcher
+- **Linux/macOS**: Etcher or `dd`
+
+Example with dd:
+```bash
+sudo dd if=cybr-linux-v*.iso of=/dev/sdX bs=4M status=progress && sync
+```
+
+### Step 3: Boot and Install
+1. Boot your computer from the USB drive
+2. The live environment will start automatically
+3. Click "Install Cybr Linux" on the desktop
+4. Follow the Calamares installer wizard:
+   - Select your language and keyboard layout
+   - Partition your disk (guided or manual)
+   - Create your user account
+   - Confirm and install
+5. Reboot and enjoy Cybr Linux!
 
 ## First Boot
 
-On first boot, Cybr automatically configures:
-- Dracula theme across all applications
+On first boot, Cybr is ready to use with:
+- Dark theme configured system-wide
+- Flatpak ready (Flathub repository enabled)
+- All essential codecs and drivers installed
+- Network connectivity configured
 
-- 
+## Building from Source
+
+Want to build your own Cybr Linux ISO? Check out our automated build system:
+
+```bash
+# Clone the repository
+git clone https://github.com/WolfTech-Innovations/cybr.git
+cd cybr
+
+# Build runs automatically via GitHub Actions
+# Or trigger manually from the Actions tab
+```
+
+The build process uses Docker and creates a bootable ISO with:
+- Debian Bookworm base system
+- KDE Plasma desktop
+- Calamares installer
+- All Cybr customizations
+
 ## Downloads
 
 - [SourceForge](https://sourceforge.net/projects/wolfos/files/plasma/) - Primary download mirror
-- [GitHub Releases](https://github.com/WolfTech-Innovations/cybr/releases) - Alternative download location
+- [GitHub Actions](https://github.com/WolfTech-Innovations/cybr/actions) - Development builds
+
+## Support & Community
+
+- **Website**: [https://wolfos.uk](https://wolfos.uk)
+- **GitHub Issues**: Report bugs or request features
+- **Status Page**: [https://status.wolfos.uk](https://status.wolfos.uk)
 
 ## Credits
 
-- Dracula Theme for the color scheme
+- Debian Project for the stable base system
 - KDE Community for Plasma Desktop
-- Arch Linux community
+- Calamares team for the installer
+- Papirus team for the icon theme
 
 ## Our Team
 
-- Christopher L Fox Jr - CEO and Head of Cybr Development Team
-- Joseph Daniels - Head of HR and Marketing
-- Christopher Fricks (Development Team) - Programming Department
+- **Christopher L Fox Jr** - CEO and Head of Development
+- **Joseph Daniels** - Head of HR and Marketing
+- **Christopher Fricks** - Programming Department
 
 ## Legal
 
 Cybr Linux is GPL Licensed and managed by WolfTech Innovations.
 
+This is free and open source software. You are free to use, modify, and distribute it under the terms of the GPL license.
+
 [![Copyrighted.com Registered & Protected](https://static.copyrighted.com/badges/125x75/04.png)](https://app.copyrighted.com/work/GW0cSbajaE2ZDg9X "Copyrighted.com Registered & Protected")
 
 ---
 
-Dawn light shines upon the arches
-
-Thank you for choosing Cybr Linux.
+**Note**: Cybr Linux is not affiliated with or endorsed by Debian, KDE, or any upstream projects. All trademarks belong to their respective owners.
