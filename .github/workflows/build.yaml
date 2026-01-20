@@ -314,7 +314,11 @@ jobs:
           DESK
           chmod +x /home/liveuser/Desktop/install-cybr.desktop
           
-          echo 'echo -e "\n╔═══════════════════════════════════════╗\n║ Cybr Linux - Click Install icon      ║\n╚═══════════════════════════════════════╝\n"' > /home/liveuser/.bashrc
+          cat > /home/liveuser/.bashrc <<'BASH'
+          echo -e "\n╔═══════════════════════════════════════╗"
+          echo "║ Cybr Linux - Click Install icon      ║"
+          echo "╚═══════════════════════════════════════╝"
+          BASH
           
           chown -R liveuser:liveuser /home/liveuser
           flatpak remote-add --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo 2>/dev/null || true
