@@ -107,6 +107,7 @@ jobs:
             phosh-full \
             phoc \
             squeekboard \
+            gdm3 \
             gnome-contacts \
             gnome-calls \
             chatty \
