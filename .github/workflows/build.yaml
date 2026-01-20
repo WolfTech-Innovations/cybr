@@ -16,440 +16,296 @@ jobs:
     timeout-minutes: 180
     steps:
       - uses: actions/checkout@v4
-      - uses: docker/setup-buildx-action@v3
 
       - name: Free up disk space
         run: |
           echo "=== Before cleanup ==="
           df -h
-          sudo rm -rf /usr/share/dotnet
-          sudo rm -rf /usr/local/lib/android
-          sudo rm -rf /opt/ghc
-          sudo rm -rf /usr/local/share/boost
-          sudo rm -rf /opt/hostedtoolcache
-          sudo rm -rf /usr/share/swift
-          sudo rm -rf /usr/local/.ghcup
-          sudo rm -rf /usr/local/share/powershell
-          sudo rm -rf /usr/share/kotlinc
-          sudo rm -rf /usr/local/lib/node_modules
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /usr/local/share/boost /opt/hostedtoolcache
+          sudo rm -rf /usr/share/swift /usr/local/.ghcup /usr/local/share/powershell /usr/share/kotlinc /usr/local/lib/node_modules
           sudo docker system prune -af --volumes
-          sudo apt-get purge -y '^aspnetcore-.*' '^dotnet-.*' '^llvm-.*' 'php.*' '^mongodb-.*' '^mysql-.*' azure-cli google-cloud-sdk hhvm google-chrome-stable firefox powershell mono-devel || true
-          sudo apt-get autoremove -y
-          sudo apt-get clean
+          sudo apt-get purge -y '^aspnetcore-.*' '^dotnet-.*' '^llvm-.*' 'php.*' '^mongodb-.*' '^mysql-.*' azure-cli google-cloud-sdk || true
+          sudo apt-get autoremove -y && sudo apt-get clean
           echo "=== After cleanup ==="
           df -h
-      
-      - name: Configure Docker for maximum space
-        run: |
-          sudo systemctl stop docker
-          sudo rm -rf /var/lib/docker
-          sudo mkdir -p /var/lib/docker
-          echo '{"data-root":"/mnt/docker","storage-driver":"overlay2"}' | sudo tee /etc/docker/daemon.json
-          sudo mkdir -p /mnt/docker
-          sudo systemctl start docker
-          df -h
-          
+
       - name: Build Cybr Linux ISO
         run: |
           docker build --no-cache --pull -t builder - <<'DOCKERFILE'
-          FROM archlinux:latest
-          RUN pacman -Syu --noconfirm && \
-              pacman -S --noconfirm archiso git base-devel sudo python wget && \
-              pacman -Scc --noconfirm && \
-              rm -rf /var/cache/pacman/pkg/* && \
-              useradd -m -G wheel builder && \
-              echo "builder ALL=(ALL) NOPASSWD: ALL" >> /etc/sudoers
+          FROM debian:bookworm
+          RUN apt-get update && \
+              apt-get install -y debootstrap squashfs-tools xorriso isolinux syslinux-efi \
+                grub-pc-bin grub-efi-amd64-bin mtools wget && \
+              apt-get clean && rm -rf /var/lib/apt/lists/*
           WORKDIR /build
           DOCKERFILE
           
-          docker run --rm --privileged --shm-size=4gb -v "$PWD:/workspace" -e ISO_NAME="${{ env.ISO_NAME }}" builder bash -c '
+          docker run --rm --privileged -v "$PWD:/workspace" -e ISO_NAME="${{ env.ISO_NAME }}" builder bash -c '
           set -euo pipefail
           
-          echo "=== Disk space inside container ==="
-          df -h
+          cd /build
+          mkdir -p iso/{live,boot/grub,isolinux,EFI/boot}
           
-          # Clean up any existing package cache
-          rm -rf /var/cache/pacman/pkg/*
+          # Bootstrap Debian base
+          debootstrap --arch=amd64 bookworm chroot http://deb.debian.org/debian/
           
-          cp -r /usr/share/archiso/configs/releng /build/cybr
-          cd /build/cybr
+          # Configure chroot
+          chroot chroot /bin/bash <<'\''CHROOT'\''
+          set -e
+          export DEBIAN_FRONTEND=noninteractive
           
-          # Core packages - minimal set with KDE Plasma
-          cat > packages.x86_64 <<'\''PKG'\''
-          linux-lts
-          linux-firmware
-          base
-          base-devel
-          syslinux
-          edk2-shell
-          memtest86+
-          memtest86+-efi
-          mkinitcpio
-          mkinitcpio-archiso
-          arch-install-scripts
-          pacman-contrib
-          archlinux-contrib
-          plymouth
-          xorg
-          plasma-desktop
-          plasma-workspace
-          plasma-nm
-          bluedevil
-          bluez
-          bluez-utils
-          sddm
-          dolphin
-          konsole
-          kate
-          firefox
-          kscreen
-          flatpak
-          fwupd
-          networkmanager
-          pipewire
-          pipewire-alsa
-          pipewire-pulse
-          pipewire-jack
-          wireplumber
-          git
-          curl
-          wget
-          vim
-          nano
-          ttf-liberation
-          noto-fonts
-          noto-fonts-emoji
-          gparted
-          ntfs-3g
-          dosfstools
-          exfatprogs
-          xf86-input-wacom
-          iwd
-          kvantum
-          papirus-icon-theme
-          breeze-gtk
-          kcalc
-          spectacle
-          gwenview
-          python
-          python-pyqt5
-          efibootmgr
-          archinstall
-          PKG
+          # Setup sources
+          cat > /etc/apt/sources.list <<'\''EOF'\''
+          deb http://deb.debian.org/debian bookworm main contrib non-free non-free-firmware
+          deb http://deb.debian.org/debian-security bookworm-security main contrib non-free non-free-firmware
+          deb http://deb.debian.org/debian bookworm-updates main contrib non-free non-free-firmware
+          EOF
           
-          pacman-key --init
-          pacman-key --populate archlinux
-          sed -i "s/#ParallelDownloads = 5/ParallelDownloads = 5/" pacman.conf
+          apt-get update
+          apt-get install -y linux-image-amd64 live-boot systemd-sysv
           
-          # Clean package cache
-          cleanup_cache() {
-            rm -rf /var/cache/pacman/pkg/*
-            rm -rf /tmp/*
-          }
+          # Install KDE Plasma
+          apt-get install -y kde-plasma-desktop sddm network-manager-gnome \
+            firefox-esr dolphin konsole kate gwenview ark kcalc spectacle \
+            flatpak plasma-nm plasma-pa breeze-gtk-theme papirus-icon-theme \
+            gparted ntfs-3g dosfstools git curl wget vim nano
           
-          cleanup_cache
+          # Install Calamares
+          apt-get install -y calamares calamares-settings-debian
           
-          mkdir -p airootfs/etc airootfs/etc/skel/.config airootfs/usr/share/plymouth airootfs/root
-          
-          # Download Cybr logo for Plymouth watermark
-          echo "=== Downloading Cybr logo ==="
-          wget -O airootfs/usr/share/plymouth/cybr-logo.png "https://a.fsdn.com/allura/p/wolfos/icon?w=96&1748003641" || \
-            curl -L -o airootfs/usr/share/plymouth/cybr-logo.png "https://a.fsdn.com/allura/p/wolfos/icon?w=96&1748003641"
-          
-          # Create archinstall config
-          cat > airootfs/root/cybr-install-config.json <<'INSTALLCFG'
-          {"config_version":"2.8.0","bootloader":"systemd-bootctl","hostname":"cybr-desktop","kernels":["linux-lts"],"locale_config":{"kb_layout":"us","sys_enc":"UTF-8","sys_lang":"en_US"},"mirror_config":{"mirror_regions":{}},"disk_config":{"config_type":"manual_partitioning"},"additional_repositories":[],"network_config":{"type":"nm"},"profile_config":{"profile":{"details":["KDE Plasma"],"main":"Desktop"},"gfx_driver":"All open-source (default)","greeter":"sddm"},"audio_config":{"audio":"pipewire"},"packages":["firefox","git","curl","wget","vim","nano","flatpak","gparted","ntfs-3g","ark","gwenview","kcalc","spectacle","kvantum","papirus-icon-theme","breeze-gtk","plymouth"],"parallel downloads":5,"swap":true,"timezone":"UTC"}
-          INSTALLCFG
-          
-          mkdir -p airootfs/root/cybr-branding
-          cp airootfs/usr/share/plymouth/cybr-logo.png airootfs/root/cybr-branding/ || true
-          
-          # Post-install script
-          cat > airootfs/root/cybr-post-install.sh <<'POSTINSTALL'
-          #!/bin/bash
-          set -e; [ "$EUID" -ne 0 ] && echo "Run as root" && exit 1
-          R=""; for m in /mnt /mnt/archinstall; do mountpoint -q "$m" 2>/dev/null && [ -d "$m/etc" ] && R="$m" && break; done
-          [ -z "$R" ] && echo "No install found" && exit 1
-          cat >"$R/etc/os-release" <<'E'
+          # Cybr branding
+          cat > /etc/os-release <<'\''OSREL'\''
           NAME="Cybr Linux"
           PRETTY_NAME="Cybr Linux"
           ID=cybr
-          ID_LIKE=arch
-          BUILD_ID=rolling
-          ANSI_COLOR="38;2;23;147;209"
+          ID_LIKE=debian
+          VERSION_ID="1"
           HOME_URL="https://wolfos.uk/"
-          LOGO=cybr-logo
-          E
-          mkdir -p "$R/etc/plymouth" "$R/usr/share/plymouth" "$R/etc/mkinitcpio.conf.d"
-          echo -e "[Daemon]\nTheme=spinner\nShowDelay=0\nDeviceTimeout=8" >"$R/etc/plymouth/plymouthd.conf"
-          cp /root/cybr-branding/cybr-logo.png "$R/usr/share/plymouth/" 2>/dev/null || true
-          echo "HOOKS=(base udev plymouth autodetect microcode modconf kms keyboard keymap consolefont block filesystems fsck)" >"$R/etc/mkinitcpio.conf.d/plymouth.conf"
-          U=$(chroot "$R" getent passwd | awk -F: '$3>=1000&&$3<65534{print $1;exit}')
-          if [ -n "$U" ]; then
-            mkdir -p "$R/etc/sddm.conf.d"
-            cat >"$R/etc/sddm.conf.d/autologin.conf" <<E
-          [Autologin]
-          User=$U
-          Session=plasma
-          [Theme]
-          Current=breeze
-          E
-            H=$(chroot "$R" getent passwd "$U" | cut -d: -f6)
-            [ -n "$H" ] && mkdir -p "$R$H/.config" && cat >"$R$H/.config/kdeglobals" <<'E' && chroot "$R" chown -R "$U:$U" "$H/.config"
-          [General]
-          ColorScheme=BreezeDark
-          [KDE]
-          LookAndFeelPackage=org.kde.breezedark.desktop
-          [Icons]
-          Theme=Papirus-Dark
-          E
-          fi
-          chroot "$R" plymouth-set-default-theme -R spinner 2>/dev/null || true
-          cp "$R/usr/share/plymouth/cybr-logo.png" "$R/usr/share/plymouth/themes/spinner/watermark.png" 2>/dev/null || true
-          chroot "$R" flatpak remote-add --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo 2>/dev/null || true
-          echo "Done! Reboot to use Cybr Linux."
-          POSTINSTALL
-          chmod +x airootfs/root/cybr-post-install.sh
-          
-          cat > airootfs/etc/os-release <<'\''OSREL'\''
-          NAME="Cybr Linux"
-          PRETTY_NAME="Cybr Linux"
-          ID=cybr
-          ID_LIKE=arch
-          BUILD_ID=rolling
-          ANSI_COLOR="38;2;23;147;209"
-          HOME_URL="https://wolfos.uk/"
-          LOGO=cybr-logo
           OSREL
           
-          echo "cybr-live" > airootfs/etc/hostname
+          # Download logo
+          wget -O /usr/share/pixmaps/cybr-logo.png "https://a.fsdn.com/allura/p/wolfos/icon?w=96&1748003641" || true
           
-          cat > airootfs/etc/issue <<'\''ISSUE'\''
+          # Calamares config
+          mkdir -p /etc/calamares
+          cat > /etc/calamares/settings.conf <<'\''CALACONF'\''
+          modules-search: [ local ]
+          sequence:
+            - show:
+              - welcome
+              - locale
+              - keyboard
+              - partition
+              - users
+              - summary
+            - exec:
+              - partition
+              - mount
+              - unpackfs
+              - machineid
+              - fstab
+              - locale
+              - keyboard
+              - localecfg
+              - users
+              - displaymanager
+              - networkcfg
+              - hwclock
+              - services-systemd
+              - bootloader-config
+              - grubcfg
+              - packages
+              - umount
+            - show:
+              - finished
           
-          ░█████╗░██╗░░░██╗██████╗░██████╗░  ██╗░░░░░██╗███╗░░██╗██╗░░░██╗██╗░░██╗
-          ██╔══██╗╚██╗░██╔╝██╔══██╗██╔══██╗  ██║░░░░░██║████╗░██║██║░░░██║╚██╗██╔╝
-          ██║░░╚═╝░╚████╔╝░██████╦╝██████╔╝  ██║░░░░░██║██╔██╗██║██║░░░██║░╚███╔╝░
-          ██║░░██╗░░╚██╔╝░░██╔══██╗██╔══██╗  ██║░░░░░██║██║╚████║██║░░░██║░██╔██╗░
-          ╚█████╔╝░░░██║░░░██████╦╝██║░░██║  ███████╗██║██║░╚███║╚██████╔╝██╔╝╚██╗
-          ░╚════╝░░░░╚═╝░░░╚═════╝░╚═╝░░╚═╝  ╚══════╝╚═╝╚═╝░░╚══╝░╚═════╝░╚═╝░░╚═╝
+          branding: cybr
+          dont-chroot: false
+          CALACONF
           
-          Welcome to Cybr Linux - Live Environment
+          # Branding module
+          mkdir -p /etc/calamares/branding/cybr
+          cat > /etc/calamares/branding/cybr/branding.desc <<'\''BRAND'\''
+          componentName: cybr
+          welcomeStyleCalamares: false
+          strings:
+            productName: Cybr Linux
+            productUrl: https://wolfos.uk/
+            productLogo: cybr-logo.png
+            productIcon: cybr-logo.png
+          images:
+            productLogo: cybr-logo.png
+            productIcon: cybr-logo.png
+          style:
+            sidebarBackground: "#0a0a0a"
+            sidebarText: "#ffffff"
+          BRAND
           
-          ISSUE
+          cp /usr/share/pixmaps/cybr-logo.png /etc/calamares/branding/cybr/ 2>/dev/null || true
           
-          # Plymouth config
-          mkdir -p airootfs/etc/mkinitcpio.conf.d
-          cat > airootfs/etc/mkinitcpio.conf.d/plymouth.conf <<'\''MKINIT'\''
-          MODULES=()
-          BINARIES=()
-          FILES=()
-          HOOKS=(base udev plymouth modconf kms keyboard keymap consolefont block filesystems archiso)
-          COMPRESSION="xz"
-          MKINIT
+          # Module configs
+          cat > /etc/calamares/modules/unpackfs.conf <<'\''UNPACK'\''
+          unpack:
+            - source: "/run/live/medium/live/filesystem.squashfs"
+              sourcefs: "squashfs"
+              destination: ""
+          UNPACK
           
-          # Use spinner theme with custom logo
-          mkdir -p airootfs/etc/plymouth
-          cat > airootfs/etc/plymouth/plymouthd.conf <<'\''PLYMCONF'\''
-          [Daemon]
-          Theme=spinner
-          ShowDelay=0
-          DeviceTimeout=8
-          PLYMCONF
+          cat > /etc/calamares/modules/users.conf <<'\''USERS'\''
+          defaultGroups:
+            - name: users
+              must_exist: true
+              system: true
+            - cdrom
+            - floppy
+            - sudo
+            - audio
+            - video
+            - netdev
+            - plugdev
+          autologinGroup: autologin
+          sudoersGroup: sudo
+          setRootPassword: true
+          USERS
           
-          # Customization script
-          cat > airootfs/root/customize_airootfs.sh <<'\''CUSTOM'\''
-          #!/usr/bin/env bash
-          set -e
+          cat > /etc/calamares/modules/displaymanager.conf <<'\''DM'\''
+          displaymanagers:
+            - sddm
+          basicSetup: false
+          DM
           
-          # Replace the Arch logo watermark with Cybr logo in spinner theme
-          if [ -f /usr/share/plymouth/cybr-logo.png ]; then
-            cp /usr/share/plymouth/cybr-logo.png /usr/share/plymouth/themes/spinner/watermark.png
-            echo "Plymouth watermark replaced with Cybr logo"
-          else
-            echo "Warning: Cybr logo not found, Plymouth will use default"
-          fi
-          
-          plymouth-set-default-theme -R spinner 2>/dev/null || true
-          
-          KVER=$(file -bL /boot/vmlinuz-linux-lts 2>/dev/null | grep -o "version [^ ]*" | cut -d" " -f2 || echo "")
-          [ -n "$KVER" ] && mkinitcpio -k "$KVER" -c /etc/mkinitcpio.conf.d/plymouth.conf -g /boot/initramfs-linux-lts.img
-          
-          useradd -m -G wheel,audio,video,optical,storage,network -s /bin/bash liveuser || true
+          # Live user setup
+          useradd -m -s /bin/bash -G sudo,audio,video,netdev liveuser
           echo "liveuser:live" | chpasswd
           echo "root:root" | chpasswd
-          echo "%wheel ALL=(ALL:ALL) NOPASSWD: ALL" > /etc/sudoers.d/wheel
-          chmod 440 /etc/sudoers.d/wheel
           
+          # SDDM autologin for live
           mkdir -p /etc/sddm.conf.d
-          cat > /etc/sddm.conf.d/autologin.conf <<SDDM
+          cat > /etc/sddm.conf.d/autologin.conf <<'\''SDDM'\''
           [Autologin]
           User=liveuser
           Session=plasma
-          [General]
-          HaltCommand=/usr/bin/systemctl poweroff
-          RebootCommand=/usr/bin/systemctl reboot
-          [Theme]
-          Current=breeze
           SDDM
           
+          # KDE config
           mkdir -p /home/liveuser/.config
-          cat > /home/liveuser/.config/kdeglobals <<KDE
+          cat > /home/liveuser/.config/kdeglobals <<'\''KDE'\''
           [General]
           ColorScheme=BreezeDark
-          Name=Cybr
           [KDE]
           LookAndFeelPackage=org.kde.breezedark.desktop
           [Icons]
           Theme=Papirus-Dark
           KDE
           
+          # Desktop launcher
           mkdir -p /home/liveuser/Desktop
-          cat > /home/liveuser/Desktop/install-cybr.desktop <<'DESK'
+          cat > /home/liveuser/Desktop/calamares.desktop <<'\''DESK'\''
           [Desktop Entry]
           Type=Application
           Name=Install Cybr Linux
-          Exec=konsole --hold -e bash -c "sudo archinstall --config /root/cybr-install-config.json && sudo /root/cybr-post-install.sh"
-          Icon=system-software-install
+          Exec=pkexec calamares
+          Icon=calamares
           Terminal=false
           DESK
-          chmod +x /home/liveuser/Desktop/install-cybr.desktop
-          
-          cat > /home/liveuser/.bashrc <<'BASH'
-          echo -e "\n╔═══════════════════════════════════════╗"
-          echo "║ Cybr Linux - Click Install icon      ║"
-          echo "╚═══════════════════════════════════════╝"
-          BASH
+          chmod +x /home/liveuser/Desktop/calamares.desktop
           
           chown -R liveuser:liveuser /home/liveuser
-          flatpak remote-add --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo 2>/dev/null || true
-          CUSTOM
-          chmod +x airootfs/root/customize_airootfs.sh
           
-          # Boot entries with Cybr branding
-          mkdir -p efiboot/loader/entries syslinux
+          # Enable services
+          systemctl enable sddm NetworkManager
           
-          cat > efiboot/loader/loader.conf <<'\''LOADER'\''
-          timeout 15
-          default 01-cybr-live.conf
-          console-mode max
-          editor no
-          LOADER
+          # Cleanup
+          apt-get clean
+          rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
+          CHROOT
           
-          cat > efiboot/loader/entries/01-cybr-live.conf <<'\''ENTRY'\''
-          title   Cybr Linux (Live)
-          linux   /%INSTALL_DIR%/boot/x86_64/vmlinuz-linux-lts
-          initrd  /%INSTALL_DIR%/boot/x86_64/initramfs-linux-lts.img
-          options archisobasedir=%INSTALL_DIR% archisolabel=%ARCHISO_LABEL% splash quiet loglevel=3 rd.udev.log_priority=3 vt.global_cursor_default=0
-          ENTRY
-
-          cat > efiboot/loader/entries/02-cybr-fallback.conf <<'\''FALLBACK'\''
-          title   Cybr Linux (Fallback)
-          linux   /%INSTALL_DIR%/boot/x86_64/vmlinuz-linux-lts
-          initrd  /%INSTALL_DIR%/boot/x86_64/initramfs-linux-lts-fallback.img
-          options archisobasedir=%INSTALL_DIR% archisolabel=%ARCHISO_LABEL%
-          FALLBACK
-
-          cat > efiboot/loader/entries/03-cybr-nomodeset.conf <<'\''NOMODESET'\''
-          title   Cybr Linux (Safe Graphics)
-          linux   /%INSTALL_DIR%/boot/x86_64/vmlinuz-linux-lts
-          initrd  /%INSTALL_DIR%/boot/x86_64/initramfs-linux-lts.img
-          options archisobasedir=%INSTALL_DIR% archisolabel=%ARCHISO_LABEL% nomodeset
-          NOMODESET
+          # Create squashfs
+          mksquashfs chroot iso/live/filesystem.squashfs -e boot -comp xz
           
-          # Download Cybr logo for SYSLINUX splash
-          echo "=== Downloading SYSLINUX splash image ==="
-          wget -O syslinux/splash.png "https://a.fsdn.com/allura/p/wolfos/icon?w=96&1748003641" || \
-            curl -L -o syslinux/splash.png "https://a.fsdn.com/allura/p/wolfos/icon?w=96&1748003641"
+          # Copy kernel and initrd
+          cp chroot/boot/vmlinuz-* iso/live/vmlinuz
+          cp chroot/boot/initrd.img-* iso/live/initrd
           
-          # SYSLINUX config for BIOS boot with splash
-          cat > syslinux/syslinux.cfg <<'\''SYSLINUX'\''
+          # Download splash
+          wget -O iso/isolinux/splash.png "https://a.fsdn.com/allura/p/wolfos/icon?w=96&1748003641" || true
+          
+          # ISOLINUX config
+          cat > iso/isolinux/isolinux.cfg <<'\''ISOLINUX'\''
           UI vesamenu.c32
           MENU TITLE Cybr Linux Boot Menu
           MENU BACKGROUND splash.png
-          
-          MENU COLOR border       30;44   #40ffffff #a0000000 std
-          MENU COLOR title        1;36;44 #9033ccff #a0000000 std
-          MENU COLOR sel          7;37;40 #e0ffffff #20ff8000 all
-          MENU COLOR unsel        37;44   #50ffffff #a0000000 std
-          MENU COLOR help         37;40   #c0ffffff #a0000000 std
-          MENU COLOR timeout_msg  37;40   #80ffffff #00000000 std
-          MENU COLOR timeout      1;37;40 #c0ffffff #00000000 std
-          MENU COLOR msg07        37;40   #90ffffff #a0000000 std
-          MENU COLOR tabmsg       31;40   #30ffffff #00000000 std
-          
-          DEFAULT cybr
+          MENU COLOR title 1;36;44 #9033ccff #a0000000
+          MENU COLOR sel 7;37;40 #e0ffffff #20ff8000
+          DEFAULT live
           TIMEOUT 150
           
-          LABEL cybr
-              MENU LABEL Cybr Linux (Live)
-              LINUX /%INSTALL_DIR%/boot/x86_64/vmlinuz-linux-lts
-              INITRD /%INSTALL_DIR%/boot/x86_64/initramfs-linux-lts.img
-              APPEND archisobasedir=%INSTALL_DIR% archisolabel=%ARCHISO_LABEL% splash quiet
+          LABEL live
+            MENU LABEL Cybr Linux (Live)
+            KERNEL /live/vmlinuz
+            APPEND initrd=/live/initrd boot=live components quiet splash
           
-          LABEL cybr-fallback
-              MENU LABEL Cybr Linux (Fallback)
-              LINUX /%INSTALL_DIR%/boot/x86_64/vmlinuz-linux-lts
-              INITRD /%INSTALL_DIR%/boot/x86_64/initramfs-linux-lts-fallback.img
-              APPEND archisobasedir=%INSTALL_DIR% archisolabel=%ARCHISO_LABEL%
+          LABEL live-safe
+            MENU LABEL Cybr Linux (Safe Graphics)
+            KERNEL /live/vmlinuz
+            APPEND initrd=/live/initrd boot=live components nomodeset
+          ISOLINUX
           
-          LABEL cybr-nomodeset
-              MENU LABEL Cybr Linux (Safe Graphics)
-              LINUX /%INSTALL_DIR%/boot/x86_64/vmlinuz-linux-lts
-              INITRD /%INSTALL_DIR%/boot/x86_64/initramfs-linux-lts.img
-              APPEND archisobasedir=%INSTALL_DIR% archisolabel=%ARCHISO_LABEL% nomodeset
+          # Copy isolinux files
+          cp /usr/lib/ISOLINUX/isolinux.bin iso/isolinux/
+          cp /usr/lib/syslinux/modules/bios/*.c32 iso/isolinux/
           
-          LABEL memtest
-              MENU LABEL Memory Test (memtest86+)
-              LINUX /%INSTALL_DIR%/boot/memtest86+/memtest.bin
+          # GRUB config for EFI
+          cat > iso/boot/grub/grub.cfg <<'\''GRUB'\''
+          set timeout=15
+          set default=0
           
-          LABEL reboot
-              MENU LABEL Reboot
-              COM32 reboot.c32
+          menuentry "Cybr Linux (Live)" {
+            linux /live/vmlinuz boot=live components quiet splash
+            initrd /live/initrd
+          }
           
-          LABEL poweroff
-              MENU LABEL Power Off
-              COM32 poweroff.c32
-          SYSLINUX
+          menuentry "Cybr Linux (Safe Graphics)" {
+            linux /live/vmlinuz boot=live components nomodeset
+            initrd /live/initrd
+          }
+          GRUB
           
-          # Systemd services
-          mkdir -p airootfs/etc/systemd/system/multi-user.target.wants
-          ln -sf /usr/lib/systemd/system/sddm.service airootfs/etc/systemd/system/display-manager.service
-          ln -sf /usr/lib/systemd/system/NetworkManager.service airootfs/etc/systemd/system/multi-user.target.wants/
-          ln -sf /usr/lib/systemd/system/bluetooth.service airootfs/etc/systemd/system/multi-user.target.wants/
+          # Create EFI boot image
+          grub-mkstandalone \
+            --format=x86_64-efi \
+            --output=iso/EFI/boot/bootx64.efi \
+            --locales="" \
+            --fonts="" \
+            "boot/grub/grub.cfg=iso/boot/grub/grub.cfg"
           
-          sed -i "s/airootfs_image_tool_options=()/airootfs_image_tool_options=(\"-comp\" \"xz\" \"-Xbcj\" \"x86\" \"-b\" \"1M\" \"-Xdict-size\" \"100%\")/" profiledef.sh
-          
-          # Update profiledef.sh with Cybr branding
-          sed -i "s/iso_name=\"archlinux\"/iso_name=\"cybr\"/" profiledef.sh
-          sed -i "s/iso_label=\"ARCH_\$(date +%Y%m)\"/iso_label=\"CYBR_\$(date +%Y%m)\"/" profiledef.sh
-          sed -i "s/iso_publisher=\"Arch Linux <https:\/\/archlinux.org>\"/iso_publisher=\"Cybr Linux <https:\/\/wolfos.uk>\"/" profiledef.sh
-          sed -i "s/iso_application=\"Arch Linux Live\/Rescue CD\"/iso_application=\"Cybr Linux Live Environment\"/" profiledef.sh
-          
-          echo "=== Starting ISO build ==="
-          df -h
-          
-          mkarchiso -v -w /tmp/work -o /tmp/out .
-          
-          echo "=== ISO build complete ==="
-          df -h
-          
-          ISO_FILE=$(ls /tmp/out/*.iso)
-          [ -f "$ISO_FILE" ] && mv "$ISO_FILE" "/workspace/${ISO_NAME}.iso"
+          # Create ISO
+          xorriso -as mkisofs \
+            -iso-level 3 \
+            -full-iso9660-filenames \
+            -volid "CYBR_LINUX" \
+            -appid "Cybr Linux Live" \
+            -publisher "https://wolfos.uk" \
+            -eltorito-boot isolinux/isolinux.bin \
+            -eltorito-catalog isolinux/boot.cat \
+            -no-emul-boot -boot-load-size 4 -boot-info-table \
+            -isohybrid-mbr /usr/lib/ISOLINUX/isohdpfx.bin \
+            -eltorito-alt-boot \
+            -e EFI/boot/bootx64.efi \
+            -no-emul-boot -isohybrid-gpt-basdat \
+            -output "/workspace/${ISO_NAME}.iso" \
+            iso/
           '
-      
-      - name: Generate checksums and info
+
+      - name: Generate checksums
         run: |
           sha256sum "${{ env.ISO_NAME }}.iso" > "${{ env.ISO_NAME }}.iso.sha256"
           ISO_SIZE=$(($(stat -c%s "${{ env.ISO_NAME }}.iso")/1024/1024))
-          echo "ISO_SIZE=${ISO_SIZE}MB" >> $GITHUB_ENV
           echo "### Cybr Linux Build Complete! 🎉" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**ISO Name:** ${{ env.ISO_NAME }}.iso" >> $GITHUB_STEP_SUMMARY
+          echo "**ISO:** ${{ env.ISO_NAME }}.iso" >> $GITHUB_STEP_SUMMARY
           echo "**Size:** ${ISO_SIZE}MB" >> $GITHUB_STEP_SUMMARY
           echo "**SHA256:** \`$(cat ${{ env.ISO_NAME }}.iso.sha256 | cut -d' ' -f1)\`" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**Installation:** Boot the ISO and run \`archinstall\` or click the desktop icon" >> $GITHUB_STEP_SUMMARY
-      
+
       - uses: actions/upload-artifact@v4
         with:
           name: "${{ env.ISO_NAME }}"
