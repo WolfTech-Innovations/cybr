@@ -65,10 +65,10 @@ jobs:
           apt-get install -y linux-image-amd64 live-boot systemd-sysv
           
           # Install KDE Plasma
-          apt-get install -y kde-plasma-desktop sddm network-manager-gnome \
-            firefox-esr dolphin konsole kate gwenview ark kcalc spectacle \
+          apt-get install -y kde-plasma-desktop sddm \
+            firefox-esr dolphin konsole kate gwenview ark kcalc kde-spectacle \
             flatpak plasma-nm plasma-pa breeze-gtk-theme papirus-icon-theme \
-            gparted ntfs-3g dosfstools git curl wget vim nano
+            gparted ntfs-3g dosfstools git curl wget vim nano network-manager
           
           # Install Calamares
           apt-get install -y calamares calamares-settings-debian
