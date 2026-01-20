@@ -44,10 +44,7 @@ jobs:
           set -euo pipefail
           
           cd /build
-          
-          echo "=== Setting up ISO directory structure ==="
-          mkdir -p iso/live iso/boot/grub iso/isolinux iso/EFI/boot
-          ls -la iso/
+          mkdir -p iso/{live,boot/grub,isolinux,EFI/boot}
           
           # Bootstrap Debian base
           echo "=== Bootstrapping Debian ==="
@@ -265,20 +262,21 @@ jobs:
           CHROOT
           
           echo "=== Preparing ISO directories ==="
-          # Double-check all ISO directories exist inside the container
+          # Ensure all ISO directories exist
           mkdir -p iso/live iso/boot/grub iso/isolinux iso/EFI/boot
-          echo "ISO directory structure:"
           ls -la iso/
-          echo "Contents of iso/live before copy:"
-          ls -la iso/live/ || echo "iso/live is empty"
           
           echo "=== Creating squashfs ==="
           # Create squashfs - DO NOT exclude boot, kernel modules are needed
           mksquashfs chroot iso/live/filesystem.squashfs -comp xz -b 1M -Xdict-size 100%
-          echo "Squashfs created:"
-          ls -lh iso/live/filesystem.squashfs
           
           echo "=== Copying kernel and initrd ==="
+          # Verify iso/live exists
+          if [ ! -d "iso/live" ]; then
+            echo "ERROR: iso/live directory does not exist!"
+            mkdir -p iso/live
+            echo "Created iso/live directory"
+          fi
           # List what we have in chroot/boot
           echo "Contents of chroot/boot:"
           ls -la chroot/boot/
@@ -336,7 +334,7 @@ jobs:
           wget -O iso/isolinux/splash.png "https://a.fsdn.com/allura/p/wolfos/icon?w=96&1748003641" || true
           
           # ISOLINUX config
-          cat > iso/isolinux/isolinux.cfg <<'\''ISOLINUX'\''
+          cat > iso/isolinux/isolinux.cfg <<ISOLINUX
           UI vesamenu.c32
           MENU TITLE Cybr Linux Boot Menu
           MENU BACKGROUND splash.png
@@ -347,18 +345,18 @@ jobs:
           
           LABEL live
             MENU LABEL Cybr Linux (Live)
-            KERNEL /live/vmlinuz
-            APPEND initrd=/live/initrd boot=live components quiet splash live-media-path=/live
+            KERNEL /boot/vmlinuz-${KERNEL_VERSION}
+            APPEND initrd=/boot/initrd.img-${KERNEL_VERSION} boot=live components quiet splash live-media-path=/live
           
           LABEL live-safe
             MENU LABEL Cybr Linux (Safe Graphics)
-            KERNEL /live/vmlinuz
-            APPEND initrd=/live/initrd boot=live components nomodeset live-media-path=/live
+            KERNEL /boot/vmlinuz-${KERNEL_VERSION}
+            APPEND initrd=/boot/initrd.img-${KERNEL_VERSION} boot=live components nomodeset live-media-path=/live
           
           LABEL live-failsafe
             MENU LABEL Cybr Linux (Failsafe)
-            KERNEL /live/vmlinuz
-            APPEND initrd=/live/initrd boot=live components noapic noacpi nosplash irqpoll live-media-path=/live
+            KERNEL /boot/vmlinuz-${KERNEL_VERSION}
+            APPEND initrd=/boot/initrd.img-${KERNEL_VERSION} boot=live components noapic noacpi nosplash irqpoll live-media-path=/live
           ISOLINUX
           
           # Copy isolinux files
@@ -370,7 +368,8 @@ jobs:
           ls -lh iso/isolinux/
           
           # GRUB config for EFI
-          cat > iso/boot/grub/grub.cfg <<'\''GRUB'\''
+          mkdir -p iso/boot/grub
+          cat > iso/boot/grub/grub.cfg <<GRUB
           set timeout=15
           set default=0
           
@@ -378,18 +377,18 @@ jobs:
           insmod gfxterm
           
           menuentry "Cybr Linux (Live)" {
-            linux /live/vmlinuz boot=live components quiet splash live-media-path=/live
-            initrd /live/initrd
+            linux /boot/vmlinuz-${KERNEL_VERSION} boot=live components quiet splash live-media-path=/live
+            initrd /boot/initrd.img-${KERNEL_VERSION}
           }
           
           menuentry "Cybr Linux (Safe Graphics)" {
-            linux /live/vmlinuz boot=live components nomodeset live-media-path=/live
-            initrd /live/initrd
+            linux /boot/vmlinuz-${KERNEL_VERSION} boot=live components nomodeset live-media-path=/live
+            initrd /boot/initrd.img-${KERNEL_VERSION}
           }
           
           menuentry "Cybr Linux (Failsafe)" {
-            linux /live/vmlinuz boot=live components noapic noacpi nosplash irqpoll live-media-path=/live
-            initrd /live/initrd
+            linux /boot/vmlinuz-${KERNEL_VERSION} boot=live components noapic noacpi nosplash irqpoll live-media-path=/live
+            initrd /boot/initrd.img-${KERNEL_VERSION}
           }
           GRUB
           
