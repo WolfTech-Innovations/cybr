@@ -101,12 +101,16 @@ jobs:
             plymouth \
             plymouth-themes
           
-          # Install Deepin Desktop Environment (DDE)
-          echo "Installing Deepin Desktop Environment..."
+          # Install Phosh Mobile Desktop Environment
+          echo "Installing Phosh (GNOME mobile shell)..."
           apt-get install -y \
-            deepin-desktop-environment \
-            lightdm \
-            firefox-esr \
+            phosh \
+            phosh-core \
+            phoc \
+            squeekboard \
+            gnome-calls \
+            gnome-contacts \
+            epiphany-browser \
             flatpak \
             gparted \
             ntfs-3g \
@@ -118,7 +122,7 @@ jobs:
             vim \
             nano \
             network-manager \
-            network-manager-gnome
+            gnome-control-center
           
           # Enable 32-bit architecture for Steam
           echo "=== Enabling 32-bit architecture for Steam ==="
@@ -141,8 +145,8 @@ jobs:
           
           # Cybr branding
           cat > /etc/os-release <<'\''OSREL'\''
-          NAME="Cybr Linux"
-          PRETTY_NAME="Cybr Linux Gaming Edition"
+          NAME="Cybr"
+          PRETTY_NAME="Cybr Mobile Gaming Edition"
           ID=cybr
           ID_LIKE=debian
           VERSION_ID="1"
@@ -218,7 +222,7 @@ jobs:
           componentName: cybr
           welcomeStyleCalamares: false
           strings:
-            productName: Cybr Linux Gaming Edition
+            productName: Cybr Mobile Gaming Edition
             productUrl: https://wolfos.uk/
             productLogo: cybr-logo.png
             productIcon: cybr-logo.png
@@ -259,22 +263,22 @@ jobs:
           
           cat > /etc/calamares/modules/displaymanager.conf <<'\''DM'\''
           displaymanagers:
-            - lightdm
+            - gdm3
           basicSetup: false
           DM
           
-          # Live user setup with custom name "Cybr Gamer"
-          useradd -m -s /bin/bash -G sudo,audio,video,netdev -c "Cybr Gamer" cybruser
+          # Live user setup with custom name "Cybr Mobile"
+          useradd -m -s /bin/bash -G sudo,audio,video,netdev -c "Cybr Mobile" cybruser
           echo "cybruser:live" | chpasswd
           echo "root:root" | chpasswd
           
-          # LightDM autologin for live user (DDE uses LightDM)
-          mkdir -p /etc/lightdm/lightdm.conf.d
-          cat > /etc/lightdm/lightdm.conf.d/autologin.conf <<'\''LIGHTDM'\''
-          [Seat:*]
-          autologin-user=cybruser
-          autologin-user-timeout=0
-          LIGHTDM
+          # GDM autologin for live user (Phosh uses GDM)
+          mkdir -p /etc/gdm3
+          cat > /etc/gdm3/custom.conf <<'\''GDM'\''
+          [daemon]
+          AutomaticLoginEnable = true
+          AutomaticLogin = cybruser
+          GDM
           
           # Desktop launcher for installer
           mkdir -p /home/cybruser/Desktop
@@ -302,7 +306,7 @@ jobs:
           chown -R cybruser:cybruser /home/cybruser
           
           # Enable services
-          systemctl enable lightdm NetworkManager
+          systemctl enable gdm3 NetworkManager
           
           # Cleanup
           apt-get clean
@@ -339,7 +343,7 @@ jobs:
           
           cat > iso/isolinux/isolinux.cfg <<ISOLINUX
           UI vesamenu.c32
-          MENU TITLE Cybr Linux Gaming Edition - Boot Menu
+          MENU TITLE Cybr Mobile Gaming Edition - Boot Menu
           MENU BACKGROUND splash.png
           MENU COLOR title 1;36;44 #9033ccff #a0000000
           MENU COLOR sel 7;37;40 #e0ffffff #20ff8000
@@ -347,17 +351,17 @@ jobs:
           TIMEOUT 150
           
           LABEL live
-            MENU LABEL Cybr Linux (Live - Liquorix Kernel)
+            MENU LABEL Cybr (Live - Liquorix Kernel)
             KERNEL /boot/vmlinuz-${KERNEL_VERSION}
             APPEND initrd=/boot/initrd.img-${KERNEL_VERSION} boot=live components quiet splash plymouth.ignore-serial-consoles live-media-path=/live
           
           LABEL live-safe
-            MENU LABEL Cybr Linux (Safe Graphics)
+            MENU LABEL Cybr (Safe Graphics)
             KERNEL /boot/vmlinuz-${KERNEL_VERSION}
             APPEND initrd=/boot/initrd.img-${KERNEL_VERSION} boot=live components nomodeset plymouth.ignore-serial-consoles live-media-path=/live
           
           LABEL live-failsafe
-            MENU LABEL Cybr Linux (Failsafe)
+            MENU LABEL Cybr (Failsafe)
             KERNEL /boot/vmlinuz-${KERNEL_VERSION}
             APPEND initrd=/boot/initrd.img-${KERNEL_VERSION} boot=live components noapic noacpi nosplash nomodeset irqpoll live-media-path=/live
           ISOLINUX
@@ -433,9 +437,9 @@ jobs:
             -joliet-long \
             -rational-rock \
             -volid "CYBR_GAMING" \
-            -appid "Cybr Linux Gaming Edition" \
+            -appid "Cybr Mobile Gaming Edition" \
             -publisher "https://wolfos.uk" \
-            -preparer "Cybr Build System (DDE + Steam + Liquorix)" \
+            -preparer "Cybr Build System (Phosh + Steam + Liquorix)" \
             -eltorito-boot isolinux/isolinux.bin \
             -eltorito-catalog isolinux/boot.cat \
             -no-emul-boot \
@@ -451,7 +455,7 @@ jobs:
           
           echo "=== Build complete ==="
           echo "ISO created successfully: ${ISO_NAME}.iso"
-          echo "Desktop Environment: Deepin Desktop Environment (DDE)"
+          echo "Desktop Environment: Phosh (GNOME mobile shell)"
           echo "Kernel: Liquorix (optimized for gaming)"
           echo "Gaming Platform: Steam included"
           echo "Boot method: SYSLINUX (BIOS) + SYSLINUX (UEFI) - NO GRUB!"
@@ -468,10 +472,10 @@ jobs:
         run: |
           sha256sum "${{ env.ISO_NAME }}.iso" > "${{ env.ISO_NAME }}.iso.sha256"
           ISO_SIZE=$(($(stat -c%s "${{ env.ISO_NAME }}.iso")/1024/1024))
-          echo "### Cybr Linux Gaming Edition Build Complete! 🎮🎉" >> $GITHUB_STEP_SUMMARY
+          echo "### Cybr Mobile Gaming Edition Build Complete! 📱🎮🎉" >> $GITHUB_STEP_SUMMARY
           echo "**ISO:** ${{ env.ISO_NAME }}.iso" >> $GITHUB_STEP_SUMMARY
           echo "**Size:** ${ISO_SIZE}MB" >> $GITHUB_STEP_SUMMARY
-          echo "**Desktop:** Deepin Desktop Environment (DDE)" >> $GITHUB_STEP_SUMMARY
+          echo "**Desktop:** Phosh (GNOME Mobile Shell)" >> $GITHUB_STEP_SUMMARY
           echo "**Kernel:** Liquorix (Gaming Optimized)" >> $GITHUB_STEP_SUMMARY
           echo "**Gaming:** Steam Pre-installed" >> $GITHUB_STEP_SUMMARY
           echo "**Boot Method:** SYSLINUX (BIOS + UEFI) - NO GRUB" >> $GITHUB_STEP_SUMMARY
