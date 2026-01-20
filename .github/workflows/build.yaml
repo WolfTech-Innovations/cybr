@@ -1,4 +1,4 @@
-name: "Cybr Build (DDE + Steam + Liquorix)"
+name: "Cybr Build"
 
 on:
   workflow_dispatch:
