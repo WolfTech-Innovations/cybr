@@ -132,7 +132,10 @@ jobs:
           # Configure Plymouth with spinner theme and Cybr watermark
           echo "=== Configuring Plymouth ==="
           
-          # Copy logo as watermark for spinner theme
+          # Replace Debian logo with Cybr logo
+          cp /usr/share/pixmaps/cybr-logo.png /usr/share/plymouth/debian-logo.png
+          
+          # Copy Cybr logo as watermark for spinner theme (replaces default Debian watermark)
           cp /usr/share/pixmaps/cybr-logo.png /usr/share/plymouth/themes/spinner/watermark.png
           
           # Update spinner theme configuration to position watermark
