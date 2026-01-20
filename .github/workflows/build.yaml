@@ -44,7 +44,10 @@ jobs:
           set -euo pipefail
           
           cd /build
-          mkdir -p iso/{live,boot/grub,isolinux,EFI/boot}
+          
+          echo "=== Setting up ISO directory structure ==="
+          mkdir -p iso/live iso/boot iso/isolinux iso/EFI/boot
+          ls -la iso/
           
           # Bootstrap Debian base
           echo "=== Bootstrapping Debian ==="
@@ -261,74 +264,26 @@ jobs:
           rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/* /var/cache/apt/archives/*.deb
           CHROOT
           
-          echo "=== Preparing ISO directories ==="
-          # Ensure all ISO directories exist
-          mkdir -p iso/live iso/boot/grub iso/isolinux iso/EFI/boot
-          ls -la iso/
-          
-          echo "=== Creating squashfs ==="
-          # Create squashfs - DO NOT exclude boot, kernel modules are needed
-          mksquashfs chroot iso/live/filesystem.squashfs -comp xz -b 1M -Xdict-size 100%
-          
-          echo "=== Copying kernel and initrd ==="
-          # Verify iso/live exists
-          if [ ! -d "iso/live" ]; then
-            echo "ERROR: iso/live directory does not exist!"
-            mkdir -p iso/live
-            echo "Created iso/live directory"
-          fi
+          echo "=== Copying kernel and initrd to ISO ==="
           # List what we have in chroot/boot
           echo "Contents of chroot/boot:"
           ls -la chroot/boot/
           
-          # Find kernel and initrd
-          KERNEL=$(find chroot/boot -name "vmlinuz-*" -type f | head -n1)
-          INITRD=$(find chroot/boot -name "initrd.img-*" -type f | head -n1)
+          # Copy entire boot directory to ISO
+          cp -rv chroot/boot/* iso/boot/
           
-          if [ -z "$KERNEL" ] || [ ! -f "$KERNEL" ]; then
-            echo "ERROR: Kernel not found!"
-            echo "Searched in chroot/boot/ for vmlinuz-*"
-            exit 1
-          fi
+          echo "=== Verifying boot files ==="
+          ls -lh iso/boot/
           
-          if [ -z "$INITRD" ] || [ ! -f "$INITRD" ]; then
-            echo "ERROR: Initrd not found!"
-            echo "Searched in chroot/boot/ for initrd.img-*"
-            exit 1
-          fi
+          # Get kernel version
+          KERNEL_VERSION=$(ls iso/boot/vmlinuz-* | head -n1 | sed "s|iso/boot/vmlinuz-||")
+          echo "Kernel version: $KERNEL_VERSION"
           
-          echo "Found kernel: $KERNEL"
-          echo "Found initrd: $INITRD"
-          
-          # Copy to ISO structure
-          cp -v "$KERNEL" iso/live/vmlinuz
-          cp -v "$INITRD" iso/live/initrd
-          
-          # Make sure they're readable
-          chmod 644 iso/live/vmlinuz iso/live/initrd
-          
-          # Verify files were copied and are valid
-          echo "=== Verifying copied files ==="
-          ls -lh iso/live/
-          file iso/live/vmlinuz
-          file iso/live/initrd
-          
-          # Double-check file sizes (kernel should be several MB, initrd too)
-          VMLINUZ_SIZE=$(stat -c%s iso/live/vmlinuz)
-          INITRD_SIZE=$(stat -c%s iso/live/initrd)
-          
-          if [ "$VMLINUZ_SIZE" -lt 1000000 ]; then
-            echo "ERROR: vmlinuz seems too small ($VMLINUZ_SIZE bytes)"
-            exit 1
-          fi
-          
-          if [ "$INITRD_SIZE" -lt 1000000 ]; then
-            echo "ERROR: initrd seems too small ($INITRD_SIZE bytes)"
-            exit 1
-          fi
-          
-          echo "vmlinuz size: $VMLINUZ_SIZE bytes"
-          echo "initrd size: $INITRD_SIZE bytes"
+          echo "=== Creating squashfs ==="
+          # Create squashfs - EXCLUDE boot since we copied it separately
+          mksquashfs chroot iso/live/filesystem.squashfs -comp xz -b 1M -Xdict-size 100% -e boot
+          echo "Squashfs created:"
+          ls -lh iso/live/filesystem.squashfs
           
           # Download splash
           wget -O iso/isolinux/splash.png "https://a.fsdn.com/allura/p/wolfos/icon?w=96&1748003641" || true
