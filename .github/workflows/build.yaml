@@ -1,4 +1,4 @@
-name: "Cybr Build (BIOS Only)"
+name: "Cybr Build (No GRUB)"
 
 on:
   workflow_dispatch:
@@ -29,13 +29,13 @@ jobs:
           echo "=== After cleanup ==="
           df -h
 
-      - name: Build Cybr Linux ISO (BIOS Only)
+      - name: Build Cybr Linux ISO (No GRUB)
         run: |
           docker build --no-cache --pull -t builder - <<'DOCKERFILE'
           FROM debian:bookworm
           RUN apt-get update && \
-              apt-get install -y debootstrap squashfs-tools xorriso isolinux \
-                wget file && \
+              apt-get install -y debootstrap squashfs-tools xorriso isolinux syslinux-efi \
+                mtools wget file dosfstools && \
               apt-get clean && rm -rf /var/lib/apt/lists/*
           WORKDIR /build
           DOCKERFILE
@@ -45,8 +45,8 @@ jobs:
           
           cd /build
           
-          echo "=== Setting up ISO directory structure (BIOS-only boot) ==="
-          mkdir -p iso/live iso/boot iso/isolinux
+          echo "=== Setting up ISO directory structure (SYSLINUX-only boot) ==="
+          mkdir -p iso/live iso/boot iso/isolinux iso/EFI/boot
           ls -la iso/
           
           # Bootstrap Debian base
@@ -305,16 +305,22 @@ jobs:
           echo "Squashfs created:"
           ls -lh iso/live/filesystem.squashfs
           
-          # ========================================
-          # SIMPLE ISOLINUX BOOT (NO COM32 MODULES)
-          # ========================================
-          echo "=== Setting up simple ISOLINUX boot ==="
+          # Download splash
+          wget -O iso/isolinux/splash.png "https://a.fsdn.com/allura/p/wolfos/icon?w=96&1748003641" || true
           
-          # Simple text-based boot menu (no vesamenu)
+          # ========================================
+          # BIOS BOOT: ISOLINUX configuration
+          # ========================================
+          echo "=== Setting up ISOLINUX (BIOS boot) ==="
+          
           cat > iso/isolinux/isolinux.cfg <<ISOLINUX
+          UI vesamenu.c32
+          MENU TITLE Cybr Linux Boot Menu
+          MENU BACKGROUND splash.png
+          MENU COLOR title 1;36;44 #9033ccff #a0000000
+          MENU COLOR sel 7;37;40 #e0ffffff #20ff8000
           DEFAULT live
-          TIMEOUT 30
-          PROMPT 1
+          TIMEOUT 150
           
           LABEL live
             MENU LABEL Cybr Linux (Live)
@@ -330,42 +336,72 @@ jobs:
             MENU LABEL Cybr Linux (Failsafe)
             KERNEL /boot/vmlinuz-${KERNEL_VERSION}
             APPEND initrd=/boot/initrd.img-${KERNEL_VERSION} boot=live components noapic noacpi nosplash nomodeset irqpoll live-media-path=/live
-          
-          DISPLAY boot.msg
-          
-          SAY Cybr Linux - Press ENTER to boot, or type a label and press ENTER
           ISOLINUX
           
-          # Create simple boot message
-          cat > iso/isolinux/boot.msg <<BOOTMSG
-          
-          ╔════════════════════════════════════════╗
-          ║         Cybr Linux Boot Menu           ║
-          ╚════════════════════════════════════════╝
-          
-          Available boot options:
-          
-            live          - Cybr Linux (Live)
-            live-safe     - Safe Graphics Mode
-            live-failsafe - Failsafe Mode
-          
-          Press ENTER for default, or type label
-          
-          BOOTMSG
-          
-          # Copy only isolinux.bin (no COM32 modules needed)
+          # Copy isolinux files
           cp /usr/lib/ISOLINUX/isolinux.bin iso/isolinux/
+          cp /usr/lib/syslinux/modules/bios/*.c32 iso/isolinux/
           
           # Verify isolinux files
-          echo "ISOLINUX files:"
           ls -lh iso/isolinux/
+          
+          # ========================================
+          # UEFI BOOT: Simple SYSLINUX configuration (NO GRUB, NO COM32!)
+          # ========================================
+          echo "=== Setting up SYSLINUX for UEFI boot (NO GRUB, NO COM32) ==="
+          
+          # Create simple SYSLINUX config for UEFI (no menu, no .c32 modules)
+          cat > iso/EFI/boot/syslinux.cfg <<SYSLINUX
+          DEFAULT live
+          TIMEOUT 50
+          
+          LABEL live
+            LINUX /boot/vmlinuz-${KERNEL_VERSION}
+            APPEND boot=live components quiet splash plymouth.ignore-serial-consoles live-media-path=/live
+            INITRD /boot/initrd.img-${KERNEL_VERSION}
+          
+          LABEL live-safe
+            LINUX /boot/vmlinuz-${KERNEL_VERSION}
+            APPEND boot=live components nomodeset plymouth.ignore-serial-consoles live-media-path=/live
+            INITRD /boot/initrd.img-${KERNEL_VERSION}
+          
+          LABEL live-failsafe
+            LINUX /boot/vmlinuz-${KERNEL_VERSION}
+            APPEND boot=live components noapic noacpi nosplash nomodeset irqpoll live-media-path=/live
+            INITRD /boot/initrd.img-${KERNEL_VERSION}
+          SYSLINUX
+          
+          # Copy SYSLINUX EFI bootloader
+          cp /usr/lib/SYSLINUX.EFI/efi64/syslinux.efi iso/EFI/boot/bootx64.efi
+          
+          # Copy only essential EFI modules (ldlinux.e64 is required)
+          cp /usr/lib/syslinux/modules/efi64/ldlinux.e64 iso/EFI/boot/ || true
+          
+          # Verify EFI setup
+          echo "=== Verifying UEFI boot setup ==="
+          ls -lh iso/EFI/boot/
+          
+          # Create ESP image for UEFI boot
+          echo "=== Creating EFI System Partition image ==="
+          dd if=/dev/zero of=efiboot.img bs=1M count=10
+          mkfs.vfat efiboot.img
+          
+          # Mount and copy EFI boot files
+          mkdir -p efi_mount
+          mount -o loop efiboot.img efi_mount
+          mkdir -p efi_mount/EFI/boot
+          cp -r iso/EFI/boot/* efi_mount/EFI/boot/
+          umount efi_mount
+          rmdir efi_mount
+          
+          mv efiboot.img iso/
           
           # Final verification of ISO structure
           echo "=== Final ISO structure ==="
           find iso/ -type f -ls
           
-          # Create BIOS-only ISO
-          echo "=== Creating BIOS-only ISO image ==="
+          # Create ISO with SYSLINUX boot (NO GRUB!)
+          echo "=== Creating ISO image with SYSLINUX boot ==="
           xorriso -as mkisofs \
             -iso-level 3 \
             -full-iso9660-filenames \
@@ -375,19 +411,23 @@ jobs:
             -volid "CYBR_LINUX" \
             -appid "Cybr Linux Live" \
             -publisher "https://wolfos.uk" \
-            -preparer "Cybr Build System (BIOS-only)" \
+            -preparer "Cybr Build System (SYSLINUX-only)" \
             -eltorito-boot isolinux/isolinux.bin \
             -eltorito-catalog isolinux/boot.cat \
             -no-emul-boot \
             -boot-load-size 4 \
             -boot-info-table \
             -isohybrid-mbr /usr/lib/ISOLINUX/isohdpfx.bin \
+            -eltorito-alt-boot \
+            -e efiboot.img \
+            -no-emul-boot \
+            -isohybrid-gpt-basdat \
             -output "/workspace/${ISO_NAME}.iso" \
             iso/
           
           echo "=== Build complete ==="
           echo "ISO created successfully: ${ISO_NAME}.iso"
-          echo "Boot method: ISOLINUX (BIOS-only, no COM32 modules)"
+          echo "Boot method: SYSLINUX (BIOS) + SYSLINUX (UEFI) - NO GRUB!"
           ls -lh "/workspace/${ISO_NAME}.iso"
           '
 
@@ -404,7 +444,7 @@ jobs:
           echo "### Cybr Linux Build Complete! 🎉" >> $GITHUB_STEP_SUMMARY
           echo "**ISO:** ${{ env.ISO_NAME }}.iso" >> $GITHUB_STEP_SUMMARY
           echo "**Size:** ${ISO_SIZE}MB" >> $GITHUB_STEP_SUMMARY
-          echo "**Boot Method:** ISOLINUX (BIOS-only, simple text menu)" >> $GITHUB_STEP_SUMMARY
+          echo "**Boot Method:** SYSLINUX (BIOS + UEFI) - NO GRUB" >> $GITHUB_STEP_SUMMARY
           echo "**SHA256:** \`$(cat ${{ env.ISO_NAME }}.iso.sha256 | cut -d' ' -f1)\`" >> $GITHUB_STEP_SUMMARY
 
       - uses: actions/upload-artifact@v4
