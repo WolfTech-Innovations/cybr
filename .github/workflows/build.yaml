@@ -68,6 +68,9 @@ jobs:
           
           apt-get update
           
+          # Install curl first for adding repositories
+          apt-get install -y curl gnupg2
+          
           # Add Liquorix repository using DEB822 format
           echo "=== Adding Liquorix kernel repository ==="
           mkdir -p /usr/share/keyrings
