@@ -45,7 +45,7 @@ jobs:
           
           cd /build
           
-          echo "=== Setting up ISO directory structure (SYSLINUX-only boot) ==="
+          echo "=== Setting up ISO directory structure ==="
           mkdir -p iso/live iso/boot iso/isolinux iso/EFI/boot
           ls -la iso/
           
@@ -141,8 +141,15 @@ jobs:
             mesa-vulkan-drivers:amd64 \
             mesa-vulkan-drivers:i386
           
-          # Install Calamares
-          apt-get install -y calamares calamares-settings-debian
+          # Install Calamares and dependencies
+          echo "=== Installing Calamares installer ==="
+          apt-get install -y \
+            calamares \
+            calamares-settings-debian \
+            qml-module-qtquick2 \
+            qml-module-qtquick-controls \
+            qml-module-qtquick-layouts \
+            qml-module-qtquick-window2
           
           # Cybr branding
           cat > /etc/os-release <<'\''OSREL'\''
@@ -180,93 +187,32 @@ jobs:
           # Update initramfs to include Plymouth
           update-initramfs -u
           
-          # Calamares config
-          mkdir -p /etc/calamares
-          cat > /etc/calamares/settings.conf <<'\''CALACONF'\''
-          modules-search: [ local ]
+          # Calamares
+          mkdir -p /etc/calamares/{modules,branding/cybr}
+          cat > /etc/calamares/settings.conf <<'C'
+          modules-search: [local]
           sequence:
-            - show:
-              - welcome
-              - locale
-              - keyboard
-              - partition
-              - users
-              - summary
-            - exec:
-              - partition
-              - mount
-              - unpackfs
-              - machineid
-              - fstab
-              - locale
-              - keyboard
-              - localecfg
-              - users
-              - displaymanager
-              - networkcfg
-              - hwclock
-              - services-systemd
-              - bootloader-config
-              - grubcfg
-              - packages
-              - umount
-            - show:
-              - finished
-          
+            - show: [welcome,locale,keyboard,partition,users,summary]
+            - exec: [partition,mount,unpackfs,machineid,fstab,locale,keyboard,localecfg,users,displaymanager,networkcfg,hwclock,services-systemd,umount]
+            - show: [finished]
           branding: cybr
-          dont-chroot: false
-          CALACONF
-          
-          # Branding module
-          mkdir -p /etc/calamares/branding/cybr
-          cat > /etc/calamares/branding/cybr/branding.desc <<'\''BRAND'\''
-          componentName: cybr
-          welcomeStyleCalamares: false
-          strings:
-            productName: Cybr Mobile Gaming Edition
-            productUrl: https://wolfos.uk/
-            productLogo: cybr-logo.png
-            productIcon: cybr-logo.png
-          images:
-            productLogo: cybr-logo.png
-            productIcon: cybr-logo.png
-          style:
-            sidebarBackground: "#0a0a0a"
-            sidebarText: "#ffffff"
-          BRAND
-          
-          cp /usr/share/pixmaps/cybr-logo.png /etc/calamares/branding/cybr/ 2>/dev/null || true
-          
-          # Module configs
-          cat > /etc/calamares/modules/unpackfs.conf <<'\''UNPACK'\''
-          unpack:
-            - source: "/run/live/medium/live/filesystem.squashfs"
-              sourcefs: "squashfs"
-              destination: ""
-          UNPACK
-          
-          cat > /etc/calamares/modules/users.conf <<'\''USERS'\''
-          defaultGroups:
-            - name: users
-              must_exist: true
-              system: true
-            - cdrom
-            - floppy
-            - sudo
-            - audio
-            - video
-            - netdev
-            - plugdev
-          autologinGroup: autologin
+          C
+          echo 'componentName: cybr
+          strings: {productName: "Cybr"}
+          images: {productLogo: "cybr-logo.png"}' > /etc/calamares/branding/cybr/branding.desc
+          cp /usr/share/pixmaps/cybr-logo.png /etc/calamares/branding/cybr/
+          for m in welcome locale keyboard mount machineid fstab localecfg networkcfg hwclock finished; do echo "---" > /etc/calamares/modules/$m.conf; done
+          echo 'efiSystemPartition: "/boot/efi"
+          userSwapChoices: [none,small]
+          defaultFileSystemType: "ext4"' > /etc/calamares/modules/partition.conf
+          echo 'unpack:
+            - {source: "/run/live/medium/live/filesystem.squashfs",sourcefs: "squashfs",destination: ""}' > /etc/calamares/modules/unpackfs.conf
+          echo 'defaultGroups: [{name: users,must_exist: true,system: true},cdrom,sudo,audio,video,netdev]
           sudoersGroup: sudo
-          setRootPassword: true
-          USERS
-          
-          cat > /etc/calamares/modules/displaymanager.conf <<'\''DM'\''
-          displaymanagers:
-            - gdm3
-          basicSetup: false
-          DM
+          setRootPassword: true' > /etc/calamares/modules/users.conf
+          echo 'displaymanagers: [gdm3]' > /etc/calamares/modules/displaymanager.conf
+          echo 'services: [{name: NetworkManager},{name: gdm3}]
+          targets: [{name: graphical}]' > /etc/calamares/modules/services-systemd.conf
           
           # Live user setup with custom name "Cybr Mobile"
           useradd -m -s /bin/bash -G sudo,audio,video,netdev -c "Cybr Mobile" cybruser
@@ -291,26 +237,38 @@ jobs:
           
           # Desktop launcher for installer
           mkdir -p /home/cybruser/Desktop
-          cat > /home/cybruser/Desktop/calamares.desktop <<'\''DESK'\''
+          cat > /home/cybruser/Desktop/install-cybr.desktop <<'\''DESK'\''
           [Desktop Entry]
           Type=Application
+          Version=1.0
           Name=Install Cybr Linux
+          Comment=Install Cybr to your hard drive
           Exec=pkexec calamares
           Icon=calamares
           Terminal=false
+          Categories=System;
+          StartupNotify=true
           DESK
-          chmod +x /home/cybruser/Desktop/calamares.desktop
+          chmod +x /home/cybruser/Desktop/install-cybr.desktop
           
           # Desktop launcher for Steam
           cat > /home/cybruser/Desktop/steam.desktop <<'\''STEAM'\''
           [Desktop Entry]
           Type=Application
+          Version=1.0
           Name=Steam
+          Comment=Gaming Platform
           Exec=steam
           Icon=steam
           Terminal=false
+          Categories=Game;
+          StartupNotify=true
           STEAM
           chmod +x /home/cybruser/Desktop/steam.desktop
+          
+          # Make desktop files trusted
+          mkdir -p /home/cybruser/.local/share/applications
+          cp /home/cybruser/Desktop/*.desktop /home/cybruser/.local/share/applications/
           
           chown -R cybruser:cybruser /home/cybruser
           
@@ -383,9 +341,9 @@ jobs:
           ls -lh iso/isolinux/
           
           # ========================================
-          # UEFI BOOT: Simple SYSLINUX configuration (NO GRUB, NO COM32!)
+          # UEFI BOOT: Simple SYSLINUX configuration
           # ========================================
-          echo "=== Setting up SYSLINUX for UEFI boot (NO GRUB, NO COM32) ==="
+          echo "=== Setting up SYSLINUX for UEFI boot ==="
           
           # Create simple SYSLINUX config for UEFI (no menu, no .c32 modules)
           cat > iso/EFI/boot/syslinux.cfg <<SYSLINUX
@@ -437,7 +395,7 @@ jobs:
           echo "=== Final ISO structure ==="
           find iso/ -type f -ls
           
-          # Create ISO with SYSLINUX boot (NO GRUB!)
+          # Create ISO with SYSLINUX boot
           echo "=== Creating ISO image with SYSLINUX boot ==="
           xorriso -as mkisofs \
             -iso-level 3 \
@@ -467,7 +425,8 @@ jobs:
           echo "Desktop Environment: Phosh (GNOME-based mobile shell)"
           echo "Kernel: Liquorix (optimized for gaming)"
           echo "Gaming Platform: Steam included"
-          echo "Boot method: SYSLINUX (BIOS) + SYSLINUX (UEFI) - NO GRUB!"
+          echo "Installer: Calamares (fully configured)"
+          echo "Boot method: SYSLINUX (BIOS) + SYSLINUX (UEFI)"
           ls -lh "/workspace/${ISO_NAME}.iso"
           '
 
@@ -487,7 +446,8 @@ jobs:
           echo "**Desktop:** Phosh (Mobile-optimized GNOME)" >> $GITHUB_STEP_SUMMARY
           echo "**Kernel:** Liquorix (Gaming Optimized)" >> $GITHUB_STEP_SUMMARY
           echo "**Gaming:** Steam Pre-installed" >> $GITHUB_STEP_SUMMARY
-          echo "**Boot Method:** SYSLINUX (BIOS + UEFI) - NO GRUB" >> $GITHUB_STEP_SUMMARY
+          echo "**Installer:** Calamares (Fully Configured)" >> $GITHUB_STEP_SUMMARY
+          echo "**Boot Method:** SYSLINUX (BIOS + UEFI)" >> $GITHUB_STEP_SUMMARY
           echo "**SHA256:** \`$(cat ${{ env.ISO_NAME }}.iso.sha256 | cut -d' ' -f1)\`" >> $GITHUB_STEP_SUMMARY
 
       - uses: actions/upload-artifact@v4
