@@ -197,22 +197,49 @@ jobs:
             - show: [finished]
           branding: cybr
           C
-          echo 'componentName: cybr
-          strings: {productName: "Cybr"}
-          images: {productLogo: "cybr-logo.png"}' > /etc/calamares/branding/cybr/branding.desc
+          cat > /etc/calamares/branding/cybr/branding.desc <<'BR'
+          componentName: cybr
+          strings:
+            productName: "Cybr"
+          images:
+            productLogo: "cybr-logo.png"
+          BR
           cp /usr/share/pixmaps/cybr-logo.png /etc/calamares/branding/cybr/
           for m in welcome locale keyboard mount machineid fstab localecfg networkcfg hwclock finished; do echo "---" > /etc/calamares/modules/$m.conf; done
-          echo 'efiSystemPartition: "/boot/efi"
+          cat > /etc/calamares/modules/partition.conf <<'P'
+          efiSystemPartition: "/boot/efi"
           userSwapChoices: [none,small]
-          defaultFileSystemType: "ext4"' > /etc/calamares/modules/partition.conf
-          echo 'unpack:
-            - {source: "/run/live/medium/live/filesystem.squashfs",sourcefs: "squashfs",destination: ""}' > /etc/calamares/modules/unpackfs.conf
-          echo 'defaultGroups: [{name: users,must_exist: true,system: true},cdrom,sudo,audio,video,netdev]
+          defaultFileSystemType: "ext4"
+          P
+          cat > /etc/calamares/modules/unpackfs.conf <<'U'
+          unpack:
+            - source: "/run/live/medium/live/filesystem.squashfs"
+              sourcefs: "squashfs"
+              destination: ""
+          U
+          cat > /etc/calamares/modules/users.conf <<'US'
+          defaultGroups:
+            - name: users
+              must_exist: true
+              system: true
+            - cdrom
+            - sudo
+            - audio
+            - video
+            - netdev
           sudoersGroup: sudo
-          setRootPassword: true' > /etc/calamares/modules/users.conf
-          echo 'displaymanagers: [gdm3]' > /etc/calamares/modules/displaymanager.conf
-          echo 'services: [{name: NetworkManager},{name: gdm3}]
-          targets: [{name: graphical}]' > /etc/calamares/modules/services-systemd.conf
+          setRootPassword: true
+          US
+          cat > /etc/calamares/modules/displaymanager.conf <<'D'
+          displaymanagers: [gdm3]
+          D
+          cat > /etc/calamares/modules/services-systemd.conf <<'S'
+          services:
+            - name: NetworkManager
+            - name: gdm3
+          targets:
+            - name: graphical
+          S
           
           # Live user setup with custom name "Cybr Mobile"
           useradd -m -s /bin/bash -G sudo,audio,video,netdev -c "Cybr Mobile" cybruser
