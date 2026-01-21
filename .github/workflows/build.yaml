@@ -1,5 +1,5 @@
 name: "Cybr Build"
-on: [workflow_dispatch, push]
+on: workflow_dispatch
 env:
   ISO_NAME: "cybr-v${{ github.run_number }}"
 jobs:
