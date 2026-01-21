@@ -1,6 +1,6 @@
 # Welcome to Cybr - Simple. Powerful. Mobile-Ready.
 
-![cybr screenshot](https://raw.githubusercontent.com/WolfTech-Innovations/cybr/master/images/Screenshot_2026-01-18_181457.png)
+![WTLogo]()
 [![Cybr Build System](https://github.com/WolfTech-Innovations/cybr/actions/workflows/build.yaml/badge.svg)](https://github.com/WolfTech-Innovations/cybr/actions/workflows/build.yaml)
 
 Cybr is a Debian-based gaming distribution designed for mobile and desktop users. Built on Debian Bookworm with Phosh mobile desktop, Liquorix gaming kernel, and Steam pre-installed, Cybr delivers a touch-optimized, gaming-ready experience.
