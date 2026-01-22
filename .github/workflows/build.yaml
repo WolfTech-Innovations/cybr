@@ -1,4 +1,4 @@
-name: "Cybr Build (Phosh + Steam + Liquorix)"
+name: "Cybr Build (Plasma Mobile + Steam + Liquorix)"
 
 on:
   workflow_dispatch:
@@ -22,32 +22,6 @@ jobs:
 
       - name: Free up disk space
         run: |
-          
-          # Download logo
-          wget -O /usr/share/pixmaps/cybr-logo.png "https://a.fsdn.com/allura/p/wolfos/icon?w=96&1748003641" || \
-            echo "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==" | base64 -d > /usr/share/pixmaps/cybr-logo.png
-          
-          # Configure Plymouth with spinner theme and Cybr watermark
-          echo "=== Configuring Plymouth ==="
-          
-          # Replace Debian logo with Cybr logo
-          cp /usr/share/pixmaps/cybr-logo.png /usr/share/plymouth/debian-logo.png
-          
-          # Copy Cybr logo as watermark for spinner theme
-          cp /usr/share/pixmaps/cybr-logo.png /usr/share/plymouth/themes/spinner/watermark.png
-          
-          # Update spinner theme configuration to position watermark
-          cat >> /usr/share/plymouth/themes/spinner/spinner.plymouth <<'\''PLYMCONF'\''
-          
-          WatermarkHorizontalAlignment=.5
-          WatermarkVerticalAlignment=.96
-          PLYMCONF
-          
-          # Set Plymouth theme to spinner
-          plymouth-set-default-theme spinner
-          
-          # Update initramfs to include Plymouth
-          update-initramfs -u
           echo "=== Before cleanup ==="
           df -h
           sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /usr/local/share/boost /opt/hostedtoolcache
@@ -131,16 +105,24 @@ jobs:
             plymouth \
             plymouth-themes
           
-          # Install Phosh (Mobile-optimized Desktop Environment)
-          echo "Installing Phosh mobile desktop environment..."
+          # Install Plasma Mobile (KDE Mobile Desktop Environment)
+          echo "Installing Plasma Mobile desktop environment..."
           apt-get install -y \
-            phosh-full \
-            phoc \
-            squeekboard \
-            gdm3 \
-            gnome-contacts \
-            gnome-calls \
-            chatty \
+            plasma-mobile \
+            plasma-nm \
+            plasma-pa \
+            powerdevil \
+            kwin-wayland \
+            kwin-wayland-backend-drm \
+            sddm \
+            angelfish \
+            index-fm \
+            kalk \
+            kclock \
+            krecorder \
+            kweather \
+            spacebar \
+            vvave \
             firefox-esr \
             flatpak \
             gparted \
@@ -153,7 +135,7 @@ jobs:
             vim \
             nano \
             network-manager \
-            network-manager-gnome
+            qtvirtualkeyboard-plugin
           
           # Enable 32-bit architecture for Steam
           echo "=== Enabling 32-bit architecture for Steam ==="
@@ -194,48 +176,52 @@ jobs:
           echo "cybruser:live" | chpasswd
           echo "root:root" | chpasswd
           
-          # GDM autologin for live user (Phosh uses GDM)
-          mkdir -p /etc/gdm3
-          cat > /etc/gdm3/custom.conf <<'\''GDM'\''
-          [daemon]
-          AutomaticLoginEnable=true
-          AutomaticLogin=cybruser
+          # SDDM autologin for live user (Plasma Mobile uses SDDM)
+          mkdir -p /etc/sddm.conf.d
+          cat > /etc/sddm.conf.d/autologin.conf <<'\''SDDM'\''
+          [Autologin]
+          User=cybruser
+          Session=plasma-mobile.desktop
           
-          [security]
+          [General]
+          InputMethod=qtvirtualkeyboard
+          SDDM
           
-          [xdmcp]
-          
-          [chooser]
-          
-          [debug]
-          GDM
+          # Configure Plasma Mobile session as default
+          mkdir -p /var/lib/AccountsService/users
+          cat > /var/lib/AccountsService/users/cybruser <<'\''ACCT'\''
+          [User]
+          Session=plasma-mobile
+          XSession=plasma-mobile
+          Icon=/usr/share/pixmaps/cybr-logo.png
+          SystemAccount=false
+          ACCT
           
           # Desktop launcher for installer
           mkdir -p /home/cybruser/Desktop
-          cat > /home/cybruser/Desktop/install-cybr.desktop <<'\''DESK'\''
+          cat > /home/cybruser/Desktop/calamares.desktop <<'\''DESK'\''
           [Desktop Entry]
           Type=Application
           Name=Install Cybr Linux
-          Exec=sudo refractainstaller-gui
-          Icon=system-software-install
+          Exec=pkexec calamares
+          Icon=calamares
           Terminal=false
-          Categories=System;
           DESK
-          chmod +x /home/cybruser/Desktop/install-cybr.desktop
+          chmod +x /home/cybruser/Desktop/calamares.desktop
           
-          # Auto-start Refractainstaller on first boot
+          # Auto-start Calamares on first boot
           mkdir -p /home/cybruser/.config/autostart
-          cat > /home/cybruser/.config/autostart/installer-firstboot.desktop <<'\''AUTOSTART'\''
+          cat > /home/cybruser/.config/autostart/calamares-firstboot.desktop <<'\''AUTOSTART'\''
           [Desktop Entry]
           Type=Application
           Name=Cybr Installer
-          Exec=sh -c "sleep 5 && sudo refractainstaller-gui"
-          Icon=system-software-install
+          Exec=sh -c "sleep 5 && pkexec calamares"
+          Icon=calamares
           Terminal=false
           X-GNOME-Autostart-enabled=true
           Comment=Launch Cybr installer on first boot
           AUTOSTART
-          chmod +x /home/cybruser/.config/autostart/installer-firstboot.desktop
+          chmod +x /home/cybruser/.config/autostart/calamares-firstboot.desktop
           
           # Desktop launcher for Steam
           cat > /home/cybruser/Desktop/steam.desktop <<'\''STEAM'\''
@@ -251,7 +237,7 @@ jobs:
           chown -R cybruser:cybruser /home/cybruser
           
           # Enable services
-          systemctl enable gdm3 NetworkManager
+          systemctl enable sddm NetworkManager
           
           # Cleanup
           apt-get clean
@@ -400,7 +386,7 @@ jobs:
           
           echo "=== Build complete ==="
           echo "ISO created successfully: ${ISO_NAME}.iso"
-          echo "Desktop Environment: Phosh (GNOME-based mobile shell)"
+          echo "Desktop Environment: Plasma Mobile (KDE mobile shell)"
           echo "Kernel: Liquorix (optimized for gaming)"
           echo "Gaming Platform: Steam included"
           echo "Boot method: SYSLINUX (BIOS) + SYSLINUX (UEFI) - NO GRUB!"
@@ -421,7 +407,7 @@ jobs:
           echo "### Cybr Mobile Gaming Edition Build Complete! 📱🎮🎉" >> $GITHUB_STEP_SUMMARY
           echo "**ISO:** ${ISO_NAME}.iso" >> $GITHUB_STEP_SUMMARY
           echo "**Size:** ${ISO_SIZE}MB" >> $GITHUB_STEP_SUMMARY
-          echo "**Desktop:** Phosh (Mobile-optimized GNOME)" >> $GITHUB_STEP_SUMMARY
+          echo "**Desktop:** Plasma Mobile (KDE Mobile)" >> $GITHUB_STEP_SUMMARY
           echo "**Kernel:** Liquorix (Gaming Optimized)" >> $GITHUB_STEP_SUMMARY
           echo "**Gaming:** Steam Pre-installed" >> $GITHUB_STEP_SUMMARY
           echo "**Boot Method:** SYSLINUX (BIOS + UEFI) - NO GRUB" >> $GITHUB_STEP_SUMMARY
