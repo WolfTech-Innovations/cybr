@@ -22,6 +22,32 @@ jobs:
 
       - name: Free up disk space
         run: |
+          
+          # Download logo
+          wget -O /usr/share/pixmaps/cybr-logo.png "https://a.fsdn.com/allura/p/wolfos/icon?w=96&1748003641" || \
+            echo "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==" | base64 -d > /usr/share/pixmaps/cybr-logo.png
+          
+          # Configure Plymouth with spinner theme and Cybr watermark
+          echo "=== Configuring Plymouth ==="
+          
+          # Replace Debian logo with Cybr logo
+          cp /usr/share/pixmaps/cybr-logo.png /usr/share/plymouth/debian-logo.png
+          
+          # Copy Cybr logo as watermark for spinner theme
+          cp /usr/share/pixmaps/cybr-logo.png /usr/share/plymouth/themes/spinner/watermark.png
+          
+          # Update spinner theme configuration to position watermark
+          cat >> /usr/share/plymouth/themes/spinner/spinner.plymouth <<'\''PLYMCONF'\''
+          
+          WatermarkHorizontalAlignment=.5
+          WatermarkVerticalAlignment=.96
+          PLYMCONF
+          
+          # Set Plymouth theme to spinner
+          plymouth-set-default-theme spinner
+          
+          # Update initramfs to include Plymouth
+          update-initramfs -u
           echo "=== Before cleanup ==="
           df -h
           sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /usr/local/share/boost /opt/hostedtoolcache
@@ -145,8 +171,13 @@ jobs:
             mesa-vulkan-drivers:amd64 \
             mesa-vulkan-drivers:i386
           
-          # Install Calamares
-          apt-get install -y calamares calamares-settings-debian
+          # Install Refractainstaller (lightweight alternative to Calamares)
+          echo "Installing Refractainstaller..."
+          apt-get install -y wget xterm rsync grub-pc grub-efi-amd64
+          wget -O /tmp/refractainstaller-base.deb https://sourceforge.net/projects/refracta/files/tools/refractainstaller-base_9.5.6_all.deb/download
+          wget -O /tmp/refractainstaller-gui.deb https://sourceforge.net/projects/refracta/files/tools/refractainstaller-gui_9.5.6_all.deb/download
+          dpkg -i /tmp/refractainstaller-base.deb /tmp/refractainstaller-gui.deb || apt-get install -f -y
+          rm /tmp/refractainstaller-*.deb
           
           # Cybr branding
           cat > /etc/os-release <<'\''OSREL'\''
@@ -157,120 +188,6 @@ jobs:
           VERSION_ID="1"
           HOME_URL="https://wolfos.uk/"
           OSREL
-          
-          # Download logo
-          wget -O /usr/share/pixmaps/cybr-logo.png "https://a.fsdn.com/allura/p/wolfos/icon?w=96&1748003641" || \
-            echo "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==" | base64 -d > /usr/share/pixmaps/cybr-logo.png
-          
-          # Configure Plymouth with spinner theme and Cybr watermark
-          echo "=== Configuring Plymouth ==="
-          
-          # Replace Debian logo with Cybr logo
-          cp /usr/share/pixmaps/cybr-logo.png /usr/share/plymouth/debian-logo.png
-          
-          # Copy Cybr logo as watermark for spinner theme
-          cp /usr/share/pixmaps/cybr-logo.png /usr/share/plymouth/themes/spinner/watermark.png
-          
-          # Update spinner theme configuration to position watermark
-          cat >> /usr/share/plymouth/themes/spinner/spinner.plymouth <<'\''PLYMCONF'\''
-          
-          WatermarkHorizontalAlignment=.5
-          WatermarkVerticalAlignment=.96
-          PLYMCONF
-          
-          # Set Plymouth theme to spinner
-          plymouth-set-default-theme spinner
-          
-          # Update initramfs to include Plymouth
-          update-initramfs -u
-          
-          # Calamares config
-          mkdir -p /etc/calamares
-          cat > /etc/calamares/settings.conf <<'\''CALACONF'\''
-          modules-search: [ local ]
-          sequence:
-            - show:
-              - welcome
-              - locale
-              - keyboard
-              - partition
-              - users
-              - summary
-            - exec:
-              - partition
-              - mount
-              - unpackfs
-              - machineid
-              - fstab
-              - locale
-              - keyboard
-              - localecfg
-              - users
-              - displaymanager
-              - networkcfg
-              - hwclock
-              - services-systemd
-              - bootloader-config
-              - grubcfg
-              - packages
-              - umount
-            - show:
-              - finished
-          
-          branding: cybr
-          dont-chroot: false
-          CALACONF
-          
-          # Branding module
-          mkdir -p /etc/calamares/branding/cybr
-          cat > /etc/calamares/branding/cybr/branding.desc <<'\''BRAND'\''
-          componentName: cybr
-          welcomeStyleCalamares: false
-          strings:
-            productName: Cybr Mobile Gaming Edition
-            productUrl: https://wolfos.uk/
-            productLogo: cybr-logo.png
-            productIcon: cybr-logo.png
-          images:
-            productLogo: cybr-logo.png
-            productIcon: cybr-logo.png
-          style:
-            sidebarBackground: "#0a0a0a"
-            sidebarText: "#ffffff"
-          BRAND
-          
-          cp /usr/share/pixmaps/cybr-logo.png /etc/calamares/branding/cybr/ 2>/dev/null || true
-          
-          # Module configs
-          cat > /etc/calamares/modules/unpackfs.conf <<'\''UNPACK'\''
-          unpack:
-            - source: "/run/live/medium/live/filesystem.squashfs"
-              sourcefs: "squashfs"
-              destination: ""
-          UNPACK
-          
-          cat > /etc/calamares/modules/users.conf <<'\''USERS'\''
-          defaultGroups:
-            - name: users
-              must_exist: true
-              system: true
-            - cdrom
-            - floppy
-            - sudo
-            - audio
-            - video
-            - netdev
-            - plugdev
-          autologinGroup: autologin
-          sudoersGroup: sudo
-          setRootPassword: true
-          USERS
-          
-          cat > /etc/calamares/modules/displaymanager.conf <<'\''DM'\''
-          displaymanagers:
-            - gdm3
-          basicSetup: false
-          DM
           
           # Live user setup with custom name "Cybr Mobile"
           useradd -m -s /bin/bash -G sudo,audio,video,netdev -c "Cybr Mobile" cybruser
@@ -295,15 +212,30 @@ jobs:
           
           # Desktop launcher for installer
           mkdir -p /home/cybruser/Desktop
-          cat > /home/cybruser/Desktop/calamares.desktop <<'\''DESK'\''
+          cat > /home/cybruser/Desktop/install-cybr.desktop <<'\''DESK'\''
           [Desktop Entry]
           Type=Application
           Name=Install Cybr Linux
-          Exec=pkexec calamares
-          Icon=calamares
+          Exec=sudo refractainstaller-gui
+          Icon=system-software-install
           Terminal=false
+          Categories=System;
           DESK
-          chmod +x /home/cybruser/Desktop/calamares.desktop
+          chmod +x /home/cybruser/Desktop/install-cybr.desktop
+          
+          # Auto-start Refractainstaller on first boot
+          mkdir -p /home/cybruser/.config/autostart
+          cat > /home/cybruser/.config/autostart/installer-firstboot.desktop <<'\''AUTOSTART'\''
+          [Desktop Entry]
+          Type=Application
+          Name=Cybr Installer
+          Exec=sh -c "sleep 5 && sudo refractainstaller-gui"
+          Icon=system-software-install
+          Terminal=false
+          X-GNOME-Autostart-enabled=true
+          Comment=Launch Cybr installer on first boot
+          AUTOSTART
+          chmod +x /home/cybruser/.config/autostart/installer-firstboot.desktop
           
           # Desktop launcher for Steam
           cat > /home/cybruser/Desktop/steam.desktop <<'\''STEAM'\''
