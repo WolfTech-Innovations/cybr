@@ -22,382 +22,160 @@ jobs:
 
       - name: Free up disk space
         run: |
-          echo "=== Before cleanup ==="
-          df -h
-          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /usr/local/share/boost /opt/hostedtoolcache
-          sudo rm -rf /usr/share/swift /usr/local/.ghcup /usr/local/share/powershell /usr/share/kotlinc /usr/local/lib/node_modules
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /usr/local/share/boost /opt/hostedtoolcache /usr/share/swift /usr/local/.ghcup /usr/local/share/powershell /usr/share/kotlinc /usr/local/lib/node_modules
           sudo docker system prune -af --volumes
           sudo apt-get purge -y '^aspnetcore-.*' '^dotnet-.*' '^llvm-.*' 'php.*' '^mongodb-.*' '^mysql-.*' azure-cli google-cloud-sdk || true
           sudo apt-get autoremove -y && sudo apt-get clean
-          echo "=== After cleanup ==="
-          df -h
 
-      - name: Build Cybr ISO (Phosh + Steam + Liquorix)
+      - name: Build Cybr ISO
         run: |
           ISO_NAME="${{ steps.set-iso-name.outputs.iso_name }}"
-          docker build --no-cache --pull -t builder - <<'DOCKERFILE'
-          FROM debian:bookworm
-          RUN apt-get update && \
-              apt-get install -y debootstrap squashfs-tools xorriso isolinux syslinux-efi \
-                mtools wget file dosfstools gnupg2 curl && \
-              apt-get clean && rm -rf /var/lib/apt/lists/*
-          WORKDIR /build
-          DOCKERFILE
-          
-          docker run --rm --privileged -v "$PWD:/workspace" -e ISO_NAME="${ISO_NAME}" builder bash -c '
+          docker run --rm --privileged -v "$PWD:/w" -e ISO_NAME="${ISO_NAME}" debian:bookworm bash -c '
           set -euo pipefail
-          
-          cd /build
-          
-          echo "=== Setting up ISO directory structure (SYSLINUX-only boot) ==="
-          mkdir -p iso/live iso/boot iso/isolinux iso/EFI/boot
-          ls -la iso/
-          
-          # Bootstrap Debian base
-          echo "=== Bootstrapping Debian ==="
-          debootstrap --arch=amd64 --variant=minbase bookworm chroot http://deb.debian.org/debian/
-          
-          # Configure chroot
-          echo "=== Configuring chroot environment ==="
-          chroot chroot /bin/bash <<'\''CHROOT'\''
-          set -e
+          apt-get update && apt-get install -y debootstrap squashfs-tools xorriso isolinux syslinux-efi mtools wget dosfstools gnupg2 curl
+          mkdir -p iso/{live,boot,isolinux,EFI/boot}
+          debootstrap --arch=amd64 --variant=minbase bookworm c http://deb.debian.org/debian/
+          chroot c bash <<'\''CH'\''
           export DEBIAN_FRONTEND=noninteractive
-          
-          # Setup sources with contrib and non-free for Steam and Liquorix
-          cat > /etc/apt/sources.list <<'\''EOF'\''
+          cat > /etc/apt/sources.list <<E
           deb http://deb.debian.org/debian bookworm main contrib non-free non-free-firmware
           deb http://deb.debian.org/debian-security bookworm-security main contrib non-free non-free-firmware
           deb http://deb.debian.org/debian bookworm-updates main contrib non-free non-free-firmware
-          EOF
-          
-          apt-get update
-          
-          # Install curl first for adding repositories
-          apt-get install -y curl gnupg2
-          
-          # Add Liquorix repository using DEB822 format
-          echo "=== Adding Liquorix kernel repository ==="
+          E
+          apt-get update && apt-get install -y curl gnupg2
           mkdir -p /usr/share/keyrings
           curl -fsSL https://liquorix.net/liquorix-keyring.gpg -o /usr/share/keyrings/liquorix-archive-keyring.gpg
-          
-          cat > /etc/apt/sources.list.d/liquorix.sources <<'\''LIQSRC'\''
+          cat > /etc/apt/sources.list.d/liquorix.sources <<L
           Types: deb
           URIs: https://liquorix.net/debian
           Suites: bookworm
           Components: main
           Architectures: amd64
           Signed-By: /usr/share/keyrings/liquorix-archive-keyring.gpg
-          LIQSRC
-          
+          L
           apt-get update
-          
-          # Install Liquorix kernel instead of standard kernel
-          echo "Installing Liquorix kernel, live-boot packages, and Plymouth..."
-          apt-get install -y \
-            linux-image-liquorix-amd64 \
-            linux-headers-liquorix-amd64 \
-            firmware-linux-free \
-            firmware-linux-nonfree \
-            live-boot \
-            live-boot-initramfs-tools \
-            systemd-sysv \
-            dbus \
-            plymouth \
-            plymouth-themes
-          
-          # Install Plasma Mobile (KDE Mobile Desktop Environment)
-          echo "Installing Plasma Mobile desktop environment..."
-          apt-get install -y \
-            plasma-mobile \
-            plasma-nm \
-            plasma-pa \
-            powerdevil \
-            kwin-wayland \
-            kwin-wayland-backend-drm \
-            sddm \
-            angelfish \
-            index-fm \
-            kalk \
-            kclock \
-            krecorder \
-            kweather \
-            spacebar \
-            vvave \
-            firefox-esr \
-            flatpak \
-            gparted \
-            ntfs-3g \
-            dosfstools \
-            e2fsprogs \
-            git \
-            curl \
-            wget \
-            vim \
-            nano \
-            network-manager \
-            qtvirtualkeyboard-plugin
-          
-          # Enable 32-bit architecture for Steam
-          echo "=== Enabling 32-bit architecture for Steam ==="
-          dpkg --add-architecture i386
-          apt-get update
-          
-          # Install Steam
-          echo "Installing Steam..."
-          apt-get install -y \
-            steam-installer \
-            libgl1-mesa-dri:amd64 \
-            libgl1-mesa-dri:i386 \
-            libgl1-mesa-glx:amd64 \
-            libgl1-mesa-glx:i386 \
-            mesa-vulkan-drivers:amd64 \
-            mesa-vulkan-drivers:i386
-          
-          # Install Refractainstaller (lightweight alternative to Calamares)
-          echo "Installing Refractainstaller..."
-          apt-get install -y wget xterm rsync grub-pc grub-efi-amd64
-          wget -O /tmp/refractainstaller-base.deb https://sourceforge.net/projects/refracta/files/tools/refractainstaller-base_9.5.6_all.deb/download
-          wget -O /tmp/refractainstaller-gui.deb https://sourceforge.net/projects/refracta/files/tools/refractainstaller-gui_9.5.6_all.deb/download
-          dpkg -i /tmp/refractainstaller-base.deb /tmp/refractainstaller-gui.deb || apt-get install -f -y
-          rm /tmp/refractainstaller-*.deb
-          
-          # Cybr branding
-          cat > /etc/os-release <<'\''OSREL'\''
+          apt-get install -y linux-image-liquorix-amd64 firmware-linux-free firmware-linux-nonfree live-boot systemd-sysv plymouth plymouth-themes
+          apt-get install -y plasma-mobile plasma-nm plasma-pa powerdevil kwin-wayland sddm qtvirtualkeyboard-plugin plasma-discover kde-config-mobile firefox-esr flatpak gparted ntfs-3g dosfstools e2fsprogs git curl wget vim nano network-manager kate konsole dolphin neofetch
+          dpkg --add-architecture i386 && apt-get update
+          apt-get install -y steam-installer libgl1-mesa-dri:amd64 libgl1-mesa-dri:i386 libgl1-mesa-glx:amd64 libgl1-mesa-glx:i386 mesa-vulkan-drivers:amd64 mesa-vulkan-drivers:i386
+          wget -O /tmp/discord.deb "https://discord.com/api/download?platform=linux&format=deb"
+          dpkg -i /tmp/discord.deb || apt-get install -f -y
+          apt-get install -y xterm rsync grub-pc grub-efi-amd64
+          wget -O /tmp/ri1.deb https://sourceforge.net/projects/refracta/files/tools/refractainstaller-base_9.5.6_all.deb/download
+          wget -O /tmp/ri2.deb https://sourceforge.net/projects/refracta/files/tools/refractainstaller-gui_9.5.6_all.deb/download
+          dpkg -i /tmp/ri1.deb /tmp/ri2.deb || apt-get install -f -y
+          cat > /etc/os-release <<O
           NAME="Cybr"
           PRETTY_NAME="Cybr Mobile Gaming Edition"
           ID=cybr
           ID_LIKE=debian
           VERSION_ID="1"
           HOME_URL="https://wolfos.uk/"
-          OSREL
-          
-          # Live user setup with custom name "Cybr Mobile"
+          O
+          wget -O /usr/share/pixmaps/cybr-logo.png "https://a.fsdn.com/allura/p/wolfos/icon?w=96&1748003641" || echo "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==" | base64 -d > /usr/share/pixmaps/cybr-logo.png
+          cp /usr/share/pixmaps/cybr-logo.png /usr/share/plymouth/debian-logo.png
+          cp /usr/share/pixmaps/cybr-logo.png /usr/share/plymouth/themes/spinner/watermark.png
+          cat >> /usr/share/plymouth/themes/spinner/spinner.plymouth <<P
+          WatermarkHorizontalAlignment=.5
+          WatermarkVerticalAlignment=.96
+          P
+          plymouth-set-default-theme spinner && update-initramfs -u
           useradd -m -s /bin/bash -G sudo,audio,video,netdev -c "Cybr Mobile" cybruser
-          echo "cybruser:live" | chpasswd
-          echo "root:root" | chpasswd
-          
-          # SDDM autologin for live user (Plasma Mobile uses SDDM)
+          echo "cybruser:live" | chpasswd && echo "root:root" | chpasswd
           mkdir -p /etc/sddm.conf.d
-          cat > /etc/sddm.conf.d/autologin.conf <<'\''SDDM'\''
+          cat > /etc/sddm.conf.d/autologin.conf <<S
           [Autologin]
           User=cybruser
           Session=plasma-mobile.desktop
-          
           [General]
           InputMethod=qtvirtualkeyboard
-          SDDM
-          
-          # Configure Plasma Mobile session as default
+          S
           mkdir -p /var/lib/AccountsService/users
-          cat > /var/lib/AccountsService/users/cybruser <<'\''ACCT'\''
+          cat > /var/lib/AccountsService/users/cybruser <<A
           [User]
           Session=plasma-mobile
           XSession=plasma-mobile
           Icon=/usr/share/pixmaps/cybr-logo.png
           SystemAccount=false
-          ACCT
-          
-          # Desktop launcher for installer
-          mkdir -p /home/cybruser/Desktop
-          cat > /home/cybruser/Desktop/calamares.desktop <<'\''DESK'\''
+          A
+          mkdir -p /home/cybruser/Desktop /home/cybruser/.config/autostart
+          cat > /home/cybruser/Desktop/install-cybr.desktop <<D
           [Desktop Entry]
           Type=Application
           Name=Install Cybr Linux
-          Exec=pkexec calamares
-          Icon=calamares
+          Exec=sudo refractainstaller-gui
+          Icon=system-software-install
           Terminal=false
-          DESK
-          chmod +x /home/cybruser/Desktop/calamares.desktop
-          
-          # Auto-start Calamares on first boot
-          mkdir -p /home/cybruser/.config/autostart
-          cat > /home/cybruser/.config/autostart/calamares-firstboot.desktop <<'\''AUTOSTART'\''
+          Categories=System;
+          D
+          cat > /home/cybruser/.config/autostart/installer-firstboot.desktop <<D
           [Desktop Entry]
           Type=Application
           Name=Cybr Installer
-          Exec=sh -c "sleep 5 && pkexec calamares"
-          Icon=calamares
+          Exec=sh -c "sleep 5 && sudo refractainstaller-gui"
+          Icon=system-software-install
           Terminal=false
           X-GNOME-Autostart-enabled=true
-          Comment=Launch Cybr installer on first boot
-          AUTOSTART
-          chmod +x /home/cybruser/.config/autostart/calamares-firstboot.desktop
-          
-          # Desktop launcher for Steam
-          cat > /home/cybruser/Desktop/steam.desktop <<'\''STEAM'\''
+          D
+          cat > /home/cybruser/Desktop/steam.desktop <<D
           [Desktop Entry]
           Type=Application
           Name=Steam
           Exec=steam
           Icon=steam
           Terminal=false
-          STEAM
-          chmod +x /home/cybruser/Desktop/steam.desktop
-          
+          Categories=Game;
+          D
+          cat > /home/cybruser/Desktop/discord.desktop <<D
+          [Desktop Entry]
+          Type=Application
+          Name=Discord
+          Exec=/usr/share/discord/Discord
+          Icon=discord
+          Terminal=false
+          Categories=Network;InstantMessaging;
+          D
+          chmod +x /home/cybruser/Desktop/*.desktop /home/cybruser/.config/autostart/*.desktop
+          echo "neofetch" >> /home/cybruser/.bashrc
           chown -R cybruser:cybruser /home/cybruser
-          
-          # Enable services
           systemctl enable sddm NetworkManager
-          
-          # Cleanup
-          apt-get clean
-          rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/* /var/cache/apt/archives/*.deb
-          CHROOT
-          
-          echo "=== Copying kernel and initrd to ISO ==="
-          echo "Contents of chroot/boot:"
-          ls -la chroot/boot/
-          
-          # Copy kernel and initrd to ISO boot directory
-          cp -rv chroot/boot/* iso/boot/
-          
-          echo "=== Verifying boot files ==="
-          ls -lh iso/boot/
-          
-          # Get Liquorix kernel version
-          KERNEL_VERSION=$(ls iso/boot/vmlinuz-*-liquorix-amd64 | head -n1 | sed "s|iso/boot/vmlinuz-||")
-          echo "Liquorix Kernel version: $KERNEL_VERSION"
-          
-          echo "=== Creating squashfs ==="
-          # Create squashfs - EXCLUDE boot since we copied it separately
-          mksquashfs chroot iso/live/filesystem.squashfs -comp xz -b 1M -Xdict-size 100% -e boot
-          echo "Squashfs created:"
-          ls -lh iso/live/filesystem.squashfs
-          
-          # Download splash
+          apt-get clean && rm -rf /var/lib/apt/lists/* /tmp/*
+          CH
+          cp -r c/boot/* iso/boot/
+          K=$(ls iso/boot/vmlinuz-*liquorix* | head -1 | sed "s|iso/boot/vmlinuz-||")
+          mksquashfs c iso/live/filesystem.squashfs -comp xz -b 1M -Xdict-size 100% -e boot
           wget -O iso/isolinux/splash.png "https://a.fsdn.com/allura/p/wolfos/icon?w=96&1748003641" || true
-          
-          # ========================================
-          # BIOS BOOT: ISOLINUX configuration
-          # ========================================
-          echo "=== Setting up ISOLINUX (BIOS boot) ==="
-          
-          cat > iso/isolinux/isolinux.cfg <<ISOLINUX
+          cat > iso/isolinux/isolinux.cfg <<I
           UI vesamenu.c32
           MENU TITLE Cybr Mobile Gaming - Boot Menu
           MENU BACKGROUND splash.png
-          MENU COLOR title 1;36;44 #9033ccff #a0000000
-          MENU COLOR sel 7;37;40 #e0ffffff #20ff8000
           DEFAULT live
           TIMEOUT 150
-          
           LABEL live
             MENU LABEL Cybr (Live - Liquorix Kernel)
-            KERNEL /boot/vmlinuz-${KERNEL_VERSION}
-            APPEND initrd=/boot/initrd.img-${KERNEL_VERSION} boot=live components quiet splash plymouth.ignore-serial-consoles live-media-path=/live
-          
+            KERNEL /boot/vmlinuz-${K}
+            APPEND initrd=/boot/initrd.img-${K} boot=live components quiet splash plymouth.ignore-serial-consoles live-media-path=/live
           LABEL live-safe
             MENU LABEL Cybr (Safe Graphics)
-            KERNEL /boot/vmlinuz-${KERNEL_VERSION}
-            APPEND initrd=/boot/initrd.img-${KERNEL_VERSION} boot=live components nomodeset plymouth.ignore-serial-consoles live-media-path=/live
-          
-          LABEL live-failsafe
-            MENU LABEL Cybr (Failsafe)
-            KERNEL /boot/vmlinuz-${KERNEL_VERSION}
-            APPEND initrd=/boot/initrd.img-${KERNEL_VERSION} boot=live components noapic noacpi nosplash nomodeset irqpoll live-media-path=/live
-          ISOLINUX
-          
-          # Copy isolinux files
-          cp /usr/lib/ISOLINUX/isolinux.bin iso/isolinux/
-          cp /usr/lib/syslinux/modules/bios/*.c32 iso/isolinux/
-          
-          # Verify isolinux files
-          ls -lh iso/isolinux/
-          
-          # ========================================
-          # UEFI BOOT: Simple SYSLINUX configuration (NO GRUB, NO COM32!)
-          # ========================================
-          echo "=== Setting up SYSLINUX for UEFI boot (NO GRUB, NO COM32) ==="
-          
-          # Create simple SYSLINUX config for UEFI (no menu, no .c32 modules)
-          cat > iso/EFI/boot/syslinux.cfg <<SYSLINUX
+            KERNEL /boot/vmlinuz-${K}
+            APPEND initrd=/boot/initrd.img-${K} boot=live components nomodeset plymouth.ignore-serial-consoles live-media-path=/live
+          I
+          cp /usr/lib/ISOLINUX/isolinux.bin iso/isolinux/ && cp /usr/lib/syslinux/modules/bios/*.c32 iso/isolinux/
+          cat > iso/EFI/boot/syslinux.cfg <<E
           DEFAULT live
           TIMEOUT 50
-          
           LABEL live
-            LINUX /boot/vmlinuz-${KERNEL_VERSION}
+            LINUX /boot/vmlinuz-${K}
             APPEND boot=live components quiet splash plymouth.ignore-serial-consoles live-media-path=/live
-            INITRD /boot/initrd.img-${KERNEL_VERSION}
-          
-          LABEL live-safe
-            LINUX /boot/vmlinuz-${KERNEL_VERSION}
-            APPEND boot=live components nomodeset plymouth.ignore-serial-consoles live-media-path=/live
-            INITRD /boot/initrd.img-${KERNEL_VERSION}
-          
-          LABEL live-failsafe
-            LINUX /boot/vmlinuz-${KERNEL_VERSION}
-            APPEND boot=live components noapic noacpi nosplash nomodeset irqpoll live-media-path=/live
-            INITRD /boot/initrd.img-${KERNEL_VERSION}
-          SYSLINUX
-          
-          # Copy SYSLINUX EFI bootloader
+            INITRD /boot/initrd.img-${K}
+          E
           cp /usr/lib/SYSLINUX.EFI/efi64/syslinux.efi iso/EFI/boot/bootx64.efi
-          
-          # Copy only essential EFI modules (ldlinux.e64 is required)
           cp /usr/lib/syslinux/modules/efi64/ldlinux.e64 iso/EFI/boot/ || true
-          
-          # Verify EFI setup
-          echo "=== Verifying UEFI boot setup ==="
-          ls -lh iso/EFI/boot/
-          
-          # Create ESP image for UEFI boot
-          echo "=== Creating EFI System Partition image ==="
-          dd if=/dev/zero of=efiboot.img bs=1M count=10
-          mkfs.vfat efiboot.img
-          
-          # Mount and copy EFI boot files
-          mkdir -p efi_mount
-          mount -o loop efiboot.img efi_mount
-          mkdir -p efi_mount/EFI/boot
-          cp -r iso/EFI/boot/* efi_mount/EFI/boot/
-          umount efi_mount
-          rmdir efi_mount
-          
+          dd if=/dev/zero of=efiboot.img bs=1M count=10 && mkfs.vfat efiboot.img
+          mkdir m && mount -o loop efiboot.img m && mkdir -p m/EFI/boot && cp -r iso/EFI/boot/* m/EFI/boot/ && umount m && rmdir m
           mv efiboot.img iso/
-          
-          # Final verification of ISO structure
-          echo "=== Final ISO structure ==="
-          find iso/ -type f -ls
-          
-          # Create ISO with SYSLINUX boot (NO GRUB!)
-          echo "=== Creating ISO image with SYSLINUX boot ==="
-          xorriso -as mkisofs \
-            -iso-level 3 \
-            -full-iso9660-filenames \
-            -joliet \
-            -joliet-long \
-            -rational-rock \
-            -volid "CYBR_MOBILE" \
-            -appid "Cybr Mobile Gaming Edition" \
-            -publisher "https://wolfos.uk" \
-            -preparer "Cybr Build System (Phosh + Steam + Liquorix)" \
-            -eltorito-boot isolinux/isolinux.bin \
-            -eltorito-catalog isolinux/boot.cat \
-            -no-emul-boot \
-            -boot-load-size 4 \
-            -boot-info-table \
-            -isohybrid-mbr /usr/lib/ISOLINUX/isohdpfx.bin \
-            -eltorito-alt-boot \
-            -e efiboot.img \
-            -no-emul-boot \
-            -isohybrid-gpt-basdat \
-            -output "/workspace/${ISO_NAME}.iso" \
-            iso/
-          
-          echo "=== Build complete ==="
-          echo "ISO created successfully: ${ISO_NAME}.iso"
-          echo "Desktop Environment: Plasma Mobile (KDE mobile shell)"
-          echo "Kernel: Liquorix (optimized for gaming)"
-          echo "Gaming Platform: Steam included"
-          echo "Boot method: SYSLINUX (BIOS) + SYSLINUX (UEFI) - NO GRUB!"
-          ls -lh "/workspace/${ISO_NAME}.iso"
+          xorriso -as mkisofs -iso-level 3 -full-iso9660-filenames -joliet -rational-rock -volid "CYBR_MOBILE" -eltorito-boot isolinux/isolinux.bin -eltorito-catalog isolinux/boot.cat -no-emul-boot -boot-load-size 4 -boot-info-table -isohybrid-mbr /usr/lib/ISOLINUX/isohdpfx.bin -eltorito-alt-boot -e efiboot.img -no-emul-boot -isohybrid-gpt-basdat -output "/w/${ISO_NAME}.iso" iso/
           '
-
-      - name: Verify ISO contents
-        run: |
-          echo "=== Verifying ISO contents ==="
-          sudo apt-get update && sudo apt-get install -y xorriso
-          xorriso -indev "${{ steps.set-iso-name.outputs.iso_name }}.iso" -find / -exec report_lba -- 2>&1 | grep -E "(vmlinuz|initrd|filesystem.squashfs)" || echo "Files found in ISO"
 
       - name: Generate checksums
         run: |
@@ -405,13 +183,8 @@ jobs:
           sha256sum "${ISO_NAME}.iso" > "${ISO_NAME}.iso.sha256"
           ISO_SIZE=$(($(stat -c%s "${ISO_NAME}.iso")/1024/1024))
           echo "### Cybr Mobile Gaming Edition Build Complete! 📱🎮🎉" >> $GITHUB_STEP_SUMMARY
-          echo "**ISO:** ${ISO_NAME}.iso" >> $GITHUB_STEP_SUMMARY
-          echo "**Size:** ${ISO_SIZE}MB" >> $GITHUB_STEP_SUMMARY
-          echo "**Desktop:** Plasma Mobile (KDE Mobile)" >> $GITHUB_STEP_SUMMARY
-          echo "**Kernel:** Liquorix (Gaming Optimized)" >> $GITHUB_STEP_SUMMARY
-          echo "**Gaming:** Steam Pre-installed" >> $GITHUB_STEP_SUMMARY
-          echo "**Boot Method:** SYSLINUX (BIOS + UEFI) - NO GRUB" >> $GITHUB_STEP_SUMMARY
-          echo "**SHA256:** \`$(cat ${ISO_NAME}.iso.sha256 | cut -d' ' -f1)\`" >> $GITHUB_STEP_SUMMARY
+          echo "**ISO:** ${ISO_NAME}.iso | **Size:** ${ISO_SIZE}MB" >> $GITHUB_STEP_SUMMARY
+          echo "**Desktop:** Plasma Mobile | **Kernel:** Liquorix | **Gaming:** Steam" >> $GITHUB_STEP_SUMMARY
 
       - uses: actions/upload-artifact@v4
         with:
@@ -439,8 +212,7 @@ jobs:
           [ -z "$SF_USER" ] || [ -z "$SF_PASS" ] && echo "Configure SF secrets" && exit 0
           sudo apt-get update && sudo apt-get install -y sshpass rsync
           for i in 1 2 3; do
-            timeout 1800 sshpass -p "$SF_PASS" rsync -avP -e "ssh -o StrictHostKeyChecking=no" \
-              "${ISO_NAME}.iso" "$SF_USER@frs.sourceforge.net:/home/frs/project/wolfos/gaming/" && break
+            timeout 1800 sshpass -p "$SF_PASS" rsync -avP -e "ssh -o StrictHostKeyChecking=no" "${ISO_NAME}.iso" "$SF_USER@frs.sourceforge.net:/home/frs/project/wolfos/gaming/" && break
             [ $i -eq 3 ] && exit 1
             sleep 30
           done
