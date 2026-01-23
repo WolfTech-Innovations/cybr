@@ -1,4 +1,4 @@
-name: "Cybr Build (Plasma Mobile + Steam + Liquorix)"
+name: "Cybr Build (Phosh + Steam + Liquorix)"
 
 on:
   workflow_dispatch:
@@ -55,7 +55,7 @@ jobs:
           L
           apt-get update
           apt-get install -y linux-image-liquorix-amd64 firmware-linux-free firmware-linux-nonfree live-boot systemd-sysv plymouth plymouth-themes
-          apt-get install -y plasma-mobile plasma-nm plasma-pa powerdevil kwin-wayland sddm qtvirtualkeyboard-plugin plasma-discover kde-config-mobile firefox-esr flatpak gparted ntfs-3g dosfstools e2fsprogs git curl wget vim nano network-manager kate konsole dolphin neofetch
+          apt-get install -y phosh-full phoc squeekboard gdm3 gnome-contacts gnome-calls chatty firefox-esr flatpak gparted ntfs-3g dosfstools e2fsprogs git curl wget vim nano network-manager network-manager-gnome neofetch
           dpkg --add-architecture i386 && apt-get update
           apt-get install -y steam-installer libgl1-mesa-dri:amd64 libgl1-mesa-dri:i386 libgl1-mesa-glx:amd64 libgl1-mesa-glx:i386 mesa-vulkan-drivers:amd64 mesa-vulkan-drivers:i386
           wget -O /tmp/discord.deb "https://discord.com/api/download?platform=linux&format=deb"
@@ -70,7 +70,7 @@ jobs:
           ID=cybr
           ID_LIKE=debian
           VERSION_ID="1"
-          HOME_URL="https://wolfos.uk/"
+          HOME_URL="https://getcybr.org/"
           O
           wget -O /usr/share/pixmaps/cybr-logo.png "https://a.fsdn.com/allura/p/wolfos/icon?w=96&1748003641" || echo "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==" | base64 -d > /usr/share/pixmaps/cybr-logo.png
           cp /usr/share/pixmaps/cybr-logo.png /usr/share/plymouth/debian-logo.png
@@ -82,22 +82,12 @@ jobs:
           plymouth-set-default-theme spinner && update-initramfs -u
           useradd -m -s /bin/bash -G sudo,audio,video,netdev -c "Cybr Mobile" cybruser
           echo "cybruser:live" | chpasswd && echo "root:root" | chpasswd
-          mkdir -p /etc/sddm.conf.d
-          cat > /etc/sddm.conf.d/autologin.conf <<S
-          [Autologin]
-          User=cybruser
-          Session=plasma-mobile.desktop
-          [General]
-          InputMethod=qtvirtualkeyboard
-          S
-          mkdir -p /var/lib/AccountsService/users
-          cat > /var/lib/AccountsService/users/cybruser <<A
-          [User]
-          Session=plasma-mobile
-          XSession=plasma-mobile
-          Icon=/usr/share/pixmaps/cybr-logo.png
-          SystemAccount=false
-          A
+          mkdir -p /etc/gdm3
+          cat > /etc/gdm3/custom.conf <<G
+          [daemon]
+          AutomaticLoginEnable=true
+          AutomaticLogin=cybruser
+          G
           mkdir -p /home/cybruser/Desktop /home/cybruser/.config/autostart
           cat > /home/cybruser/Desktop/install-cybr.desktop <<D
           [Desktop Entry]
@@ -138,7 +128,7 @@ jobs:
           chmod +x /home/cybruser/Desktop/*.desktop /home/cybruser/.config/autostart/*.desktop
           echo "neofetch" >> /home/cybruser/.bashrc
           chown -R cybruser:cybruser /home/cybruser
-          systemctl enable sddm NetworkManager
+          systemctl enable gdm3 NetworkManager
           apt-get clean && rm -rf /var/lib/apt/lists/* /tmp/*
           CH
           cp -r c/boot/* iso/boot/
@@ -184,7 +174,7 @@ jobs:
           ISO_SIZE=$(($(stat -c%s "${ISO_NAME}.iso")/1024/1024))
           echo "### Cybr Mobile Gaming Edition Build Complete! 📱🎮🎉" >> $GITHUB_STEP_SUMMARY
           echo "**ISO:** ${ISO_NAME}.iso | **Size:** ${ISO_SIZE}MB" >> $GITHUB_STEP_SUMMARY
-          echo "**Desktop:** Plasma Mobile | **Kernel:** Liquorix | **Gaming:** Steam" >> $GITHUB_STEP_SUMMARY
+          echo "**Desktop:** Phosh (Mobile GNOME) | **Kernel:** Liquorix | **Gaming:** Steam + Discord" >> $GITHUB_STEP_SUMMARY
 
       - uses: actions/upload-artifact@v4
         with:
