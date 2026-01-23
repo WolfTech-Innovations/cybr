@@ -3,37 +3,35 @@
 ![WTLogo](https://github.com/WolfTech-Innovations/cybr/blob/51e1cbc62285ed52d3deb320b47af5670b163d6e/images/Screenshot_20260120-190710.png)
 [![Cybr Build System](https://github.com/WolfTech-Innovations/cybr/actions/workflows/build.yaml/badge.svg)](https://github.com/WolfTech-Innovations/cybr/actions/workflows/build.yaml)
 
-Cybr is the first Linux distribution built specifically for handheld gaming PCs and convertible devices. Combining Debian's rock-solid foundation with Plasma Mobile's touch-optimized interface, Liquorix's gaming-tuned kernel, and Steam pre-configured, Cybr delivers desktop-class gaming in a mobile-first package.
+Cybr is the first Linux distribution built specifically for handheld gaming PCs and convertible devices. Combining Debian's rock-solid foundation with Phosh's touch-optimized interface, Liquorix's gaming-tuned kernel, and Steam pre-configured, Cybr delivers desktop-class gaming in a mobile-first package.
 
 **Perfect for:** Steam Deck alternatives, GPD devices, AYANEO handhelds, gaming tablets, and 2-in-1 laptops.
 
 ## Features
 
 - **Base**: Debian Bookworm (stable, secure, compatible)
-- **Desktop**: Plasma Mobile (KDE's touch-optimized shell)
+- **Desktop**: Phosh (GNOME-based mobile shell)
 - **Kernel**: Liquorix (gaming-optimized, low-latency, 1000Hz tick rate)
 - **Gaming**: Steam pre-installed with full Vulkan support
 - **Installer**: Refractainstaller (lightweight, reliable)
-- **Display Server**: Wayland (KWin compositor)
+- **Display Server**: Wayland (Phoc compositor)
 - **Communications**: Discord with Vencord support
 - **Package Management**: APT + Flatpak support
 
 ## What's Included
 
 ### Desktop Environment
-- Plasma Mobile touch-optimized interface
-- SDDM display manager with auto-login
-- Qt Virtual Keyboard for on-screen input
+- Phosh mobile-optimized interface
+- GDM3 display manager with auto-login
+- Squeekboard on-screen keyboard
 - Gesture-friendly navigation
-- Desktop and tablet modes
+- Touch-optimized GNOME apps
 
 ### Pre-installed Applications
 - **Web Browser**: Firefox ESR
 - **Gaming Platform**: Steam with complete 32-bit library support
 - **Communications**: Discord (Vencord-ready for customization)
-- **File Manager**: Dolphin
-- **Text Editor**: Kate
-- **Terminal**: Konsole
+- **Mobile Apps**: GNOME Contacts, GNOME Calls, Chatty
 - **Partition Editor**: GParted
 - **System Info**: Neofetch (auto-launches in terminal)
 
@@ -90,7 +88,7 @@ sudo dd if=cybr-linux-v*.iso of=/dev/sdX bs=4M status=progress && sync
 ## First Boot
 
 On first boot, Cybr is ready to game with:
-- Plasma Mobile interface configured for touch
+- Phosh mobile interface configured for touch
 - Steam pre-installed and ready to launch
 - Discord ready for voice chat with friends
 - Liquorix gaming kernel active
@@ -154,7 +152,7 @@ cd cybr
 
 The build process uses Docker and creates a bootable ISO with:
 - Debian Bookworm base system
-- Plasma Mobile desktop environment
+- Phosh mobile desktop environment
 - Liquorix gaming kernel
 - Steam, Discord, and gaming libraries
 - Refractainstaller
@@ -213,14 +211,14 @@ Cybr comes pre-optimized, but you can further tune:
 - Check graphics drivers: `glxinfo | grep OpenGL`
 
 ### Touch Keyboard Not Appearing
-- Manually launch: `qtvirtualkeyboard`
-- Configure in System Settings → Input Devices
+- Manually launch: `squeekboard`
+- Configure in Settings → Accessibility
 
 ## Credits
 
 Cybr is built on the shoulders of giants:
 - **Debian Project** - Rock-solid base system and package management
-- **KDE Plasma Mobile Team** - Touch-optimized desktop environment
+- **GNOME & Phosh Teams** - Touch-optimized mobile desktop environment
 - **Liquorix Team** - Gaming-optimized kernel
 - **Valve** - Steam platform and Proton compatibility layer
 - **Refracta Project** - Lightweight installer
@@ -249,6 +247,6 @@ This project is community-driven and welcomes contributions.
 
 ---
 
-**Note**: Cybr is not affiliated with or endorsed by Debian, KDE, Plasma Mobile, Liquorix, Valve, Discord, or any upstream projects. All trademarks belong to their respective owners. Steam and the Steam logo are trademarks of Valve Corporation.
+**Note**: Cybr is not affiliated with or endorsed by Debian, GNOME, Phosh, Liquorix, Valve, Discord, or any upstream projects. All trademarks belong to their respective owners. Steam and the Steam logo are trademarks of Valve Corporation.
 
 **Made with ❤️ for the handheld gaming community**
