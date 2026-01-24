@@ -32,43 +32,54 @@ jobs:
           ISO_NAME="${{ steps.set-iso-name.outputs.iso_name }}"
           docker run --rm --privileged -v "$PWD:/w" -e ISO_NAME="${ISO_NAME}" debian:bookworm bash -c '
           set -euo pipefail
-          apt-get update && apt-get install -y debootstrap squashfs-tools xorriso isolinux syslinux-efi mtools wget dosfstools gnupg2 curl
+          
+          apt-get update
+          apt-get install -y debootstrap squashfs-tools xorriso isolinux syslinux-efi mtools wget dosfstools gnupg2 curl
+          
           mkdir -p iso/{live,boot,isolinux,EFI/boot}
-          debootstrap --arch=amd64 --variant=minbase bookworm c http://deb.debian.org/debian/
-          chroot c bash <<'\''CH'\''
+          
+          debootstrap --arch=amd64 --variant=minbase bookworm chroot http://deb.debian.org/debian/
+          
+          chroot chroot /bin/bash <<CHROOTEOF
           export DEBIAN_FRONTEND=noninteractive
-          cat > /etc/apt/sources.list <<E
-          deb http://deb.debian.org/debian bookworm main contrib non-free non-free-firmware
-          deb http://deb.debian.org/debian-security bookworm-security main contrib non-free non-free-firmware
-          deb http://deb.debian.org/debian bookworm-updates main contrib non-free non-free-firmware
-          E
-          apt-get update && apt-get install -y curl gnupg2 ca-certificates
+          
+          cat > /etc/apt/sources.list <<EOF
+deb http://deb.debian.org/debian bookworm main contrib non-free non-free-firmware
+deb http://deb.debian.org/debian-security bookworm-security main contrib non-free non-free-firmware
+deb http://deb.debian.org/debian bookworm-updates main contrib non-free non-free-firmware
+EOF
+          
+          apt-get update
+          apt-get install -y curl gnupg2 ca-certificates
+          
           mkdir -p /usr/share/keyrings
           curl -fsSL https://liquorix.net/liquorix-keyring.gpg -o /usr/share/keyrings/liquorix-archive-keyring.gpg
-          cat > /etc/apt/sources.list.d/liquorix.sources <<L
-          Types: deb
-          URIs: https://liquorix.net/debian
-          Suites: bookworm
-          Components: main
-          Architectures: amd64
-          Signed-By: /usr/share/keyrings/liquorix-archive-keyring.gpg
-          L
+          
+          cat > /etc/apt/sources.list.d/liquorix.sources <<EOF
+Types: deb
+URIs: https://liquorix.net/debian
+Suites: bookworm
+Components: main
+Architectures: amd64
+Signed-By: /usr/share/keyrings/liquorix-archive-keyring.gpg
+EOF
+          
           apt-get update
           apt-get install -y linux-image-liquorix-amd64 linux-headers-liquorix-amd64 firmware-linux-free firmware-linux-nonfree live-boot systemd-sysv plymouth plymouth-themes
+          
           apt-get install -y phosh-full phoc squeekboard gdm3 gnome-contacts gnome-calls chatty firefox-esr flatpak gparted ntfs-3g dosfstools e2fsprogs git curl wget vim nano network-manager network-manager-gnome neofetch htop
           
-          # Install DKMS and build tools for Steam Deck patches
           apt-get install -y dkms build-essential debhelper dpkg-dev
           
-          # Clone and build steamdeck-dkms
           cd /tmp
-          git clone https://github.com/firlin123/steamdeck-dkms.git
-          cd steamdeck-dkms
-          dpkg-buildpackage -us -uc || true
-          cd /tmp
-          dpkg -i steamdeck-dkms*.deb || apt-get install -f -y
+          git clone https://github.com/firlin123/steamdeck-dkms.git || true
+          if [ -d steamdeck-dkms ]; then
+            cd steamdeck-dkms
+            dpkg-buildpackage -us -uc || true
+            cd /tmp
+            dpkg -i steamdeck-dkms*.deb 2>/dev/null || apt-get install -f -y
+          fi
           
-          # Install jupiter-fan-control for Steam Deck fan management
           cd /tmp
           git clone https://gitlab.com/evlaV/jupiter-fan-control.git || true
           if [ -d jupiter-fan-control ]; then
@@ -76,244 +87,283 @@ jobs:
             make install PREFIX=/usr || true
           fi
           
-          dpkg --add-architecture i386 && apt-get update
+          dpkg --add-architecture i386
+          apt-get update
           apt-get install -y steam-installer libgl1-mesa-dri:amd64 libgl1-mesa-dri:i386 libgl1-mesa-glx:amd64 libgl1-mesa-glx:i386 mesa-vulkan-drivers:amd64 mesa-vulkan-drivers:i386
           
-          # Install Vesktop (Discord with Vencord built-in)
           cd /tmp
-          VESKTOP_VER=$(curl -s https://api.github.com/repos/Vencord/Vesktop/releases/latest | grep "tag_name" | cut -d '"'"'" -f 4 | sed "s/v//")
-          wget "https://github.com/Vencord/Vesktop/releases/latest/download/vesktop_${VESKTOP_VER}_amd64.deb" -O vesktop.deb
-          dpkg -i vesktop.deb || apt-get install -f -y
+          VESKTOP_VER=\$(curl -s https://api.github.com/repos/Vencord/Vesktop/releases/latest | grep tag_name | cut -d '"' -f 4 | sed s/v//)
+          wget "https://github.com/Vencord/Vesktop/releases/latest/download/vesktop_\${VESKTOP_VER}_amd64.deb" -O vesktop.deb || true
+          dpkg -i vesktop.deb 2>/dev/null || apt-get install -f -y
           
-          # Install Lutris for non-Steam games
           apt-get install -y lutris
           
-          # Install Heroic Games Launcher (Epic/GOG)
           cd /tmp
-          HEROIC_VER=$(curl -s https://api.github.com/repos/Heroic-Games-Launcher/HeroicGamesLauncher/releases/latest | grep "tag_name" | cut -d '"'"'" -f 4 | sed "s/v//")
-          wget "https://github.com/Heroic-Games-Launcher/HeroicGamesLauncher/releases/latest/download/heroic_${HEROIC_VER}_amd64.deb" -O heroic.deb || true
+          HEROIC_VER=\$(curl -s https://api.github.com/repos/Heroic-Games-Launcher/HeroicGamesLauncher/releases/latest | grep tag_name | cut -d '"' -f 4 | sed s/v//)
+          wget "https://github.com/Heroic-Games-Launcher/HeroicGamesLauncher/releases/latest/download/heroic_\${HEROIC_VER}_amd64.deb" -O heroic.deb || true
           dpkg -i heroic.deb 2>/dev/null || apt-get install -f -y
           
-          # Install RetroArch for emulation
           apt-get install -y retroarch libretro-* || true
           
-          # Install mangohud for performance overlay
           apt-get install -y mangohud mangohud:i386 goverlay
           
-          # Install gamescope (compositor for gaming)
           apt-get install -y gamescope || true
           
-          # Install ProtonUp-Qt for easy Proton-GE management
           cd /tmp
           wget "https://github.com/DavidoTek/ProtonUp-Qt/releases/latest/download/ProtonUp-Qt.AppImage" -O /usr/local/bin/protonup-qt || true
           chmod +x /usr/local/bin/protonup-qt 2>/dev/null || true
           
           apt-get install -y xterm rsync grub-pc grub-efi-amd64
+          
           wget -O /tmp/ri1.deb https://sourceforge.net/projects/refracta/files/tools/refractainstaller-base_9.5.6_all.deb/download
           wget -O /tmp/ri2.deb https://sourceforge.net/projects/refracta/files/tools/refractainstaller-gui_9.5.6_all.deb/download
           dpkg -i /tmp/ri1.deb /tmp/ri2.deb || apt-get install -f -y
-          cat > /etc/os-release <<'\''O'\''
-          NAME="Cybr"
-          PRETTY_NAME="Cybr Mobile Gaming Edition - Steam Deck Ready"
-          ID=cybr
-          ID_LIKE=debian
-          VERSION_ID="1.0"
-          HOME_URL="https://getcybr.org/"
-          O
+          
+          cat > /etc/os-release <<EOF
+NAME="Cybr Linux"
+PRETTY_NAME="Cybr Linux"
+ID=cybr
+ID_LIKE=debian
+VERSION_ID="1.0"
+HOME_URL="https://getcybr.org/"
+EOF
+          
           wget -O /usr/share/pixmaps/cybr-logo.png "https://a.fsdn.com/allura/p/wolfos/icon?w=96&1748003641" || echo "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==" | base64 -d > /usr/share/pixmaps/cybr-logo.png
+          
           cp /usr/share/pixmaps/cybr-logo.png /usr/share/plymouth/debian-logo.png
           cp /usr/share/pixmaps/cybr-logo.png /usr/share/plymouth/themes/spinner/watermark.png
-          cat >> /usr/share/plymouth/themes/spinner/spinner.plymouth <<P
-          WatermarkHorizontalAlignment=.5
-          WatermarkVerticalAlignment=.96
-          P
-          plymouth-set-default-theme spinner && update-initramfs -u
-          useradd -m -s /bin/bash -G sudo,audio,video,netdev -c "Cybr Mobile" cybruser
-          echo "cybruser:live" | chpasswd && echo "root:root" | chpasswd
+          
+          cat >> /usr/share/plymouth/themes/spinner/spinner.plymouth <<EOF
+WatermarkHorizontalAlignment=.5
+WatermarkVerticalAlignment=.96
+EOF
+          
+          plymouth-set-default-theme spinner
+          update-initramfs -u
+          
+          useradd -m -s /bin/bash -G sudo,audio,video,netdev -c "Cybr User" cybruser
+          echo "cybruser:live" | chpasswd
+          echo "root:root" | chpasswd
+          
           mkdir -p /etc/gdm3
-          cat > /etc/gdm3/custom.conf <<G
-          [daemon]
-          AutomaticLoginEnable=true
-          AutomaticLogin=cybruser
-          G
+          cat > /etc/gdm3/custom.conf <<EOF
+[daemon]
+AutomaticLoginEnable=true
+AutomaticLogin=cybruser
+EOF
+          
           mkdir -p /home/cybruser/Desktop /home/cybruser/.config/autostart /home/cybruser/.config/MangoHud
           
-          # MangoHud default config
-          cat > /home/cybruser/.config/MangoHud/MangoHud.conf <<MH
-          fps
-          frametime
-          cpu_temp
-          gpu_temp
-          ram
-          vram
-          position=top-left
-          MH
+          cat > /home/cybruser/.config/MangoHud/MangoHud.conf <<EOF
+fps
+frametime
+cpu_temp
+gpu_temp
+ram
+vram
+position=top-left
+EOF
           
-          cat > /home/cybruser/Desktop/install-cybr.desktop <<D
-          [Desktop Entry]
-          Type=Application
-          Name=Install Cybr Linux
-          Exec=sudo refractainstaller-gui
-          Icon=system-software-install
-          Terminal=false
-          Categories=System;
-          D
-          cat > /home/cybruser/.config/autostart/installer-firstboot.desktop <<D
-          [Desktop Entry]
-          Type=Application
-          Name=Cybr Installer
-          Exec=sh -c "sleep 5 && sudo refractainstaller-gui"
-          Icon=system-software-install
-          Terminal=false
-          X-GNOME-Autostart-enabled=true
-          D
-          cat > /home/cybruser/Desktop/steam.desktop <<D
-          [Desktop Entry]
-          Type=Application
-          Name=Steam
-          Exec=steam
-          Icon=steam
-          Terminal=false
-          Categories=Game;
-          D
-          cat > /home/cybruser/Desktop/vesktop.desktop <<D
-          [Desktop Entry]
-          Type=Application
-          Name=Vesktop (Discord + Vencord)
-          Exec=vesktop
-          Icon=discord
-          Terminal=false
-          Categories=Network;InstantMessaging;
-          D
-          cat > /home/cybruser/Desktop/heroic.desktop <<D
-          [Desktop Entry]
-          Type=Application
-          Name=Heroic Games Launcher
-          Exec=heroic
-          Icon=heroic
-          Terminal=false
-          Categories=Game;
-          D
-          cat > /home/cybruser/Desktop/lutris.desktop <<D
-          [Desktop Entry]
-          Type=Application
-          Name=Lutris
-          Exec=lutris
-          Icon=lutris
-          Terminal=false
-          Categories=Game;
-          D
-          cat > /home/cybruser/Desktop/retroarch.desktop <<D
-          [Desktop Entry]
-          Type=Application
-          Name=RetroArch
-          Exec=retroarch
-          Icon=retroarch
-          Terminal=false
-          Categories=Game;Emulator;
-          D
+          cat > /home/cybruser/Desktop/install-cybr.desktop <<EOF
+[Desktop Entry]
+Type=Application
+Name=Install Cybr Linux
+Exec=sudo refractainstaller-gui
+Icon=system-software-install
+Terminal=false
+Categories=System;
+EOF
+          
+          cat > /home/cybruser/.config/autostart/installer-firstboot.desktop <<EOF
+[Desktop Entry]
+Type=Application
+Name=Cybr Installer
+Exec=sh -c "sleep 5 && sudo refractainstaller-gui"
+Icon=system-software-install
+Terminal=false
+X-GNOME-Autostart-enabled=true
+EOF
+          
+          cat > /home/cybruser/Desktop/steam.desktop <<EOF
+[Desktop Entry]
+Type=Application
+Name=Steam
+Exec=steam
+Icon=steam
+Terminal=false
+Categories=Game;
+EOF
+          
+          cat > /home/cybruser/Desktop/vesktop.desktop <<EOF
+[Desktop Entry]
+Type=Application
+Name=Vesktop
+Exec=vesktop
+Icon=discord
+Terminal=false
+Categories=Network;InstantMessaging;
+EOF
+          
+          cat > /home/cybruser/Desktop/heroic.desktop <<EOF
+[Desktop Entry]
+Type=Application
+Name=Heroic Games Launcher
+Exec=heroic
+Icon=heroic
+Terminal=false
+Categories=Game;
+EOF
+          
+          cat > /home/cybruser/Desktop/lutris.desktop <<EOF
+[Desktop Entry]
+Type=Application
+Name=Lutris
+Exec=lutris
+Icon=lutris
+Terminal=false
+Categories=Game;
+EOF
+          
+          cat > /home/cybruser/Desktop/retroarch.desktop <<EOF
+[Desktop Entry]
+Type=Application
+Name=RetroArch
+Exec=retroarch
+Icon=retroarch
+Terminal=false
+Categories=Game;Emulator;
+EOF
+          
           chmod +x /home/cybruser/Desktop/*.desktop /home/cybruser/.config/autostart/*.desktop
           
-          # Create Steam Deck detection and setup script
-          cat > /usr/local/bin/steamdeck-setup <<'\''DECK'\''
-          #!/bin/bash
-          # Auto-detect Steam Deck and enable hardware support
-          if [ -f /sys/devices/virtual/dmi/id/product_name ]; then
-            PRODUCT=$(cat /sys/devices/virtual/dmi/id/product_name)
-            if [[ "$PRODUCT" == *"Jupiter"* ]] || [[ "$PRODUCT" == *"Galileo"* ]]; then
-              echo "Steam Deck detected! Enabling hardware support..."
-              modprobe steamdeck 2>/dev/null || echo "steamdeck module not available"
-              modprobe steamdeck_hwmon 2>/dev/null || true
-              modprobe steamdeck_leds 2>/dev/null || true
-              systemctl enable --now jupiter-fan-control 2>/dev/null || true
-              echo "Steam Deck support activated!"
-            fi
-          fi
-          DECK
+          cat > /usr/local/bin/steamdeck-setup <<EOF
+#!/bin/bash
+if [ -f /sys/devices/virtual/dmi/id/product_name ]; then
+  PRODUCT=\$(cat /sys/devices/virtual/dmi/id/product_name)
+  if [[ "\$PRODUCT" == *"Jupiter"* ]] || [[ "\$PRODUCT" == *"Galileo"* ]]; then
+    echo "Steam Deck detected! Enabling hardware support..."
+    modprobe steamdeck 2>/dev/null || echo "steamdeck module not available"
+    modprobe steamdeck_hwmon 2>/dev/null || true
+    modprobe steamdeck_leds 2>/dev/null || true
+    systemctl enable --now jupiter-fan-control 2>/dev/null || true
+    echo "Steam Deck support activated!"
+  fi
+fi
+EOF
+          
           chmod +x /usr/local/bin/steamdeck-setup
           
-          # Add to startup
-          cat > /etc/systemd/system/steamdeck-setup.service <<SERVICE
-          [Unit]
-          Description=Steam Deck Hardware Support
-          After=multi-user.target
+          cat > /etc/systemd/system/steamdeck-setup.service <<EOF
+[Unit]
+Description=Steam Deck Hardware Support
+After=multi-user.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/steamdeck-setup
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target
+EOF
           
-          [Service]
-          Type=oneshot
-          ExecStart=/usr/local/bin/steamdeck-setup
-          RemainAfterExit=yes
-          
-          [Install]
-          WantedBy=multi-user.target
-          SERVICE
           systemctl enable steamdeck-setup.service
           
-          # Create gaming optimization script
-          cat > /usr/local/bin/cybr-gaming-mode <<'\''GAME'\''
-          #!/bin/bash
-          # Toggle gaming optimizations
-          if [ "$1" == "on" ]; then
-            echo "Activating gaming mode..."
-            cpupower frequency-set -g performance 2>/dev/null || true
-            echo "Gaming mode active!"
-          elif [ "$1" == "off" ]; then
-            echo "Deactivating gaming mode..."
-            cpupower frequency-set -g powersave 2>/dev/null || true
-            echo "Power saving mode active!"
-          else
-            echo "Usage: cybr-gaming-mode [on|off]"
-          fi
-          GAME
+          cat > /usr/local/bin/cybr-gaming-mode <<EOF
+#!/bin/bash
+if [ "\$1" == "on" ]; then
+  echo "Activating gaming mode..."
+  cpupower frequency-set -g performance 2>/dev/null || true
+  echo "Gaming mode active!"
+elif [ "\$1" == "off" ]; then
+  echo "Deactivating gaming mode..."
+  cpupower frequency-set -g powersave 2>/dev/null || true
+  echo "Power saving mode active!"
+else
+  echo "Usage: cybr-gaming-mode [on|off]"
+fi
+EOF
+          
           chmod +x /usr/local/bin/cybr-gaming-mode
           
-          # Add gaming aliases to bashrc
-          cat >> /home/cybruser/.bashrc <<'\''BASH'\''
-          neofetch
-          
-          # Gaming shortcuts
-          alias gaming-on="sudo cybr-gaming-mode on"
-          alias gaming-off="sudo cybr-gaming-mode off"
-          alias fps-overlay="mangohud"
-          BASH
-          
           chown -R cybruser:cybruser /home/cybruser
+          
           systemctl enable gdm3 NetworkManager
-          apt-get clean && rm -rf /var/lib/apt/lists/* /tmp/*
-          CH
-          cp -r c/boot/* iso/boot/
-          K=$(ls iso/boot/vmlinuz-*liquorix* | head -1 | sed "s|iso/boot/vmlinuz-||")
-          mksquashfs c iso/live/filesystem.squashfs -comp xz -b 1M -Xdict-size 100% -e boot
+          
+          apt-get clean
+          rm -rf /var/lib/apt/lists/* /tmp/*
+CHROOTEOF
+          
+          cp -r chroot/boot/* iso/boot/
+          
+          KERNEL=\$(ls iso/boot/vmlinuz-*liquorix* | head -1 | sed "s|iso/boot/vmlinuz-||")
+          
+          mksquashfs chroot iso/live/filesystem.squashfs -comp xz -b 1M -Xdict-size 100% -e boot
+          
           wget -O iso/isolinux/splash.png "https://a.fsdn.com/allura/p/wolfos/icon?w=96&1748003641" || true
-          cat > iso/isolinux/isolinux.cfg <<I
-          UI vesamenu.c32
-          MENU TITLE Cybr Mobile Gaming - Boot Menu (Steam Deck Ready)
-          MENU BACKGROUND splash.png
-          DEFAULT live
-          TIMEOUT 150
-          LABEL live
-            MENU LABEL Cybr (Live - Liquorix Kernel)
-            KERNEL /boot/vmlinuz-${K}
-            APPEND initrd=/boot/initrd.img-${K} boot=live components quiet splash plymouth.ignore-serial-consoles live-media-path=/live
-          LABEL live-safe
-            MENU LABEL Cybr (Safe Graphics)
-            KERNEL /boot/vmlinuz-${K}
-            APPEND initrd=/boot/initrd.img-${K} boot=live components nomodeset plymouth.ignore-serial-consoles live-media-path=/live
-          I
-          cp /usr/lib/ISOLINUX/isolinux.bin iso/isolinux/ && cp /usr/lib/syslinux/modules/bios/*.c32 iso/isolinux/
-          cat > iso/EFI/boot/syslinux.cfg <<E
-          DEFAULT live
-          TIMEOUT 50
-          LABEL live
-            LINUX /boot/vmlinuz-${K}
-            APPEND boot=live components quiet splash plymouth.ignore-serial-consoles live-media-path=/live
-            INITRD /boot/initrd.img-${K}
-          E
+          
+          cat > iso/isolinux/isolinux.cfg <<EOF
+UI vesamenu.c32
+MENU TITLE Cybr Linux - Boot Menu
+MENU BACKGROUND splash.png
+DEFAULT live
+TIMEOUT 150
+
+LABEL live
+  MENU LABEL Cybr Linux (Live - Liquorix Kernel)
+  KERNEL /boot/vmlinuz-\${KERNEL}
+  APPEND initrd=/boot/initrd.img-\${KERNEL} boot=live components quiet splash plymouth.ignore-serial-consoles live-media-path=/live
+
+LABEL live-safe
+  MENU LABEL Cybr Linux (Safe Graphics)
+  KERNEL /boot/vmlinuz-\${KERNEL}
+  APPEND initrd=/boot/initrd.img-\${KERNEL} boot=live components nomodeset plymouth.ignore-serial-consoles live-media-path=/live
+EOF
+          
+          cp /usr/lib/ISOLINUX/isolinux.bin iso/isolinux/
+          cp /usr/lib/syslinux/modules/bios/*.c32 iso/isolinux/
+          
+          cat > iso/EFI/boot/syslinux.cfg <<EOF
+DEFAULT live
+TIMEOUT 50
+
+LABEL live
+  LINUX /boot/vmlinuz-\${KERNEL}
+  APPEND boot=live components quiet splash plymouth.ignore-serial-consoles live-media-path=/live
+  INITRD /boot/initrd.img-\${KERNEL}
+EOF
+          
           cp /usr/lib/SYSLINUX.EFI/efi64/syslinux.efi iso/EFI/boot/bootx64.efi
           cp /usr/lib/syslinux/modules/efi64/ldlinux.e64 iso/EFI/boot/ || true
-          dd if=/dev/zero of=efiboot.img bs=1M count=10 && mkfs.vfat efiboot.img
-          mkdir m && mount -o loop efiboot.img m && mkdir -p m/EFI/boot && cp -r iso/EFI/boot/* m/EFI/boot/ && umount m && rmdir m
+          
+          dd if=/dev/zero of=efiboot.img bs=1M count=10
+          mkfs.vfat efiboot.img
+          mkdir efi_mount
+          mount -o loop efiboot.img efi_mount
+          mkdir -p efi_mount/EFI/boot
+          cp -r iso/EFI/boot/* efi_mount/EFI/boot/
+          umount efi_mount
+          rmdir efi_mount
           mv efiboot.img iso/
-          xorriso -as mkisofs -iso-level 3 -full-iso9660-filenames -joliet -rational-rock -volid "CYBR_MOBILE" -eltorito-boot isolinux/isolinux.bin -eltorito-catalog isolinux/boot.cat -no-emul-boot -boot-load-size 4 -boot-info-table -isohybrid-mbr /usr/lib/ISOLINUX/isohdpfx.bin -eltorito-alt-boot -e efiboot.img -no-emul-boot -isohybrid-gpt-basdat -output "/w/${ISO_NAME}.iso" iso/
+          
+          xorriso -as mkisofs \
+            -iso-level 3 \
+            -full-iso9660-filenames \
+            -joliet \
+            -rational-rock \
+            -volid "CYBR_LINUX" \
+            -eltorito-boot isolinux/isolinux.bin \
+            -eltorito-catalog isolinux/boot.cat \
+            -no-emul-boot \
+            -boot-load-size 4 \
+            -boot-info-table \
+            -isohybrid-mbr /usr/lib/ISOLINUX/isohdpfx.bin \
+            -eltorito-alt-boot \
+            -e efiboot.img \
+            -no-emul-boot \
+            -isohybrid-gpt-basdat \
+            -output "/w/${ISO_NAME}.iso" \
+            iso/
           '
 
       - name: Generate checksums
@@ -321,11 +371,11 @@ jobs:
           ISO_NAME="${{ steps.set-iso-name.outputs.iso_name }}"
           sha256sum "${ISO_NAME}.iso" > "${ISO_NAME}.iso.sha256"
           ISO_SIZE=$(($(stat -c%s "${ISO_NAME}.iso")/1024/1024))
-          echo "### Cybr Mobile Gaming Edition Build Complete! 📱🎮🚀" >> $GITHUB_STEP_SUMMARY
+          echo "### Cybr Linux Build Complete! 🎮🚀" >> $GITHUB_STEP_SUMMARY
           echo "**ISO:** ${ISO_NAME}.iso | **Size:** ${ISO_SIZE}MB" >> $GITHUB_STEP_SUMMARY
-          echo "**Desktop:** Phosh (Mobile GNOME) | **Kernel:** Liquorix | **Gaming:** Steam + Vesktop (Vencord)" >> $GITHUB_STEP_SUMMARY
+          echo "**Desktop:** Phosh | **Kernel:** Liquorix | **Gaming:** Steam + Vesktop" >> $GITHUB_STEP_SUMMARY
           echo "**Launchers:** Heroic, Lutris, RetroArch | **Tools:** MangoHud, GOverlay, GameScope" >> $GITHUB_STEP_SUMMARY
-          echo "**Steam Deck:** Hardware support included (auto-detected on boot)" >> $GITHUB_STEP_SUMMARY
+          echo "**Steam Deck:** Hardware support auto-detected on boot" >> $GITHUB_STEP_SUMMARY
 
       - uses: actions/upload-artifact@v4
         with:
