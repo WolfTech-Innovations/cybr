@@ -1,5 +1,4 @@
 # Welcome to Cybr - Mobile Gaming. Reimagined.
-## Install: su -l -c refractainstaller
 ![WTLogo](https://github.com/WolfTech-Innovations/cybr/blob/51e1cbc62285ed52d3deb320b47af5670b163d6e/images/Screenshot_20260120-190710.png)
 [![Cybr Build System](https://github.com/WolfTech-Innovations/cybr/actions/workflows/build.yaml/badge.svg)](https://github.com/WolfTech-Innovations/cybr/actions/workflows/build.yaml)
 
