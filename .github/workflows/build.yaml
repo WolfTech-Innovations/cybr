@@ -267,13 +267,13 @@ jobs:
           chmod +x /usr/local/bin/cybr-gaming-mode
           
           # Add gaming aliases to bashrc
-          cat >> /home/cybruser/.bashrc <<BASH
+          cat >> /home/cybruser/.bashrc <<'\''BASH'\''
           neofetch
           
           # Gaming shortcuts
-          alias gaming-on='\''sudo cybr-gaming-mode on'\''
-          alias gaming-off='\''sudo cybr-gaming-mode off'\''
-          alias fps-overlay='\''mangohud'\''
+          alias gaming-on="sudo cybr-gaming-mode on"
+          alias gaming-off="sudo cybr-gaming-mode off"
+          alias fps-overlay="mangohud"
           BASH
           
           chown -R cybruser:cybruser /home/cybruser
