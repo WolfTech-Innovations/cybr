@@ -91,12 +91,7 @@ jobs:
         apt-get update
         apt-get install -y steam-installer libgl1-mesa-dri:amd64 libgl1-mesa-dri:i386 libgl1-mesa-glx:amd64 libgl1-mesa-glx:i386 mesa-vulkan-drivers:amd64 mesa-vulkan-drivers:i386
         
-        cd /tmp
-        VESKTOP_VER=\$(curl -s https://api.github.com/repos/Vencord/Vesktop/releases/latest | grep tag_name | cut -d '"' -f 4 | sed s/v// || echo "")
-        if [ -n "\$VESKTOP_VER" ]; then
-          wget "https://github.com/Vencord/Vesktop/releases/latest/download/vesktop_\${VESKTOP_VER}_amd64.deb" -O vesktop.deb || true
-          dpkg -i vesktop.deb 2>/dev/null || apt-get install -f -y
-        fi
+        apt-get install -y discord
         
         apt-get install -y lutris
         
@@ -198,11 +193,11 @@ jobs:
         Categories=Game;
         EOF
         
-        cat > /home/cybruser/Desktop/vesktop.desktop <<EOF
+        cat > /home/cybruser/Desktop/discord.desktop <<EOF
         [Desktop Entry]
         Type=Application
-        Name=Vesktop
-        Exec=vesktop
+        Name=Discord
+        Exec=discord
         Icon=discord
         Terminal=false
         Categories=Network;InstantMessaging;
@@ -377,7 +372,7 @@ jobs:
         ISO_SIZE=$(($(stat -c%s "${ISO_NAME}.iso")/1024/1024))
         echo "### Cybr Linux Build Complete! 🎮🚀" >> $GITHUB_STEP_SUMMARY
         echo "**ISO:** ${ISO_NAME}.iso | **Size:** ${ISO_SIZE}MB" >> $GITHUB_STEP_SUMMARY
-        echo "**Desktop:** Phosh | **Kernel:** Liquorix | **Gaming:** Steam + Vesktop" >> $GITHUB_STEP_SUMMARY
+        echo "**Desktop:** Phosh | **Kernel:** Liquorix | **Gaming:** Steam + Discord" >> $GITHUB_STEP_SUMMARY
         echo "**Launchers:** Heroic, Lutris, RetroArch | **Tools:** MangoHud, GOverlay, GameScope" >> $GITHUB_STEP_SUMMARY
         echo "**Steam Deck:** Hardware support auto-detected on boot" >> $GITHUB_STEP_SUMMARY
 
