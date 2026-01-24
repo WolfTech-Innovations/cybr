@@ -1,4 +1,4 @@
-name: "Cybr Build (Phosh + Steam + Liquorix)"
+name: "Cybr Build"
 
 on:
   workflow_dispatch:
@@ -33,7 +33,7 @@ jobs:
           docker run --rm --privileged -v "$PWD:/w" -e ISO_NAME="${ISO_NAME}" debian:bookworm bash -c '
           set -euo pipefail
           apt-get update && apt-get install -y debootstrap squashfs-tools xorriso isolinux syslinux-efi mtools wget dosfstools gnupg2 curl
-          mkdir -p iso/{live,boot,isolinux,EFI/boot}
+          mkdir -p iso/{live,boot,isolinux,EFI/boot,install}
           debootstrap --arch=amd64 --variant=minbase bookworm c http://deb.debian.org/debian/
           chroot c bash <<'\''CH'\''
           export DEBIAN_FRONTEND=noninteractive
@@ -61,9 +61,6 @@ jobs:
           wget -O /tmp/discord.deb "https://discord.com/api/download?platform=linux&format=deb"
           dpkg -i /tmp/discord.deb || apt-get install -f -y
           apt-get install -y xterm rsync grub-pc grub-efi-amd64
-          wget -O /tmp/ri1.deb https://sourceforge.net/projects/refracta/files/tools/refractainstaller-base_9.5.6_all.deb/download
-          wget -O /tmp/ri2.deb https://sourceforge.net/projects/refracta/files/tools/refractainstaller-gui_9.5.6_all.deb/download
-          dpkg -i /tmp/ri1.deb /tmp/ri2.deb || apt-get install -f -y
           cat > /etc/os-release <<O
           NAME="Cybr"
           PRETTY_NAME="Cybr Mobile Gaming Edition"
@@ -88,25 +85,7 @@ jobs:
           AutomaticLoginEnable=true
           AutomaticLogin=cybruser
           G
-          mkdir -p /home/cybruser/Desktop /home/cybruser/.config/autostart
-          cat > /home/cybruser/Desktop/install-cybr.desktop <<D
-          [Desktop Entry]
-          Type=Application
-          Name=Install Cybr Linux
-          Exec=sudo refractainstaller-gui
-          Icon=system-software-install
-          Terminal=false
-          Categories=System;
-          D
-          cat > /home/cybruser/.config/autostart/installer-firstboot.desktop <<D
-          [Desktop Entry]
-          Type=Application
-          Name=Cybr Installer
-          Exec=sh -c "sleep 5 && sudo refractainstaller-gui"
-          Icon=system-software-install
-          Terminal=false
-          X-GNOME-Autostart-enabled=true
-          D
+          mkdir -p /home/cybruser/Desktop
           cat > /home/cybruser/Desktop/steam.desktop <<D
           [Desktop Entry]
           Type=Application
@@ -125,7 +104,7 @@ jobs:
           Terminal=false
           Categories=Network;InstantMessaging;
           D
-          chmod +x /home/cybruser/Desktop/*.desktop /home/cybruser/.config/autostart/*.desktop
+          chmod +x /home/cybruser/Desktop/*.desktop
           echo "neofetch" >> /home/cybruser/.bashrc
           chown -R cybruser:cybruser /home/cybruser
           systemctl enable gdm3 NetworkManager
@@ -134,6 +113,11 @@ jobs:
           cp -r c/boot/* iso/boot/
           K=$(ls iso/boot/vmlinuz-*liquorix* | head -1 | sed "s|iso/boot/vmlinuz-||")
           mksquashfs c iso/live/filesystem.squashfs -comp xz -b 1M -Xdict-size 100% -e boot
+          
+          # Download Debian Installer components
+          wget -P iso/install/ http://ftp.debian.org/debian/dists/bookworm/main/installer-amd64/current/images/netboot/debian-installer/amd64/initrd.gz
+          wget -P iso/install/ http://ftp.debian.org/debian/dists/bookworm/main/installer-amd64/current/images/netboot/debian-installer/amd64/linux
+          
           wget -O iso/isolinux/splash.png "https://a.fsdn.com/allura/p/wolfos/icon?w=96&1748003641" || true
           cat > iso/isolinux/isolinux.cfg <<I
           UI vesamenu.c32
@@ -149,6 +133,14 @@ jobs:
             MENU LABEL Cybr (Safe Graphics)
             KERNEL /boot/vmlinuz-${K}
             APPEND initrd=/boot/initrd.img-${K} boot=live components nomodeset plymouth.ignore-serial-consoles live-media-path=/live
+          LABEL install
+            MENU LABEL Install Cybr (Debian Installer)
+            KERNEL /install/linux
+            APPEND initrd=/install/initrd.gz priority=low vga=788
+          LABEL install-text
+            MENU LABEL Install Cybr (Text Mode)
+            KERNEL /install/linux
+            APPEND initrd=/install/initrd.gz priority=low vga=normal
           I
           cp /usr/lib/ISOLINUX/isolinux.bin iso/isolinux/ && cp /usr/lib/syslinux/modules/bios/*.c32 iso/isolinux/
           cat > iso/EFI/boot/syslinux.cfg <<E
@@ -158,6 +150,10 @@ jobs:
             LINUX /boot/vmlinuz-${K}
             APPEND boot=live components quiet splash plymouth.ignore-serial-consoles live-media-path=/live
             INITRD /boot/initrd.img-${K}
+          LABEL install
+            LINUX /install/linux
+            APPEND priority=low vga=788
+            INITRD /install/initrd.gz
           E
           cp /usr/lib/SYSLINUX.EFI/efi64/syslinux.efi iso/EFI/boot/bootx64.efi
           cp /usr/lib/syslinux/modules/efi64/ldlinux.e64 iso/EFI/boot/ || true
@@ -175,6 +171,7 @@ jobs:
           echo "### Cybr Mobile Gaming Edition Build Complete! 📱🎮🎉" >> $GITHUB_STEP_SUMMARY
           echo "**ISO:** ${ISO_NAME}.iso | **Size:** ${ISO_SIZE}MB" >> $GITHUB_STEP_SUMMARY
           echo "**Desktop:** Phosh (Mobile GNOME) | **Kernel:** Liquorix | **Gaming:** Steam + Discord" >> $GITHUB_STEP_SUMMARY
+          echo "**Installer:** Debian Installer (d-i)" >> $GITHUB_STEP_SUMMARY
 
       - uses: actions/upload-artifact@v4
         with:
