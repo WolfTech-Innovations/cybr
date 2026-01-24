@@ -112,9 +112,9 @@ jobs:
           wget -O /tmp/ri1.deb https://sourceforge.net/projects/refracta/files/tools/refractainstaller-base_9.5.6_all.deb/download
           wget -O /tmp/ri2.deb https://sourceforge.net/projects/refracta/files/tools/refractainstaller-gui_9.5.6_all.deb/download
           dpkg -i /tmp/ri1.deb /tmp/ri2.deb || apt-get install -f -y
-          cat > /etc/os-release <<O
+          cat > /etc/os-release <<'\''O'\''
           NAME="Cybr"
-          PRETTY_NAME="Cybr Mobile Gaming Edition (Steam Deck Ready)"
+          PRETTY_NAME="Cybr Mobile Gaming Edition - Steam Deck Ready"
           ID=cybr
           ID_LIKE=debian
           VERSION_ID="1.0"
