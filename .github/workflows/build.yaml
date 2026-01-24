@@ -92,16 +92,20 @@ jobs:
         apt-get install -y steam-installer libgl1-mesa-dri:amd64 libgl1-mesa-dri:i386 libgl1-mesa-glx:amd64 libgl1-mesa-glx:i386 mesa-vulkan-drivers:amd64 mesa-vulkan-drivers:i386
         
         cd /tmp
-        VESKTOP_VER=\$(curl -s https://api.github.com/repos/Vencord/Vesktop/releases/latest | grep tag_name | cut -d '"' -f 4 | sed s/v//)
-        wget "https://github.com/Vencord/Vesktop/releases/latest/download/vesktop_\${VESKTOP_VER}_amd64.deb" -O vesktop.deb || true
-        dpkg -i vesktop.deb 2>/dev/null || apt-get install -f -y
+        VESKTOP_VER=\$(curl -s https://api.github.com/repos/Vencord/Vesktop/releases/latest | grep tag_name | cut -d '"' -f 4 | sed s/v// || echo "")
+        if [ -n "\$VESKTOP_VER" ]; then
+          wget "https://github.com/Vencord/Vesktop/releases/latest/download/vesktop_\${VESKTOP_VER}_amd64.deb" -O vesktop.deb || true
+          dpkg -i vesktop.deb 2>/dev/null || apt-get install -f -y
+        fi
         
         apt-get install -y lutris
         
         cd /tmp
-        HEROIC_VER=\$(curl -s https://api.github.com/repos/Heroic-Games-Launcher/HeroicGamesLauncher/releases/latest | grep tag_name | cut -d '"' -f 4 | sed s/v//)
-        wget "https://github.com/Heroic-Games-Launcher/HeroicGamesLauncher/releases/latest/download/heroic_\${HEROIC_VER}_amd64.deb" -O heroic.deb || true
-        dpkg -i heroic.deb 2>/dev/null || apt-get install -f -y
+        HEROIC_VER=\$(curl -s https://api.github.com/repos/Heroic-Games-Launcher/HeroicGamesLauncher/releases/latest | grep tag_name | cut -d '"' -f 4 | sed s/v// || echo "")
+        if [ -n "\$HEROIC_VER" ]; then
+          wget "https://github.com/Heroic-Games-Launcher/HeroicGamesLauncher/releases/latest/download/heroic_\${HEROIC_VER}_amd64.deb" -O heroic.deb || true
+          dpkg -i heroic.deb 2>/dev/null || apt-get install -f -y
+        fi
         
         apt-get install -y retroarch libretro-* || true
         
