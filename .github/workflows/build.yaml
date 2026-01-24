@@ -10,7 +10,7 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
-    timeout-minutes: 180
+    timeout-minutes: 240
     outputs:
       iso_name: ${{ steps.set-iso-name.outputs.iso_name }}
     steps:
@@ -30,63 +30,168 @@ jobs:
       - name: Build Cybr ISO
         run: |
           ISO_NAME="${{ steps.set-iso-name.outputs.iso_name }}"
-          docker run --rm --privileged -v "$PWD:/w" -e ISO_NAME="${ISO_NAME}" debian:bookworm bash -c '
+          docker run --rm --privileged -v "$PWD:/w" -e ISO_NAME="${ISO_NAME}" ubuntu:24.04 bash -c '
           set -euo pipefail
-          apt-get update && apt-get install -y debootstrap squashfs-tools xorriso isolinux syslinux-efi mtools wget dosfstools gnupg2 curl
-          mkdir -p iso/{live,boot,isolinux,EFI/boot,install}
-          debootstrap --arch=amd64 --variant=minbase bookworm c http://deb.debian.org/debian/
+          export DEBIAN_FRONTEND=noninteractive
+          apt-get update && apt-get install -y debootstrap squashfs-tools xorriso isolinux syslinux-efi mtools wget dosfstools gnupg2 curl software-properties-common
+          
+          mkdir -p iso/{live,boot,isolinux,EFI/boot}
+          debootstrap --arch=amd64 --variant=minbase noble c http://archive.ubuntu.com/ubuntu/
+          
           chroot c bash <<'\''CH'\''
           export DEBIAN_FRONTEND=noninteractive
+          
           cat > /etc/apt/sources.list <<E
-          deb http://deb.debian.org/debian bookworm main contrib non-free non-free-firmware
-          deb http://deb.debian.org/debian-security bookworm-security main contrib non-free non-free-firmware
-          deb http://deb.debian.org/debian bookworm-updates main contrib non-free non-free-firmware
+          deb http://archive.ubuntu.com/ubuntu noble main restricted universe multiverse
+          deb http://archive.ubuntu.com/ubuntu noble-updates main restricted universe multiverse
+          deb http://archive.ubuntu.com/ubuntu noble-security main restricted universe multiverse
           E
-          apt-get update && apt-get install -y curl gnupg2
-          mkdir -p /usr/share/keyrings
-          curl -fsSL https://liquorix.net/liquorix-keyring.gpg -o /usr/share/keyrings/liquorix-archive-keyring.gpg
-          cat > /etc/apt/sources.list.d/liquorix.sources <<L
-          Types: deb
-          URIs: https://liquorix.net/debian
-          Suites: bookworm
-          Components: main
-          Architectures: amd64
-          Signed-By: /usr/share/keyrings/liquorix-archive-keyring.gpg
-          L
+          
+          apt-get update && apt-get install -y software-properties-common curl gnupg2 ca-certificates
+          
+          # Add Liquorix kernel
+          curl -fsSL https://liquorix.net/liquorix-keyring.gpg | gpg --dearmor -o /usr/share/keyrings/liquorix-archive-keyring.gpg
+          echo "deb [signed-by=/usr/share/keyrings/liquorix-archive-keyring.gpg] https://liquorix.net/ubuntu noble main" > /etc/apt/sources.list.d/liquorix.list
+          
+          # Add UbuntuDDE PPA for Deepin Desktop
+          add-apt-repository -y ppa:ubuntudde-dev/stable
+          
           apt-get update
-          apt-get install -y linux-image-liquorix-amd64 firmware-linux-free firmware-linux-nonfree live-boot systemd-sysv plymouth plymouth-themes
-          apt-get install -y phosh-full phoc squeekboard gdm3 gnome-contacts gnome-calls chatty firefox-esr flatpak gparted ntfs-3g dosfstools e2fsprogs git curl wget vim nano network-manager network-manager-gnome neofetch
+          
+          # Install base system
+          apt-get install -y linux-image-liquorix-amd64 linux-headers-liquorix-amd64 firmware-linux-free firmware-linux-nonfree live-boot systemd plymouth plymouth-themes sudo
+          
+          # Install Deepin Desktop Environment
+          apt-get install -y ubuntudde-dde lightdm
+          
+          # Install essential packages
+          apt-get install -y firefox flatpak gparted ntfs-3g dosfstools e2fsprogs git curl wget vim nano network-manager gnome-keyring
+          
+          # Install gaming packages (32-bit support)
           dpkg --add-architecture i386 && apt-get update
-          apt-get install -y steam-installer libgl1-mesa-dri:amd64 libgl1-mesa-dri:i386 libgl1-mesa-glx:amd64 libgl1-mesa-glx:i386 mesa-vulkan-drivers:amd64 mesa-vulkan-drivers:i386
+          apt-get install -y steam-installer libgl1-mesa-dri:amd64 libgl1-mesa-dri:i386 libgl1:amd64 libgl1:i386 mesa-vulkan-drivers:amd64 mesa-vulkan-drivers:i386 vulkan-tools
+          
+          # Install Discord
           wget -O /tmp/discord.deb "https://discord.com/api/download?platform=linux&format=deb"
-          dpkg -i /tmp/discord.deb || apt-get install -f -y
-          apt-get install -y xterm rsync grub-pc grub-efi-amd64
+          apt-get install -y /tmp/discord.deb || apt-get install -f -y
+          
+          # Install Calamares installer
+          apt-get install -y calamares calamares-settings-ubuntu qml-module-qtquick2 qml-module-qtquick-window2 rsync cryptsetup squashfs-tools
+          
+          # Configure OS branding
           cat > /etc/os-release <<O
           NAME="Cybr"
           PRETTY_NAME="Cybr Mobile Gaming Edition"
           ID=cybr
-          ID_LIKE=debian
-          VERSION_ID="1"
+          ID_LIKE=ubuntu
+          VERSION_ID="1.0"
           HOME_URL="https://getcybr.org/"
+          SUPPORT_URL="https://github.com/WolfTech-Innovations/cybr"
+          BUG_REPORT_URL="https://github.com/WolfTech-Innovations/cybr/issues"
           O
+          
+          # Download and set Cybr logo
           wget -O /usr/share/pixmaps/cybr-logo.png "https://a.fsdn.com/allura/p/wolfos/icon?w=96&1748003641" || echo "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==" | base64 -d > /usr/share/pixmaps/cybr-logo.png
-          cp /usr/share/pixmaps/cybr-logo.png /usr/share/plymouth/debian-logo.png
-          cp /usr/share/pixmaps/cybr-logo.png /usr/share/plymouth/themes/spinner/watermark.png
-          cat >> /usr/share/plymouth/themes/spinner/spinner.plymouth <<P
-          WatermarkHorizontalAlignment=.5
-          WatermarkVerticalAlignment=.96
-          P
+          
+          # Configure Plymouth
+          cp /usr/share/pixmaps/cybr-logo.png /usr/share/plymouth/ubuntu-logo.png
           plymouth-set-default-theme spinner && update-initramfs -u
-          useradd -m -s /bin/bash -G sudo,audio,video,netdev -c "Cybr Mobile" cybruser
-          echo "cybruser:live" | chpasswd && echo "root:root" | chpasswd
-          mkdir -p /etc/gdm3
-          cat > /etc/gdm3/custom.conf <<G
-          [daemon]
-          AutomaticLoginEnable=true
-          AutomaticLogin=cybruser
-          G
-          mkdir -p /home/cybruser/Desktop
-          cat > /home/cybruser/Desktop/steam.desktop <<D
+          
+          # Create Calamares branding
+          mkdir -p /etc/calamares/branding/cybr
+          cat > /etc/calamares/branding/cybr/branding.desc <<BRAND
+          ---
+          componentName: cybr
+          strings:
+              productName: "Cybr Mobile Gaming"
+              shortProductName: "Cybr"
+              version: "1.0"
+              shortVersion: "1.0"
+              versionedName: "Cybr 1.0"
+              shortVersionedName: "Cybr 1.0"
+              bootloaderEntryName: "Cybr"
+              productUrl: "https://getcybr.org/"
+          images:
+              productLogo: "/usr/share/pixmaps/cybr-logo.png"
+              productIcon: "/usr/share/pixmaps/cybr-logo.png"
+          style:
+              sidebarBackground: "#1a1a1a"
+              sidebarText: "#FFFFFF"
+              sidebarTextSelect: "#0066ff"
+          BRAND
+          
+          # Configure Calamares settings
+          cat > /etc/calamares/settings.conf <<CALA
+          ---
+          modules-search: [ local, /usr/lib/calamares/modules ]
+          
+          sequence:
+          - show:
+            - welcome
+            - locale
+            - keyboard
+            - partition
+            - users
+            - summary
+          - exec:
+            - partition
+            - mount
+            - unpackfs
+            - machineid
+            - fstab
+            - locale
+            - keyboard
+            - localecfg
+            - users
+            - networkcfg
+            - hwclock
+            - services-systemd
+            - bootloader-config
+            - grubcfg
+            - bootloader
+            - umount
+          - show:
+            - finished
+          
+          branding: cybr
+          CALA
+          
+          # Configure Calamares unpackfs module
+          cat > /etc/calamares/modules/unpackfs.conf <<UNPACK
+          ---
+          unpack:
+              - source: "/run/live/medium/live/filesystem.squashfs"
+                sourcefs: "squashfs"
+                destination: ""
+          UNPACK
+          
+          # Create user
+          useradd -m -s /bin/bash -G sudo,audio,video,netdev -c "Cybr User" cybruser
+          echo "cybruser:live" | chpasswd
+          echo "root:root" | chpasswd
+          
+          # Configure autologin
+          mkdir -p /etc/lightdm/lightdm.conf.d
+          cat > /etc/lightdm/lightdm.conf.d/50-autologin.conf <<AUTO
+          [Seat:*]
+          autologin-user=cybruser
+          autologin-user-timeout=0
+          AUTO
+          
+          # Create desktop shortcuts
+          mkdir -p /home/cybruser/Desktop /home/cybruser/.config/autostart
+          
+          cat > /home/cybruser/Desktop/install-cybr.desktop <<INST
+          [Desktop Entry]
+          Type=Application
+          Name=Install Cybr
+          Exec=pkexec calamares
+          Icon=system-software-install
+          Terminal=false
+          Categories=System;
+          INST
+          
+          cat > /home/cybruser/Desktop/steam.desktop <<STEAM
           [Desktop Entry]
           Type=Application
           Name=Steam
@@ -94,73 +199,110 @@ jobs:
           Icon=steam
           Terminal=false
           Categories=Game;
-          D
-          cat > /home/cybruser/Desktop/discord.desktop <<D
+          STEAM
+          
+          cat > /home/cybruser/Desktop/discord.desktop <<DISC
           [Desktop Entry]
           Type=Application
           Name=Discord
-          Exec=/usr/share/discord/Discord
+          Exec=/usr/bin/discord
           Icon=discord
           Terminal=false
           Categories=Network;InstantMessaging;
-          D
+          DISC
+          
           chmod +x /home/cybruser/Desktop/*.desktop
-          echo "neofetch" >> /home/cybruser/.bashrc
           chown -R cybruser:cybruser /home/cybruser
-          systemctl enable gdm3 NetworkManager
-          apt-get clean && rm -rf /var/lib/apt/lists/* /tmp/*
+          
+          # Enable services
+          systemctl enable lightdm NetworkManager
+          
+          # Cleanup
+          apt-get clean && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
           CH
+          
+          # Copy kernel and initramfs
           cp -r c/boot/* iso/boot/
           K=$(ls iso/boot/vmlinuz-*liquorix* | head -1 | sed "s|iso/boot/vmlinuz-||")
-          mksquashfs c iso/live/filesystem.squashfs -comp xz -b 1M -Xdict-size 100% -e boot
           
-          # Download Debian Installer components
-          wget -P iso/install/ http://ftp.debian.org/debian/dists/bookworm/main/installer-amd64/current/images/netboot/debian-installer/amd64/initrd.gz
-          wget -P iso/install/ http://ftp.debian.org/debian/dists/bookworm/main/installer-amd64/current/images/netboot/debian-installer/amd64/linux
+          # Create squashfs
+          mksquashfs c iso/live/filesystem.squashfs -comp xz -b 1M -Xdict-size 100%
           
+          # Create boot menu
           wget -O iso/isolinux/splash.png "https://a.fsdn.com/allura/p/wolfos/icon?w=96&1748003641" || true
-          cat > iso/isolinux/isolinux.cfg <<I
+          
+          cat > iso/isolinux/isolinux.cfg <<BOOT
           UI vesamenu.c32
           MENU TITLE Cybr Mobile Gaming - Boot Menu
           MENU BACKGROUND splash.png
+          PROMPT 0
+          TIMEOUT 300
           DEFAULT live
-          TIMEOUT 150
+          
           LABEL live
-            MENU LABEL Cybr (Live - Liquorix Kernel)
+            MENU LABEL Cybr Live (DDE + Liquorix Kernel)
             KERNEL /boot/vmlinuz-${K}
-            APPEND initrd=/boot/initrd.img-${K} boot=live components quiet splash plymouth.ignore-serial-consoles live-media-path=/live
+            APPEND initrd=/boot/initrd.img-${K} boot=live components quiet splash
+          
           LABEL live-safe
-            MENU LABEL Cybr (Safe Graphics)
+            MENU LABEL Cybr Live (Safe Graphics)
             KERNEL /boot/vmlinuz-${K}
-            APPEND initrd=/boot/initrd.img-${K} boot=live components nomodeset plymouth.ignore-serial-consoles live-media-path=/live
-          LABEL install
-            MENU LABEL Install Cybr (Debian Installer)
-            KERNEL /install/linux
-            APPEND initrd=/install/initrd.gz priority=low vga=788
-          LABEL install-text
-            MENU LABEL Install Cybr (Text Mode)
-            KERNEL /install/linux
-            APPEND initrd=/install/initrd.gz priority=low vga=normal
-          I
-          cp /usr/lib/ISOLINUX/isolinux.bin iso/isolinux/ && cp /usr/lib/syslinux/modules/bios/*.c32 iso/isolinux/
-          cat > iso/EFI/boot/syslinux.cfg <<E
-          DEFAULT live
-          TIMEOUT 50
-          LABEL live
-            LINUX /boot/vmlinuz-${K}
-            APPEND boot=live components quiet splash plymouth.ignore-serial-consoles live-media-path=/live
-            INITRD /boot/initrd.img-${K}
-          LABEL install
-            LINUX /install/linux
-            APPEND priority=low vga=788
-            INITRD /install/initrd.gz
-          E
-          cp /usr/lib/SYSLINUX.EFI/efi64/syslinux.efi iso/EFI/boot/bootx64.efi
-          cp /usr/lib/syslinux/modules/efi64/ldlinux.e64 iso/EFI/boot/ || true
-          dd if=/dev/zero of=efiboot.img bs=1M count=10 && mkfs.vfat efiboot.img
-          mkdir m && mount -o loop efiboot.img m && mkdir -p m/EFI/boot && cp -r iso/EFI/boot/* m/EFI/boot/ && umount m && rmdir m
+            APPEND initrd=/boot/initrd.img-${K} boot=live components nomodeset
+          BOOT
+          
+          # Setup BIOS boot
+          cp /usr/lib/ISOLINUX/isolinux.bin iso/isolinux/
+          cp /usr/lib/syslinux/modules/bios/*.c32 iso/isolinux/
+          
+          # Setup EFI boot
+          cat > iso/EFI/boot/grub.cfg <<EFI
+          set timeout=30
+          set default=0
+          
+          menuentry "Cybr Live (DDE + Liquorix)" {
+              linux /boot/vmlinuz-${K} boot=live components quiet splash
+              initrd /boot/initrd.img-${K}
+          }
+          
+          menuentry "Cybr Live (Safe Graphics)" {
+              linux /boot/vmlinuz-${K} boot=live components nomodeset
+              initrd /boot/initrd.img-${K}
+          }
+          EFI
+          
+          # Create EFI image
+          grub-mkstandalone -O x86_64-efi -o iso/EFI/boot/bootx64.efi boot/grub/grub.cfg=iso/EFI/boot/grub.cfg
+          
+          dd if=/dev/zero of=efiboot.img bs=1M count=20
+          mkfs.vfat efiboot.img
+          mkdir efi_mount
+          mount -o loop efiboot.img efi_mount
+          mkdir -p efi_mount/EFI/boot
+          cp iso/EFI/boot/bootx64.efi efi_mount/EFI/boot/
+          cp iso/EFI/boot/grub.cfg efi_mount/EFI/boot/
+          umount efi_mount
+          rmdir efi_mount
           mv efiboot.img iso/
-          xorriso -as mkisofs -iso-level 3 -full-iso9660-filenames -joliet -rational-rock -volid "CYBR_MOBILE" -eltorito-boot isolinux/isolinux.bin -eltorito-catalog isolinux/boot.cat -no-emul-boot -boot-load-size 4 -boot-info-table -isohybrid-mbr /usr/lib/ISOLINUX/isohdpfx.bin -eltorito-alt-boot -e efiboot.img -no-emul-boot -isohybrid-gpt-basdat -output "/w/${ISO_NAME}.iso" iso/
+          
+          # Create ISO
+          xorriso -as mkisofs \
+            -iso-level 3 \
+            -full-iso9660-filenames \
+            -joliet \
+            -rational-rock \
+            -volid "CYBR_MOBILE" \
+            -eltorito-boot isolinux/isolinux.bin \
+            -eltorito-catalog isolinux/boot.cat \
+            -no-emul-boot \
+            -boot-load-size 4 \
+            -boot-info-table \
+            -isohybrid-mbr /usr/lib/ISOLINUX/isohdpfx.bin \
+            -eltorito-alt-boot \
+            -e efiboot.img \
+            -no-emul-boot \
+            -isohybrid-gpt-basdat \
+            -output "/w/${ISO_NAME}.iso" \
+            iso/
           '
 
       - name: Generate checksums
@@ -170,8 +312,8 @@ jobs:
           ISO_SIZE=$(($(stat -c%s "${ISO_NAME}.iso")/1024/1024))
           echo "### Cybr Mobile Gaming Edition Build Complete! 📱🎮🎉" >> $GITHUB_STEP_SUMMARY
           echo "**ISO:** ${ISO_NAME}.iso | **Size:** ${ISO_SIZE}MB" >> $GITHUB_STEP_SUMMARY
-          echo "**Desktop:** Phosh (Mobile GNOME) | **Kernel:** Liquorix | **Gaming:** Steam + Discord" >> $GITHUB_STEP_SUMMARY
-          echo "**Installer:** Debian Installer (d-i)" >> $GITHUB_STEP_SUMMARY
+          echo "**Base:** Ubuntu 24.04 LTS | **Desktop:** Deepin DDE | **Kernel:** Liquorix" >> $GITHUB_STEP_SUMMARY
+          echo "**Gaming:** Steam + Discord | **Installer:** Calamares" >> $GITHUB_STEP_SUMMARY
 
       - uses: actions/upload-artifact@v4
         with:
