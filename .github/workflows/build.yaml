@@ -105,12 +105,12 @@ jobs:
           
           cd /tmp
           
-          # Get kernel
-          wget http://deb.debian.org/debian/pool/main/l/linux-signed-amd64/linux-image-6.1.0-28-amd64_6.1.119+1_amd64.deb -O kernel.deb
-          dpkg-deb -x kernel.deb .
+          # Get kernel - using dynamic download
+          apt-get download linux-image-amd64
+          dpkg-deb -x linux-image-*.deb .
           cp boot/vmlinuz-* /tmp/vmlinuz
           
-          # Get busybox
+          # Get busybox - verified URL
           wget -O busybox https://busybox.net/downloads/binaries/1.35.0-x86_64-linux-musl/busybox
           chmod +x busybox
           
@@ -124,19 +124,23 @@ jobs:
           for cmd in init poweroff reboot mdev blkid mkfs.ext4 mkfs.vfat udhcpc; do ln -s ../bin/busybox $cmd; done
           cd /tmp
           
-          # Get firmware
-          wget http://deb.debian.org/debian/pool/non-free-firmware/f/firmware-nonfree/firmware-iwlwifi_20230210-5_all.deb
-          dpkg-deb -x firmware-iwlwifi*.deb fw && cp -r fw/lib/firmware/* initramfs/lib/firmware/
+          # Get firmware - using dynamic download
+          apt-get download firmware-iwlwifi
+          mkdir -p fw_extract
+          dpkg-deb -x firmware-iwlwifi*.deb fw_extract
+          cp -r fw_extract/lib/firmware/* initramfs/lib/firmware/
           
-          # Get tools
-          wget http://deb.debian.org/debian/pool/main/w/wpa/wpasupplicant_2.10-12_amd64.deb
-          dpkg-deb -x wpasupplicant*.deb wpa && cp wpa/sbin/wpa_supplicant initramfs/sbin/
+          # Get tools - using dynamic download
+          apt-get download wpasupplicant parted squashfs-tools
+          mkdir -p tools_extract
           
-          wget http://deb.debian.org/debian/pool/main/p/parted/parted_3.5-3_amd64.deb
-          dpkg-deb -x parted*.deb prt && cp prt/sbin/parted initramfs/sbin/
+          for pkg in wpasupplicant*.deb parted*.deb squashfs-tools*.deb; do
+            dpkg-deb -x "$pkg" tools_extract/
+          done
           
-          wget http://deb.debian.org/debian/pool/main/s/squashfs-tools/squashfs-tools_4.6.1-1_amd64.deb
-          dpkg-deb -x squashfs-tools*.deb sq && cp sq/usr/sbin/unsquashfs initramfs/sbin/
+          cp tools_extract/sbin/wpa_supplicant initramfs/sbin/
+          cp tools_extract/sbin/parted initramfs/sbin/
+          cp tools_extract/usr/sbin/unsquashfs initramfs/sbin/
           
           # Copy libs
           mkdir -p initramfs/lib/{x86_64-linux-gnu,64}
@@ -243,8 +247,17 @@ jobs:
         run: |
           [ -z "$SF_USER" ] && exit 0
           sudo apt-get update && sudo apt-get install -y sshpass rsync
-          sshpass -p "$SF_PASS" rsync -avP -e "ssh -o StrictHostKeyChecking=no" "${ISO_NAME}.iso" "$SF_USER@frs.sourceforge.net:/home/frs/project/wolfos/gaming/"
-          sshpass -p "$SF_PASS" rsync -avP -e "ssh -o StrictHostKeyChecking=no" "${BASE_NAME}.squashfs" "$SF_USER@frs.sourceforge.net:/home/frs/project/wolfos/gaming/base/" && break
+          
+          # Upload ISO with retry logic
+          for i in 1 2 3; do
+            sshpass -p "$SF_PASS" rsync -avP -e "ssh -o StrictHostKeyChecking=no" "${ISO_NAME}.iso" "$SF_USER@frs.sourceforge.net:/home/frs/project/wolfos/gaming/" && break
+            [ $i -eq 3 ] && exit 1
+            sleep 30
+          done
+          
+          # Upload Base with retry logic
+          for i in 1 2 3; do
+            sshpass -p "$SF_PASS" rsync -avP -e "ssh -o StrictHostKeyChecking=no" "${BASE_NAME}.squashfs" "$SF_USER@frs.sourceforge.net:/home/frs/project/wolfos/gaming/base/" && break
             [ $i -eq 3 ] && exit 1
             sleep 30
           done
