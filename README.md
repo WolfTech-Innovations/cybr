@@ -2,7 +2,7 @@
 ![WTLogo](https://github.com/WolfTech-Innovations/cybr/blob/51e1cbc62285ed52d3deb320b47af5670b163d6e/images/Screenshot_20260120-190710.png)
 [![Cybr Build System](https://github.com/WolfTech-Innovations/cybr/actions/workflows/build.yaml/badge.svg)](https://github.com/WolfTech-Innovations/cybr/actions/workflows/build.yaml)
 
-Cybr is a Linux distribution built for gaming on any device - handhelds, tablets, desktops, and everything in between. Combining Debian's rock-solid foundation with i3's powerful tiling window management, Latte Dock's beautiful interface, and extreme compression technology, Cybr delivers desktop-class gaming in an incredibly compact package.
+Cybr is a Linux distribution built for gaming on any device - handhelds, tablets, desktops, and everything in between. Combining Debian's rock-solid foundation with i3's powerful tiling window management, Plank Dock's beautiful interface, and extreme compression technology, Cybr delivers desktop-class gaming in an incredibly compact package.
 
 **Perfect for:** Steam Deck alternatives, GPD devices, AYANEO handhelds, gaming tablets, 2-in-1 laptops, and traditional gaming PCs.
 
