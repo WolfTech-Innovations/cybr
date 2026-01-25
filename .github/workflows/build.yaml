@@ -54,7 +54,6 @@ jobs:
           
           # Install base system
           apt-get install -y --no-install-recommends \
-            linux-image-amd64 \
             firmware-linux-free \
             firmware-linux-nonfree \
             live-boot \
@@ -63,7 +62,16 @@ jobs:
             ca-certificates \
             locales \
             sudo \
-            network-manager
+            network-manager \
+            curl \
+            gnupg
+          
+          # Add Liquorix repository
+          curl 'https://liquorix.net/add-liquorix-repo.sh' | bash
+          apt-get update
+          
+          # Install ONLY Liquorix kernel image (not headers - saves ~50MB)
+          apt-get install -y --no-install-recommends linux-image-liquorix-amd64
           
           # Install MINIMAL X11 (not full xorg)
           apt-get install -y --no-install-recommends \
@@ -83,22 +91,11 @@ jobs:
             squeekboard \
             plank
           
-          # Install Latte Dock and dependencies
+          # Install lightweight file manager and apps (NO DOLPHIN/KDE)
           apt-get install -y --no-install-recommends \
-            latte-dock \
-            plasma-framework \
-            kwin-x11 \
-            dolphin \
-            breeze \
-            breeze-icon-theme
-          
-          # Install Firefox and essential apps
-          apt-get install -y --no-install-recommends \
-            firefox-esr \
-            alacritty \
-            rofi \
-            dunst \
-            nitrogen
+            pcmanfm \
+            lxterminal \
+            firefox-esr
           
           # Install utilities
           apt-get install -y --no-install-recommends \
@@ -111,24 +108,52 @@ jobs:
             ntfs-3g \
             e2fsprogs
           
-          # Enable 32-bit architecture
-          dpkg --add-architecture i386
-          apt-get update
-          
-          # Install UPX
-          apt-get install -y --no-install-recommends upx-ucl
-          
-          # Install gaming packages
+          # Install gaming packages - Steam/Discord auto-install on disk installation
           apt-get install -y --no-install-recommends \
-            steam-installer \
             mesa-vulkan-drivers:amd64 \
             libgl1:amd64 \
             mangohud
           
-          # Install Discord
-          wget -O /tmp/discord.deb "https://discord.com/api/download?platform=linux&format=deb"
-          apt-get install -y /tmp/discord.deb || apt-get install -f -y
-          rm /tmp/discord.deb
+          # Download installers for post-install (will be run by Calamares)
+          mkdir -p /opt/cybr-installers
+          
+          # Create post-install script that Calamares will run
+          cat > /opt/cybr-installers/post-install.sh <<'POSTINST'
+#!/bin/bash
+# This runs after Calamares installs to disk
+echo "Installing Steam and Discord..."
+
+# Enable 32-bit architecture for Steam
+dpkg --add-architecture i386
+apt-get update
+
+# Install Steam
+apt-get install -y steam-installer
+
+# Install Discord
+cd /tmp
+wget -O discord.deb "https://discord.com/api/download?platform=linux&format=deb"
+apt-get install -y ./discord.deb || apt-get install -f -y
+rm -f discord.deb
+
+echo "Steam and Discord installed!"
+POSTINST
+          chmod +x /opt/cybr-installers/post-install.sh
+          
+          # Create desktop installer (for live session)
+          cat > /usr/local/bin/install-steam-discord <<'LIVEINSTALL'
+#!/bin/bash
+echo "Installing Steam and Discord to live session..."
+dpkg --add-architecture i386
+apt-get update
+apt-get install -y steam-installer
+cd /tmp
+wget -O discord.deb "https://discord.com/api/download?platform=linux&format=deb"
+apt-get install -y ./discord.deb || apt-get install -f -y
+rm discord.deb
+echo "Done! Launch from menu."
+LIVEINSTALL
+          chmod +x /usr/local/bin/install-steam-discord
           
           # Install Calamares
           apt-get install -y --no-install-recommends \
@@ -177,21 +202,19 @@ jobs:
           echo "cybruser:live" | chpasswd
           echo "root:root" | chpasswd
           
-          # Configure i3
+          # Configure i3 with Plank dock
           mkdir -p /home/cybruser/.config/i3
           cat > /home/cybruser/.config/i3/config <<I3CFG
           set \$mod Mod4
           
           font pango:monospace 10
           
-          exec --no-startup-id latte-dock
-          exec --no-startup-id nitrogen --restore
-          exec --no-startup-id picom -b
+          exec --no-startup-id plank
+          exec --no-startup-id feh --bg-scale /usr/share/pixmaps/cybr-logo.png
           exec --no-startup-id nm-applet
-          exec --no-startup-id squeekboard
           
-          bindsym \$mod+Return exec alacritty
-          bindsym \$mod+d exec rofi -show run
+          bindsym \$mod+Return exec lxterminal
+          bindsym \$mod+d exec dmenu_run
           bindsym \$mod+Shift+q kill
           bindsym \$mod+Shift+c reload
           bindsym \$mod+Shift+r restart
@@ -202,33 +225,31 @@ jobs:
           bindsym \$mod+k focus up
           bindsym \$mod+l focus right
           
-          bindsym \$mod+Shift+h move left
-          bindsym \$mod+Shift+j move down
-          bindsym \$mod+Shift+k move up
-          bindsym \$mod+Shift+l move up
-          
           bindsym \$mod+f fullscreen toggle
-          bindsym \$mod+v split v
-          bindsym \$mod+s layout stacking
-          bindsym \$mod+w layout tabbed
-          bindsym \$mod+e layout toggle split
           
           bindsym \$mod+1 workspace 1
           bindsym \$mod+2 workspace 2
           bindsym \$mod+3 workspace 3
           bindsym \$mod+4 workspace 4
           
-          bindsym \$mod+Shift+1 move container to workspace 1
-          bindsym \$mod+Shift+2 move container to workspace 2
-          bindsym \$mod+Shift+3 move container to workspace 3
-          bindsym \$mod+Shift+4 move container to workspace 4
-          
           bar {
               status_command i3status
               position top
-              mode invisible
           }
           I3CFG
+          
+          # Configure Plank dock
+          mkdir -p /home/cybruser/.config/plank/dock1
+          cat > /home/cybruser/.config/plank/dock1/settings <<PLANKSET
+          [PlankDockPreferences]
+          Theme=Gtk+
+          Position=3
+          Alignment=50
+          ItemsAlignment=3
+          HideMode=3
+          IconSize=48
+          ShowDockItem=false
+          PLANKSET
           
           # Create desktop shortcuts
           mkdir -p /home/cybruser/Desktop
@@ -276,16 +297,37 @@ jobs:
           chmod +x /home/cybruser/Desktop/*.desktop
           chown -R cybruser:cybruser /home/cybruser
           
-          # UPX compress all binaries (EXTREME COMPRESSION)
-          echo "Compressing binaries with UPX..."
-          find /usr/bin -type f -executable -exec upx --best --lzma {} \; 2>/dev/null || true
-          find /usr/sbin -type f -executable -exec upx --best --lzma {} \; 2>/dev/null || true
-          find /usr/lib -type f -name "*.so*" -size +100k -exec upx --best --lzma {} \; 2>/dev/null || true
-          find /usr/games -type f -executable -exec upx --best --lzma {} \; 2>/dev/null || true
+          # Add Plank launchers
+          mkdir -p /home/cybruser/.config/plank/dock1/launchers
           
-          # Compress Discord and Steam specifically
-          upx --best --lzma /usr/share/discord/Discord 2>/dev/null || true
-          upx --best --lzma /usr/share/discord/chrome_crashpad_handler 2>/dev/null || true
+          # Firefox launcher for Plank
+          cat > /home/cybruser/.config/plank/dock1/launchers/firefox.dockitem <<FFPLANK
+          [PlankDockItemPreferences]
+          Launcher=file:///usr/share/applications/firefox-esr.desktop
+          FFPLANK
+          
+          # File manager launcher for Plank
+          cat > /home/cybruser/.config/plank/dock1/launchers/pcmanfm.dockitem <<FMPLANK
+          [PlankDockItemPreferences]
+          Launcher=file:///usr/share/applications/pcmanfm.desktop
+          FMPLANK
+          
+          # Terminal launcher for Plank
+          cat > /home/cybruser/.config/plank/dock1/launchers/lxterminal.dockitem <<TERMPLANK
+          [PlankDockItemPreferences]
+          Launcher=file:///usr/share/applications/lxterminal.desktop
+          TERMPLANK
+          
+          chown -R cybruser:cybruser /home/cybruser/.config/plank
+          
+          # Install UPX for compression
+          apt-get install -y --no-install-recommends upx-ucl
+          
+          # UPX compress binaries (selective - only large ones)
+          echo "Compressing large binaries with UPX..."
+          find /usr/bin -type f -executable -size +500k -exec upx --best --lzma {} \; 2>/dev/null || true
+          find /usr/lib -type f -name "*.so*" -size +1M -exec upx --best --lzma {} \; 2>/dev/null || true
+          find /usr/lib/firefox-esr -type f -executable -size +500k -exec upx --best --lzma {} \; 2>/dev/null || true
           
           # Remove UPX
           apt-get purge -y upx-ucl
@@ -398,9 +440,11 @@ jobs:
           ISO_SIZE=$(($(stat -c%s "${ISO_NAME}.iso")/1024/1024))
           echo "### Cybr Gaming Edition Build Complete! 🎮🚀" >> $GITHUB_STEP_SUMMARY
           echo "**ISO:** ${ISO_NAME}.iso | **Size:** ${ISO_SIZE}MB" >> $GITHUB_STEP_SUMMARY
-          echo "**Base:** Debian 12 Minimal | **Desktop:** i3 + Latte Dock + Dolphin" >> $GITHUB_STEP_SUMMARY
-          echo "**Apps:** Steam, Discord, Calamares, MangoHud (ALL UPX COMPRESSED)" >> $GITHUB_STEP_SUMMARY
-          echo "**Compression:** UPX --best --lzma + Maximum XZ squashfs (256K blocks, BCJ filter)" >> $GITHUB_STEP_SUMMARY
+          echo "**Base:** Debian 12 Minimal | **Desktop:** i3 + Plank Dock | **Kernel:** Liquorix (gaming-optimized)" >> $GITHUB_STEP_SUMMARY
+          echo "**Apps:** Firefox, Steam/Discord (auto-install on disk), MangoHud, Calamares" >> $GITHUB_STEP_SUMMARY
+          echo "**Optimizations:** Liquorix 1000Hz, Hard Preemption, BFQ I/O, TCP BBR2, Zen Tuning" >> $GITHUB_STEP_SUMMARY
+          echo "**Post-Install:** Steam & Discord automatically installed during Calamares installation" >> $GITHUB_STEP_SUMMARY
+          echo "**Compression:** Selective UPX on large binaries + Maximum XZ squashfs" >> $GITHUB_STEP_SUMMARY
 
       - uses: actions/upload-artifact@v4
         with:
