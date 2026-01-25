@@ -18,7 +18,7 @@ jobs:
 
       - name: Set ISO name
         id: set-iso-name
-        run: echo "iso_name=cybr-linux-v${{ github.run_number }}" >> $GITHUB_OUTPUT
+        run: echo "iso_name=cybr-mobile-v${{ github.run_number }}" >> $GITHUB_OUTPUT
 
       - name: Free up disk space
         run: |
@@ -27,75 +27,170 @@ jobs:
           sudo apt-get purge -y '^aspnetcore-.*' '^dotnet-.*' '^llvm-.*' 'php.*' '^mongodb-.*' '^mysql-.*' azure-cli google-cloud-sdk || true
           sudo apt-get autoremove -y && sudo apt-get clean
 
-      - name: Build Cybr ISO
+      - name: Build Cybr Plasma Mobile ISO
         run: |
           ISO_NAME="${{ steps.set-iso-name.outputs.iso_name }}"
-          docker run --rm --privileged -v "$PWD:/w" -e ISO_NAME="${ISO_NAME}" ubuntu:24.04 bash -c '
+          docker run --rm --privileged -v "$PWD:/w" -e ISO_NAME="${ISO_NAME}" debian:12 bash -c '
           set -euo pipefail
           export DEBIAN_FRONTEND=noninteractive
-          apt-get update && apt-get install -y debootstrap squashfs-tools xorriso isolinux syslinux-efi mtools wget dosfstools gnupg2 curl software-properties-common
+          apt-get update && apt-get install -y debootstrap squashfs-tools xorriso isolinux syslinux-efi mtools wget dosfstools gnupg2 curl
           
           mkdir -p iso/{live,boot,isolinux,EFI/boot}
-          debootstrap --arch=amd64 --variant=minbase noble c http://archive.ubuntu.com/ubuntu/
           
-          chroot c bash <<'\''CH'\''
+          # Create minimal Debian base with minbase variant
+          debootstrap --arch=amd64 --variant=minbase bookworm chroot http://deb.debian.org/debian/
+          
+          chroot chroot bash <<'\''CH'\''
           export DEBIAN_FRONTEND=noninteractive
           
+          # Configure APT sources
           cat > /etc/apt/sources.list <<E
-          deb http://archive.ubuntu.com/ubuntu noble main restricted universe multiverse
-          deb http://archive.ubuntu.com/ubuntu noble-updates main restricted universe multiverse
-          deb http://archive.ubuntu.com/ubuntu noble-security main restricted universe multiverse
+          deb http://deb.debian.org/debian bookworm main contrib non-free non-free-firmware
+          deb http://deb.debian.org/debian bookworm-updates main contrib non-free non-free-firmware
+          deb http://security.debian.org/debian-security bookworm-security main contrib non-free non-free-firmware
           E
-          
-          apt-get update && apt-get install -y software-properties-common curl gnupg2 ca-certificates
-          
-          # Add Liquorix kernel
-          curl -fsSL https://liquorix.net/liquorix-keyring.gpg | gpg --dearmor -o /usr/share/keyrings/liquorix-archive-keyring.gpg
-          echo "deb [signed-by=/usr/share/keyrings/liquorix-archive-keyring.gpg] https://liquorix.net/ubuntu noble main" > /etc/apt/sources.list.d/liquorix.list
-          
-          # Add UbuntuDDE PPA for Deepin Desktop
-          add-apt-repository -y ppa:ubuntudde-dev/stable
           
           apt-get update
           
-          # Install base system
-          apt-get install -y linux-image-liquorix-amd64 linux-headers-liquorix-amd64 firmware-linux-free firmware-linux-nonfree live-boot systemd plymouth plymouth-themes sudo
+          # Install essential system packages
+          apt-get install -y --no-install-recommends \
+            linux-image-amd64 \
+            firmware-linux-free \
+            firmware-linux-nonfree \
+            live-boot \
+            systemd-sysv \
+            dbus \
+            ca-certificates \
+            locales \
+            sudo \
+            network-manager
           
-          # Install Deepin Desktop Environment
-          apt-get install -y ubuntudde-dde lightdm
+          # Install minimal Plasma Mobile (stripped down)
+          apt-get install -y --no-install-recommends \
+            plasma-mobile \
+            kwin-wayland \
+            kwin-wayland-backend-drm \
+            sddm \
+            qtvirtualkeyboard-plugin \
+            plasma-nm \
+            breeze
           
-          # Install essential packages
-          apt-get install -y firefox flatpak gparted ntfs-3g dosfstools e2fsprogs git curl wget vim nano network-manager gnome-keyring
+          # Install mobile apps (minimal set)
+          apt-get install -y --no-install-recommends \
+            angelfish
           
-          # Install gaming packages (32-bit support)
-          dpkg --add-architecture i386 && apt-get update
-          apt-get install -y steam-installer libgl1-mesa-dri:amd64 libgl1-mesa-dri:i386 libgl1:amd64 libgl1:i386 mesa-vulkan-drivers:amd64 mesa-vulkan-drivers:i386 vulkan-tools
+          # Install essential utilities (bare minimum)
+          apt-get install -y --no-install-recommends \
+            nano \
+            wget \
+            curl \
+            htop \
+            parted \
+            ntfs-3g \
+            e2fsprogs
+          
+          # Enable 32-bit architecture for gaming
+          dpkg --add-architecture i386
+          apt-get update
+          
+          # Install UPX for binary compression
+          apt-get install -y --no-install-recommends upx-ucl
+          
+          # Install gaming packages (minimal - Steam, MangoHud, basic drivers)
+          apt-get install -y --no-install-recommends \
+            steam-installer \
+            mesa-vulkan-drivers:amd64 \
+            libgl1:amd64 \
+            mangohud
           
           # Install Discord
           wget -O /tmp/discord.deb "https://discord.com/api/download?platform=linux&format=deb"
           apt-get install -y /tmp/discord.deb || apt-get install -f -y
+          rm /tmp/discord.deb
           
-          # Install Calamares installer
-          apt-get install -y calamares calamares-settings-ubuntu qml-module-qtquick2 qml-module-qtquick-window2 rsync cryptsetup squashfs-tools
+          # UPX compress all executables to save massive space
+          echo "Compressing binaries with UPX..."
+          find /usr/bin -type f -executable -exec upx --best --lzma {} \; 2>/dev/null || true
+          find /usr/sbin -type f -executable -exec upx --best --lzma {} \; 2>/dev/null || true
+          find /usr/lib -type f -name "*.so*" -exec upx --best --lzma {} \; 2>/dev/null || true
+          find /usr/games -type f -executable -exec upx --best --lzma {} \; 2>/dev/null || true
+          find /opt -type f -executable -exec upx --best --lzma {} \; 2>/dev/null || true
+          
+          # Compress Discord specifically
+          upx --best --lzma /usr/share/discord/Discord 2>/dev/null || true
+          upx --best --lzma /usr/share/discord/chrome_crashpad_handler 2>/dev/null || true
+          
+          # Remove UPX after compression
+          apt-get purge -y upx-ucl
+          apt-get autoremove -y
+          
+          # Remove unnecessary locales (keep only en_US)
+          apt-get install -y localepurge
+          echo "en_US.UTF-8 UTF-8" > /etc/locale.nopurge
+          localepurge
+          
+          # Strip binaries and remove unnecessary files
+          find /usr/share/doc -depth -type f ! -name copyright -delete
+          find /usr/share/man -depth -type f -delete
+          find /usr/share/groff -depth -type f -delete
+          find /usr/share/info -depth -type f -delete
+          find /usr/share/lintian -depth -type f -delete
+          find /usr/share/linda -depth -type f -delete
+          rm -rf /var/cache/man/*
+          rm -rf /usr/share/locale/*
+          rm -rf /usr/share/i18n/locales/*
+          
+          # Remove package manager cache
+          apt-get autoremove --purge -y
+          apt-get clean
+          rm -rf /var/lib/apt/lists/*
+          
+          # Install Calamares installer (minimal)
+          apt-get install -y --no-install-recommends \
+            calamares \
+            qml-module-qtquick2 \
+            squashfs-tools
+          
+          # Configure locales
+          echo "en_US.UTF-8 UTF-8" > /etc/locale.gen
+          locale-gen
+          update-locale LANG=en_US.UTF-8
+          
+          # Configure timezone
+          ln -sf /usr/share/zoneinfo/UTC /etc/localtime
           
           # Configure OS branding
           cat > /etc/os-release <<O
-          NAME="Cybr"
+          NAME="Cybr Mobile"
           PRETTY_NAME="Cybr Mobile Gaming Edition"
           ID=cybr
-          ID_LIKE=ubuntu
+          ID_LIKE=debian
           VERSION_ID="1.0"
+          VERSION="1.0 (Plasma Mobile)"
+          VERSION_CODENAME=plasmamobile
           HOME_URL="https://getcybr.org/"
           SUPPORT_URL="https://github.com/WolfTech-Innovations/cybr"
           BUG_REPORT_URL="https://github.com/WolfTech-Innovations/cybr/issues"
           O
           
-          # Download and set Cybr logo
-          wget -O /usr/share/pixmaps/cybr-logo.png "https://a.fsdn.com/allura/p/wolfos/icon?w=96&1748003641" || echo "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==" | base64 -d > /usr/share/pixmaps/cybr-logo.png
+          # Download Cybr logo
+          wget -O /usr/share/pixmaps/cybr-logo.png "https://a.fsdn.com/allura/p/wolfos/icon?w=96&1748003641" || \
+            echo "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==" | base64 -d > /usr/share/pixmaps/cybr-logo.png
           
-          # Configure Plymouth
-          cp /usr/share/pixmaps/cybr-logo.png /usr/share/plymouth/ubuntu-logo.png
-          plymouth-set-default-theme spinner && update-initramfs -u
+          # Configure SDDM autologin
+          mkdir -p /etc/sddm.conf.d
+          cat > /etc/sddm.conf.d/autologin.conf <<SDDM
+          [Autologin]
+          User=cybruser
+          Session=plasma-mobile
+          SDDM
+          
+          # Enable virtual keyboard in KWin
+          mkdir -p /etc/xdg
+          cat > /etc/xdg/kwinrc <<KWIN
+          [Wayland]
+          VirtualKeyboardEnabled=true
+          KWIN
           
           # Create Calamares branding
           mkdir -p /etc/calamares/branding/cybr
@@ -103,11 +198,11 @@ jobs:
           ---
           componentName: cybr
           strings:
-              productName: "Cybr Mobile Gaming"
+              productName: "Cybr Mobile"
               shortProductName: "Cybr"
               version: "1.0"
               shortVersion: "1.0"
-              versionedName: "Cybr 1.0"
+              versionedName: "Cybr Mobile 1.0"
               shortVersionedName: "Cybr 1.0"
               bootloaderEntryName: "Cybr"
               productUrl: "https://getcybr.org/"
@@ -166,17 +261,9 @@ jobs:
           UNPACK
           
           # Create user
-          useradd -m -s /bin/bash -G sudo,audio,video,netdev -c "Cybr User" cybruser
+          useradd -m -s /bin/bash -G sudo,audio,video,netdev,plugdev,input -c "Cybr User" cybruser
           echo "cybruser:live" | chpasswd
           echo "root:root" | chpasswd
-          
-          # Configure autologin
-          mkdir -p /etc/lightdm/lightdm.conf.d
-          cat > /etc/lightdm/lightdm.conf.d/50-autologin.conf <<AUTO
-          [Seat:*]
-          autologin-user=cybruser
-          autologin-user-timeout=0
-          AUTO
           
           # Create desktop shortcuts
           mkdir -p /home/cybruser/Desktop /home/cybruser/.config/autostart
@@ -184,12 +271,22 @@ jobs:
           cat > /home/cybruser/Desktop/install-cybr.desktop <<INST
           [Desktop Entry]
           Type=Application
-          Name=Install Cybr
+          Name=Install Cybr Mobile
           Exec=pkexec calamares
           Icon=system-software-install
           Terminal=false
           Categories=System;
           INST
+          
+          cat > /home/cybruser/Desktop/angelfish.desktop <<ANGEL
+          [Desktop Entry]
+          Type=Application
+          Name=Angelfish Browser
+          Exec=angelfish
+          Icon=angelfish
+          Terminal=false
+          Categories=Network;WebBrowser;
+          ANGEL
           
           cat > /home/cybruser/Desktop/steam.desktop <<STEAM
           [Desktop Entry]
@@ -211,41 +308,55 @@ jobs:
           Categories=Network;InstantMessaging;
           DISC
           
+          cat > /home/cybruser/Desktop/discover.desktop <<DISCOV
+          [Desktop Entry]
+          Type=Application
+          Name=Discover Software Center
+          Exec=plasma-discover
+          Icon=plasmadiscover
+          Terminal=false
+          Categories=System;PackageManager;
+          DISCOV
+          
           chmod +x /home/cybruser/Desktop/*.desktop
           chown -R cybruser:cybruser /home/cybruser
           
           # Enable services
-          systemctl enable lightdm NetworkManager
+          systemctl enable sddm NetworkManager
           
-          # Cleanup
-          apt-get clean && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
+          # Final aggressive cleanup
+          rm -rf /tmp/* /var/tmp/*
+          rm -rf /var/cache/apt/archives/*.deb
+          rm -rf /var/log/*.log
+          find / -name "*.pyc" -delete
+          find / -name "__pycache__" -type d -exec rm -rf {} + 2>/dev/null || true
           CH
           
           # Copy kernel and initramfs
-          cp -r c/boot/* iso/boot/
-          K=$(ls iso/boot/vmlinuz-*liquorix* | head -1 | sed "s|iso/boot/vmlinuz-||")
+          cp -r chroot/boot/* iso/boot/
+          K=$(ls iso/boot/vmlinuz-* | head -1 | sed "s|iso/boot/vmlinuz-||")
           
-          # Create squashfs
-          mksquashfs c iso/live/filesystem.squashfs -comp xz -b 1M -Xdict-size 100%
+          # Create squashfs with maximum compression
+          mksquashfs chroot iso/live/filesystem.squashfs -comp xz -Xbcj x86 -b 1M -Xdict-size 100% -no-recovery -no-exports
           
           # Create boot menu
           wget -O iso/isolinux/splash.png "https://a.fsdn.com/allura/p/wolfos/icon?w=96&1748003641" || true
           
           cat > iso/isolinux/isolinux.cfg <<BOOT
           UI vesamenu.c32
-          MENU TITLE Cybr Mobile Gaming - Boot Menu
+          MENU TITLE Cybr Mobile - Plasma Mobile Boot Menu
           MENU BACKGROUND splash.png
           PROMPT 0
           TIMEOUT 300
           DEFAULT live
           
           LABEL live
-            MENU LABEL Cybr Live (DDE + Liquorix Kernel)
+            MENU LABEL Cybr Mobile (Plasma Mobile)
             KERNEL /boot/vmlinuz-${K}
             APPEND initrd=/boot/initrd.img-${K} boot=live components quiet splash
           
           LABEL live-safe
-            MENU LABEL Cybr Live (Safe Graphics)
+            MENU LABEL Cybr Mobile (Safe Graphics)
             KERNEL /boot/vmlinuz-${K}
             APPEND initrd=/boot/initrd.img-${K} boot=live components nomodeset
           BOOT
@@ -259,12 +370,12 @@ jobs:
           set timeout=30
           set default=0
           
-          menuentry "Cybr Live (DDE + Liquorix)" {
+          menuentry "Cybr Mobile (Plasma Mobile)" {
               linux /boot/vmlinuz-${K} boot=live components quiet splash
               initrd /boot/initrd.img-${K}
           }
           
-          menuentry "Cybr Live (Safe Graphics)" {
+          menuentry "Cybr Mobile (Safe Graphics)" {
               linux /boot/vmlinuz-${K} boot=live components nomodeset
               initrd /boot/initrd.img-${K}
           }
@@ -312,8 +423,9 @@ jobs:
           ISO_SIZE=$(($(stat -c%s "${ISO_NAME}.iso")/1024/1024))
           echo "### Cybr Mobile Gaming Edition Build Complete! 📱🎮🎉" >> $GITHUB_STEP_SUMMARY
           echo "**ISO:** ${ISO_NAME}.iso | **Size:** ${ISO_SIZE}MB" >> $GITHUB_STEP_SUMMARY
-          echo "**Base:** Ubuntu 24.04 LTS | **Desktop:** Deepin DDE | **Kernel:** Liquorix" >> $GITHUB_STEP_SUMMARY
-          echo "**Gaming:** Steam + Discord | **Installer:** Calamares" >> $GITHUB_STEP_SUMMARY
+          echo "**Base:** Debian 12 Minimal | **Desktop:** Plasma Mobile | **Kernel:** Standard Debian" >> $GITHUB_STEP_SUMMARY
+          echo "**Apps:** Angelfish, Steam, Discord, MangoHud (ALL UPX COMPRESSED) | **Installer:** Calamares" >> $GITHUB_STEP_SUMMARY
+          echo "**Compression:** UPX --best --lzma on all binaries + Maximum XZ squashfs compression" >> $GITHUB_STEP_SUMMARY
 
       - uses: actions/upload-artifact@v4
         with:
@@ -341,7 +453,7 @@ jobs:
           [ -z "$SF_USER" ] || [ -z "$SF_PASS" ] && echo "Configure SF secrets" && exit 0
           sudo apt-get update && sudo apt-get install -y sshpass rsync
           for i in 1 2 3; do
-            timeout 1800 sshpass -p "$SF_PASS" rsync -avP -e "ssh -o StrictHostKeyChecking=no" "${ISO_NAME}.iso" "$SF_USER@frs.sourceforge.net:/home/frs/project/wolfos/gaming/" && break
+            timeout 1800 sshpass -p "$SF_PASS" rsync -avP -e "ssh -o StrictHostKeyChecking=no" "${ISO_NAME}.iso" "$SF_USER@frs.sourceforge.net:/home/frs/project/wolfos/mobile/" && break
             [ $i -eq 3 ] && exit 1
             sleep 30
           done
