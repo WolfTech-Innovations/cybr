@@ -14,6 +14,7 @@ jobs:
     outputs:
       base_name: ${{ steps.set-names.outputs.base_name }}
       iso_name: ${{ steps.set-names.outputs.iso_name }}
+    
     steps:
       - uses: actions/checkout@v4
 
@@ -40,14 +41,14 @@ jobs:
           
           debootstrap --arch=amd64 --variant=minbase noble base http://archive.ubuntu.com/ubuntu/
           
-          chroot base bash <<'\''CH'\''
+          chroot base bash <<'"'"'CHROOT'"'"'
           export DEBIAN_FRONTEND=noninteractive
           
-          cat > /etc/apt/sources.list <<E
+          cat > /etc/apt/sources.list <<'"'"'SOURCES'"'"'
           deb http://archive.ubuntu.com/ubuntu noble main restricted universe multiverse
           deb http://archive.ubuntu.com/ubuntu noble-updates main restricted universe multiverse
           deb http://archive.ubuntu.com/ubuntu noble-security main restricted universe multiverse
-          E
+          SOURCES
           
           apt-get update && apt-get install -y software-properties-common curl gnupg2 ca-certificates
           
@@ -68,14 +69,14 @@ jobs:
           wget -O /tmp/discord.deb "https://discord.com/api/download?platform=linux&format=deb"
           apt-get install -y /tmp/discord.deb || apt-get install -f -y
           
-          cat > /etc/os-release <<O
+          cat > /etc/os-release <<'"'"'OSRELEASE'"'"'
           NAME="Cybr"
           PRETTY_NAME="Cybr Mobile Gaming Edition"
           ID=cybr
           ID_LIKE=ubuntu
           VERSION_ID="1.0"
           HOME_URL="https://getcybr.org/"
-          O
+          OSRELEASE
           
           wget -O /usr/share/pixmaps/cybr-logo.png "https://a.fsdn.com/allura/p/wolfos/icon?w=96&1748003641" || echo "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==" | base64 -d > /usr/share/pixmaps/cybr-logo.png
           
@@ -84,14 +85,14 @@ jobs:
           echo "root:root" | chpasswd
           
           mkdir -p /etc/lightdm/lightdm.conf.d
-          cat > /etc/lightdm/lightdm.conf.d/50-autologin.conf <<AUTO
+          cat > /etc/lightdm/lightdm.conf.d/50-autologin.conf <<'"'"'AUTOLOGIN'"'"'
           [Seat:*]
           autologin-user=cybruser
           autologin-user-timeout=0
-          AUTO
+          AUTOLOGIN
           
           mkdir -p /home/cybruser/Desktop
-          cat > /home/cybruser/Desktop/steam.desktop <<D
+          cat > /home/cybruser/Desktop/steam.desktop <<'"'"'STEAMDESK'"'"'
           [Desktop Entry]
           Type=Application
           Name=Steam
@@ -99,22 +100,24 @@ jobs:
           Icon=steam
           Terminal=false
           Categories=Game;
-          D
-          cat > /home/cybruser/Desktop/discord.desktop <<D
+          STEAMDESK
+          
+          cat > /home/cybruser/Desktop/discord.desktop <<'"'"'DISCDESK'"'"'
           [Desktop Entry]
           Type=Application
           Name=Discord
           Exec=/usr/bin/discord
           Icon=discord
           Terminal=false
-          Categories=Network;
-          D
+          Categories=Network;InstantMessaging;
+          DISCDESK
+          
           chmod +x /home/cybruser/Desktop/*.desktop
           chown -R cybruser:cybruser /home/cybruser
           
           systemctl enable lightdm NetworkManager
           apt-get clean && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
-          CH
+          CHROOT
           
           mksquashfs base "${BASE_NAME}.squashfs" -comp xz -b 1M -Xdict-size 100%
           mv "${BASE_NAME}.squashfs" /w/
@@ -137,7 +140,7 @@ jobs:
           
           make tinyconfig
           
-          # Enable essential features via script
+          # Enable essential features
           scripts/config --enable 64BIT
           scripts/config --enable TTY
           scripts/config --enable PRINTK
@@ -215,136 +218,136 @@ jobs:
           mkdir -p /tmp/initramfs/lib/firmware
           apt-get install -y firmware-iwlwifi firmware-realtek firmware-atheros
           
-          # Copy only essential WiFi firmware (keep under 4MB)
+          # Copy only essential WiFi firmware
           cp -r /lib/firmware/iwlwifi-* /tmp/initramfs/lib/firmware/ 2>/dev/null || true
           cp -r /lib/firmware/rtl_nic /tmp/initramfs/lib/firmware/ 2>/dev/null || true
           cp -r /lib/firmware/ath* /tmp/initramfs/lib/firmware/ 2>/dev/null || true
           
           # Create installer script
-          cat > /tmp/initramfs/init <<'INIT'
-#!/bin/sh
+          cat > /tmp/initramfs/init <<'"'"'INITSCRIPT'"'"'
+          #!/bin/sh
 
-export PATH=/bin:/sbin:/usr/bin:/usr/sbin
+          export PATH=/bin:/sbin:/usr/bin:/usr/sbin
 
-mount -t proc none /proc
-mount -t sysfs none /sys
-mount -t devtmpfs none /dev
+          mount -t proc none /proc
+          mount -t sysfs none /sys
+          mount -t devtmpfs none /dev
 
-mdev -s
+          mdev -s
 
-clear
-echo "======================================="
-echo "  Cybr Network Installer v1.0"
-echo "======================================="
-echo ""
-echo "Commands:"
-echo "  wifi     - Configure WiFi"
-echo "  install  - Install Cybr to disk"
-echo "  shell    - Drop to shell"
-echo ""
+          clear
+          echo "======================================="
+          echo "  Cybr Network Installer v1.0"
+          echo "======================================="
+          echo ""
+          echo "Commands:"
+          echo "  wifi     - Configure WiFi"
+          echo "  install  - Install Cybr to disk"
+          echo "  shell    - Drop to shell"
+          echo ""
 
-wifi_setup() {
-    echo "Scanning for WiFi networks..."
-    ip link set wlan0 up 2>/dev/null || ip link set wlp0s20f3 up 2>/dev/null
-    sleep 2
-    
-    echo "Enter SSID:"
-    read SSID
-    echo "Enter password:"
-    read -s PASS
-    
-    cat > /tmp/wpa.conf <<WPA
-network={
-    ssid="$SSID"
-    psk="$PASS"
-}
-WPA
-    
-    wpa_supplicant -B -i wlan0 -c /tmp/wpa.conf 2>/dev/null || wpa_supplicant -B -i wlp0s20f3 -c /tmp/wpa.conf
-    sleep 3
-    udhcpc -i wlan0 2>/dev/null || udhcpc -i wlp0s20f3
-    
-    if ping -c 1 8.8.8.8 >/dev/null 2>&1; then
-        echo "[OK] Connected!"
-    else
-        echo "[FAIL] Connection failed"
-    fi
-}
+          wifi_setup() {
+              echo "Scanning for WiFi networks..."
+              ip link set wlan0 up 2>/dev/null || ip link set wlp0s20f3 up 2>/dev/null
+              sleep 2
+              
+              echo "Enter SSID:"
+              read SSID
+              echo "Enter password:"
+              read -s PASS
+              
+              cat > /tmp/wpa.conf <<WPACONF
+          network={
+              ssid="$SSID"
+              psk="$PASS"
+          }
+          WPACONF
+              
+              wpa_supplicant -B -i wlan0 -c /tmp/wpa.conf 2>/dev/null || wpa_supplicant -B -i wlp0s20f3 -c /tmp/wpa.conf
+              sleep 3
+              udhcpc -i wlan0 2>/dev/null || udhcpc -i wlp0s20f3
+              
+              if ping -c 1 8.8.8.8 >/dev/null 2>&1; then
+                  echo "[OK] Connected!"
+              else
+                  echo "[FAIL] Connection failed"
+              fi
+          }
 
-install_cybr() {
-    if ! ping -c 1 8.8.8.8 >/dev/null 2>&1; then
-        echo "[FAIL] No internet! Run: wifi"
-        return 1
-    fi
-    
-    echo "Available disks:"
-    blkid | grep -v loop
-    echo ""
-    echo "Enter disk (e.g., sda):"
-    read DISK
-    DISK="/dev/$DISK"
-    
-    echo "WARNING: Erase $DISK?"
-    echo "Type YES:"
-    read CONFIRM
-    [ "$CONFIRM" != "YES" ] && return 1
-    
-    echo "[1/6] Partitioning..."
-    parted -s "$DISK" mklabel gpt
-    parted -s "$DISK" mkpart ESP fat32 1MiB 513MiB
-    parted -s "$DISK" set 1 esp on
-    parted -s "$DISK" mkpart primary ext4 513MiB 100%
-    
-    echo "[2/6] Formatting..."
-    mkfs.vfat -F32 "${DISK}1"
-    mkfs.ext4 -F "${DISK}2"
-    
-    echo "[3/6] Mounting..."
-    mount "${DISK}2" /mnt
-    mkdir -p /mnt/boot/efi
-    mount "${DISK}1" /mnt/boot/efi
-    
-    echo "[4/6] Downloading base system..."
-    BASE_URL="https://sourceforge.net/projects/wolfos/files/gaming/base"
-    LATEST=$(wget -qO- "$BASE_URL/" | grep -oP "cybr-base-v\d+" | sort -V | tail -1)
-    
-    [ -z "$LATEST" ] && echo "[FAIL] Failed to find base" && return 1
-    
-    echo "Downloading ${LATEST}.squashfs..."
-    wget -O /tmp/base.sq "${BASE_URL}/${LATEST}.squashfs/download"
-    
-    echo "[5/6] Extracting (this takes a while)..."
-    unsquashfs -f -d /mnt /tmp/base.sq
-    
-    echo "[6/6] Installing bootloader..."
-    mount --bind /dev /mnt/dev
-    mount --bind /proc /mnt/proc
-    mount --bind /sys /mnt/sys
-    
-    chroot /mnt grub-install --target=x86_64-efi --efi-directory=/boot/efi --bootloader-id=Cybr "$DISK"
-    chroot /mnt update-grub
-    
-    umount /mnt/dev /mnt/proc /mnt/sys
-    sync
-    umount -R /mnt
-    
-    echo "======================================="
-    echo "  Installation Complete!"
-    echo "  Remove USB and reboot"
-    echo "======================================="
-}
+          install_cybr() {
+              if ! ping -c 1 8.8.8.8 >/dev/null 2>&1; then
+                  echo "[FAIL] No internet! Run: wifi"
+                  return 1
+              fi
+              
+              echo "Available disks:"
+              blkid | grep -v loop
+              echo ""
+              echo "Enter disk (e.g., sda):"
+              read DISK
+              DISK="/dev/$DISK"
+              
+              echo "WARNING: Erase $DISK?"
+              echo "Type YES:"
+              read CONFIRM
+              [ "$CONFIRM" != "YES" ] && return 1
+              
+              echo "[1/6] Partitioning..."
+              parted -s "$DISK" mklabel gpt
+              parted -s "$DISK" mkpart ESP fat32 1MiB 513MiB
+              parted -s "$DISK" set 1 esp on
+              parted -s "$DISK" mkpart primary ext4 513MiB 100%
+              
+              echo "[2/6] Formatting..."
+              mkfs.vfat -F32 "${DISK}1"
+              mkfs.ext4 -F "${DISK}2"
+              
+              echo "[3/6] Mounting..."
+              mount "${DISK}2" /mnt
+              mkdir -p /mnt/boot/efi
+              mount "${DISK}1" /mnt/boot/efi
+              
+              echo "[4/6] Downloading base system..."
+              BASE_URL="https://sourceforge.net/projects/wolfos/files/gaming/base"
+              LATEST=$(wget -qO- "$BASE_URL/" | grep -oP "cybr-base-v\d+" | sort -V | tail -1)
+              
+              [ -z "$LATEST" ] && echo "[FAIL] Failed to find base" && return 1
+              
+              echo "Downloading ${LATEST}.squashfs..."
+              wget -O /tmp/base.sq "${BASE_URL}/${LATEST}.squashfs/download"
+              
+              echo "[5/6] Extracting (this takes a while)..."
+              unsquashfs -f -d /mnt /tmp/base.sq
+              
+              echo "[6/6] Installing bootloader..."
+              mount --bind /dev /mnt/dev
+              mount --bind /proc /mnt/proc
+              mount --bind /sys /mnt/sys
+              
+              chroot /mnt grub-install --target=x86_64-efi --efi-directory=/boot/efi --bootloader-id=Cybr "$DISK"
+              chroot /mnt update-grub
+              
+              umount /mnt/dev /mnt/proc /mnt/sys
+              sync
+              umount -R /mnt
+              
+              echo "======================================="
+              echo "  Installation Complete!"
+              echo "  Remove USB and reboot"
+              echo "======================================="
+          }
 
-while true; do
-    echo -n "cybr> "
-    read cmd args
-    case "$cmd" in
-        wifi) wifi_setup ;;
-        install) install_cybr ;;
-        shell) exec /bin/sh ;;
-        *) echo "Unknown: $cmd" ;;
-    esac
-done
-INIT
+          while true; do
+              echo -n "cybr> "
+              read cmd args
+              case "$cmd" in
+                  wifi) wifi_setup ;;
+                  install) install_cybr ;;
+                  shell) exec /bin/sh ;;
+                  *) echo "Unknown: $cmd" ;;
+              esac
+          done
+          INITSCRIPT
           
           chmod +x /tmp/initramfs/init
           
@@ -357,24 +360,24 @@ INIT
           cp /tmp/vmlinuz /w/iso/boot/
           cp /tmp/initramfs.cpio.gz /w/iso/boot/
           
-          cat > /w/iso/isolinux/isolinux.cfg <<BOOT
+          cat > /w/iso/isolinux/isolinux.cfg <<'"'"'ISOLINUXCFG'"'"'
           DEFAULT cybr
           LABEL cybr
             SAY Booting Cybr Installer...
             KERNEL /boot/vmlinuz
             APPEND initrd=/boot/initramfs.cpio.gz quiet
-          BOOT
+          ISOLINUXCFG
           
           cp /usr/lib/ISOLINUX/isolinux.bin /w/iso/isolinux/
           cp /usr/lib/syslinux/modules/bios/*.c32 /w/iso/isolinux/ 2>/dev/null || true
           
-          cat > /w/iso/EFI/boot/grub.cfg <<EFI
+          cat > /w/iso/EFI/boot/grub.cfg <<'"'"'GRUBCFG'"'"'
           set timeout=3
           menuentry "Cybr Network Installer" {
               linux /boot/vmlinuz quiet
               initrd /boot/initramfs.cpio.gz
           }
-          EFI
+          GRUBCFG
           
           grub-mkstandalone -O x86_64-efi -o /w/iso/EFI/boot/bootx64.efi boot/grub/grub.cfg=/w/iso/EFI/boot/grub.cfg
           
@@ -433,6 +436,7 @@ INIT
     runs-on: ubuntu-latest
     needs: build-base
     if: github.event_name == 'workflow_dispatch' || github.ref == 'refs/heads/main'
+    
     steps:
       - uses: actions/download-artifact@v4
         with:
