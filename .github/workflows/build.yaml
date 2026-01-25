@@ -365,32 +365,35 @@ jobs:
           cp /usr/lib/ISOLINUX/isolinux.bin iso/isolinux/
           cp /usr/lib/syslinux/modules/bios/*.c32 iso/isolinux/
           
-          # Setup EFI boot
-          cat > iso/EFI/boot/grub.cfg <<EFI
-          set timeout=30
-          set default=0
+          # Setup EFI boot with Syslinux
+          cat > iso/EFI/boot/syslinux.cfg <<EFI
+          DEFAULT live
+          TIMEOUT 300
           
-          menuentry "Cybr Mobile (Plasma Mobile)" {
-              linux /boot/vmlinuz-${K} boot=live components quiet splash
-              initrd /boot/initrd.img-${K}
-          }
+          LABEL live
+            MENU LABEL Cybr Mobile (Plasma Mobile)
+            LINUX /boot/vmlinuz-${K}
+            APPEND initrd=/boot/initrd.img-${K} boot=live components quiet splash
           
-          menuentry "Cybr Mobile (Safe Graphics)" {
-              linux /boot/vmlinuz-${K} boot=live components nomodeset
-              initrd /boot/initrd.img-${K}
-          }
+          LABEL live-safe
+            MENU LABEL Cybr Mobile (Safe Graphics)
+            LINUX /boot/vmlinuz-${K}
+            APPEND initrd=/boot/initrd.img-${K} boot=live components nomodeset
           EFI
           
-          # Create EFI image
-          grub-mkstandalone -O x86_64-efi -o iso/EFI/boot/bootx64.efi boot/grub/grub.cfg=iso/EFI/boot/grub.cfg
+          # Copy syslinux EFI bootloader
+          cp /usr/lib/SYSLINUX.EFI/efi64/syslinux.efi iso/EFI/boot/bootx64.efi
+          cp /usr/lib/syslinux/modules/efi64/*.c32 iso/EFI/boot/
           
-          dd if=/dev/zero of=efiboot.img bs=1M count=20
+          # Create EFI boot image with Syslinux
+          dd if=/dev/zero of=efiboot.img bs=1M count=10
           mkfs.vfat efiboot.img
           mkdir efi_mount
           mount -o loop efiboot.img efi_mount
           mkdir -p efi_mount/EFI/boot
           cp iso/EFI/boot/bootx64.efi efi_mount/EFI/boot/
-          cp iso/EFI/boot/grub.cfg efi_mount/EFI/boot/
+          cp iso/EFI/boot/syslinux.cfg efi_mount/EFI/boot/
+          cp iso/EFI/boot/*.c32 efi_mount/EFI/boot/ 2>/dev/null || true
           umount efi_mount
           rmdir efi_mount
           mv efiboot.img iso/
