@@ -1,54 +1,49 @@
-# Welcome to Cybr - Gaming. Reimagined.
+# Welcome to Cybr - Mobile Gaming Edition
 ![WTLogo](https://github.com/WolfTech-Innovations/cybr/blob/51e1cbc62285ed52d3deb320b47af5670b163d6e/images/Screenshot_20260120-190710.png)
 [![Cybr Build System](https://github.com/WolfTech-Innovations/cybr/actions/workflows/build.yaml/badge.svg)](https://github.com/WolfTech-Innovations/cybr/actions/workflows/build.yaml)
 
-Cybr is a Linux distribution built for gaming on any device - handhelds, tablets, desktops, and everything in between. Combining Debian's rock-solid foundation with i3's powerful tiling window management, Plank Dock's beautiful interface, and extreme compression technology, Cybr delivers desktop-class gaming in an incredibly compact package.
+Cybr is a Linux distribution built for mobile gaming on handheld devices, tablets, and touch-enabled systems. Combining Debian's rock-solid foundation with Phosh's modern mobile interface and the high-performance Liquorix kernel, Cybr delivers a touch-first gaming experience with an ultra-minimal network installer.
 
-**Perfect for:** Steam Deck alternatives, GPD devices, AYANEO handhelds, gaming tablets, 2-in-1 laptops, and traditional gaming PCs.
+**Perfect for:** Handheld gaming devices, GPD devices, AYANEO handhelds, gaming tablets, 2-in-1 laptops, and Steam Deck alternatives.
 
 ## Features
 
 - **Base**: Debian 12 Bookworm (stable, secure, minimal)
-- **Desktop**: i3 tiling window manager + Latte Dock + Dolphin file manager
-- **Size**: Under 500MB ISO with aggressive UPX + XZ compression
-- **Gaming**: Steam pre-installed with Vulkan support
-- **Installer**: Calamares (beautiful, user-friendly)
-- **Keyboard**: Squeekboard on-screen keyboard for touch devices
-- **Performance**: MangoHud for FPS monitoring
+- **Desktop**: Phosh (GNOME-based mobile interface)
+- **Display Manager**: GDM3 with auto-login
+- **Kernel**: Liquorix (optimized for gaming and low latency)
+- **Installer**: Network-based (~50MB ISO)
+- **Size**: Ultra-minimal installer, downloads latest base during install
+- **Gaming**: Steam pre-installed with full 32-bit support and Vulkan
 - **Communications**: Discord pre-installed
 
 ## What's Included
 
 ### Desktop Environment
-- **i3 Window Manager**: Lightweight tiling WM for maximum performance
-- **Latte Dock**: Beautiful macOS-style dock with smooth animations
-- **Dolphin**: Full-featured KDE file manager
-- **LightDM**: Fast, lightweight display manager with auto-login
-- **Squeekboard**: Touch-friendly on-screen keyboard
-- **Rofi**: Application launcher (Win+D)
-- **Picom**: Compositor for smooth visuals
+- **Phosh**: Modern mobile desktop with touch gestures
+- **GDM3**: GNOME Display Manager with auto-login
+- **Touch-Optimized**: Native gesture support and adaptive apps
+- **Mobile-Friendly**: Designed for handheld and touch devices
 
 ### Pre-installed Applications
 - **Web Browser**: Firefox ESR
-- **Gaming Platform**: Steam with complete runtime libraries
+- **Gaming Platform**: Steam with complete 32-bit runtime libraries
 - **Communications**: Discord
-- **Performance Overlay**: MangoHud for FPS and system stats
-- **Terminal**: Alacritty (fast, GPU-accelerated)
 - **Partition Editor**: GParted
-- **File Manager**: Dolphin
+- **Network**: NetworkManager with WiFi support
 
 ### Gaming Optimizations
-- **Vulkan Drivers**: Mesa Vulkan drivers for AMD and Intel GPUs
+- **Liquorix Kernel**: High-performance kernel optimized for gaming
+- **Vulkan Drivers**: Mesa Vulkan drivers for AMD and Intel GPUs (32-bit + 64-bit)
 - **Steam Ready**: Pre-configured with all dependencies
-- **MangoHud**: Real-time performance monitoring overlay
-- **UPX Compressed**: All binaries compressed with UPX --best --lzma (50-70% size reduction)
+- **32-bit Support**: Full multilib for Windows game compatibility
 - **Proton Compatible**: Ready for Windows games via Steam Play
 
-### Touch & Mobile Features
-- **Squeekboard**: On-screen keyboard (launch with Win+K or auto-start)
-- **Touch-Optimized**: Works great on tablets and convertibles
-- **Latte Dock**: Mouse and touch-friendly application launcher
-- **Window Gestures**: Smooth window management on touch screens
+### Mobile Features
+- **Touch Interface**: Native touch gesture support throughout
+- **Adaptive Layout**: Interface adjusts to device orientation
+- **On-Screen Keyboard**: Integrated mobile keyboard
+- **Desktop Shortcuts**: Steam and Discord ready on desktop
 
 ## System Requirements
 
@@ -56,13 +51,13 @@ Cybr is a Linux distribution built for gaming on any device - handhelds, tablets
 - **Storage**: 16GB minimum (64GB+ recommended for game library)
 - **Processor**: 64-bit x86 processor (AMD64/Intel64)
 - **Graphics**: Any GPU with KMS support (AMD/Intel recommended, NVIDIA supported)
-- **Boot**: UEFI or Legacy BIOS (GRUB for UEFI, ISOLINUX for BIOS)
-- **Display**: Any display (touch screen support included)
+- **Network**: WiFi or Ethernet required for installation
+- **Boot**: UEFI (dual-boot support with GRUB)
 
 ## Installation
 
 ### Step 1: Download
-Download the latest ISO from the [SourceForge Mirror](https://sourceforge.net/projects/wolfos/files/gaming/)
+Download the latest network installer ISO (~50MB) from [SourceForge Mirror](https://sourceforge.net/projects/wolfos/files/gaming/)
 
 ### Step 2: Create Bootable Media
 Create a bootable USB drive using:
@@ -71,52 +66,81 @@ Create a bootable USB drive using:
 
 Example with dd:
 ```bash
-sudo dd if=cybr-gaming-v*.iso of=/dev/sdX bs=4M status=progress && sync
+sudo dd if=cybr-netinstall-v*.iso of=/dev/sdX bs=4M status=progress && sync
 ```
 
-### Step 3: Boot and Install
+### Step 3: Boot from USB
 1. Boot your device from the USB drive
-2. The live environment starts with auto-login as "cybruser"
-3. Click "Install Cybr" icon on desktop to launch Calamares installer
-4. Follow the installation wizard:
-   - Select your language and timezone
-   - Choose your target installation drive
-   - Set up partitions (automatic or manual)
-   - Create your user account
-   - Review and install
-5. Reboot and enjoy Cybr!
+2. You'll see the Cybr Network Installer command line interface
+
+### Step 4: Connect to WiFi
+```bash
+cybr> wifi
+Enter SSID: YourNetworkName
+Enter password: ********
+[OK] Connected!
+```
+
+### Step 5: Install to Disk
+```bash
+cybr> install
+Available disks:
+/dev/sda: 512GB SSD
+Enter disk (e.g., sda): sda
+WARNING: Erase /dev/sda?
+Type YES: YES
+
+[1/6] Partitioning...
+[2/6] Formatting...
+[3/6] Mounting...
+[4/6] Downloading base system...
+[5/6] Extracting (this takes a while)...
+[6/6] Installing bootloader...
+
+=======================================
+  Installation Complete!
+  Remove USB and reboot
+=======================================
+```
+
+### Alternative: Shell Access
+For advanced users:
+```bash
+cybr> shell
+```
 
 ## First Boot
 
 On first boot, Cybr is ready with:
-- i3 window manager with Latte Dock
-- Steam ready to launch
+- Phosh mobile desktop environment
+- Auto-login as "cybruser" (password: cybr)
+- Steam ready to launch from desktop
 - Discord ready for voice chat
-- Squeekboard available for on-screen keyboard (Win+K)
-- MangoHud installed for performance monitoring
 - Network connectivity configured
 - All gaming codecs and drivers installed
+- Liquorix kernel for optimal gaming performance
+
+## Default Credentials
+
+- **Username**: cybruser
+- **Password**: cybr
+- **Root Password**: root
+
+**Important**: Change these passwords after first login:
+```bash
+passwd  # Change user password
+sudo passwd root  # Change root password
+```
 
 ## Gaming on Cybr
 
 ### Steam
-Steam is pre-installed and compressed:
-1. Click Steam icon in Latte Dock or press Win+D and type "steam"
+Steam is pre-installed with desktop shortcut:
+1. Click Steam icon on desktop or in app drawer
 2. Sign in to your Steam account
 3. Enable Proton in Steam Settings → Compatibility for Windows games
 4. Configure controller support in Settings → Controller
-5. Optional: Enable Big Picture Mode for controller navigation
-6. Start gaming!
-
-### MangoHud Performance Overlay
-Monitor FPS and system stats while gaming:
-```bash
-# Launch any game with MangoHud
-mangohud %command%
-
-# In Steam, add to launch options:
-mangohud %command%
-```
+5. Start gaming!
 
 ### Controller Support
 - Native Steam Input support
@@ -124,26 +148,10 @@ mangohud %command%
 - Built-in handheld controls supported
 
 ### Discord
-Discord comes pre-installed and UPX compressed:
-- Launch from Latte Dock or Win+D → "discord"
+Discord is pre-installed with desktop shortcut:
+- Launch from desktop or app drawer
 - Screen share support for streaming gameplay
 - Voice chat optimized for gaming
-
-## Keyboard Shortcuts
-
-### i3 Window Manager
-- **Win + Enter**: Launch terminal (Alacritty)
-- **Win + D**: Application launcher (Rofi)
-- **Win + K**: Toggle on-screen keyboard (Squeekboard)
-- **Win + Shift + Q**: Close focused window
-- **Win + H/J/K/L**: Navigate windows (Vim-style)
-- **Win + 1/2/3/4**: Switch workspaces
-- **Win + F**: Fullscreen toggle
-- **Win + Shift + C**: Reload i3 config
-- **Win + Shift + R**: Restart i3
-
-### System
-- **Win + Shift + E**: Exit/logout menu
 
 ## Use Cases
 
@@ -151,9 +159,8 @@ Cybr is designed for:
 - **Handheld Gaming**: GPD Win, AYANEO, OneXPlayer, Steam Deck alternatives
 - **Gaming Tablets**: x86 tablets with touch screens
 - **2-in-1 Laptops**: Convertible devices for gaming and productivity
-- **Desktop Gaming**: Traditional gaming PCs wanting a lean, fast system
-- **Low-Spec Hardware**: Older machines that need lightweight but functional gaming OS
 - **Touch-First Devices**: Any device with a touch screen
+- **Mobile Gaming**: Portable gaming on handheld devices
 
 ## Building from Source
 
@@ -168,41 +175,45 @@ cd cybr
 # Or trigger manually from the Actions tab
 ```
 
-The build process creates a bootable ISO with:
-- Debian 12 Bookworm minimal base
-- i3 + Latte Dock + Dolphin desktop
-- Steam, Discord, and gaming libraries
-- Calamares installer
-- All Cybr customizations and branding
-- **Extreme compression**: UPX + XZ maximum compression
-- **Dual boot support**: GRUB (UEFI) and ISOLINUX (BIOS)
+The build process creates:
+1. **Network Installer ISO** (~50MB): Ultra-minimal bootable installer
+2. **Base System** (squashfs): Complete Cybr system downloaded during install
 
 ### Build Features
 - Fully automated GitHub Actions workflow
 - Docker-based clean build environment
 - Reproducible builds
-- UPX compression of all binaries (50-70% reduction)
-- ZSTD level 22 squashfs compression
+- Network installer approach (always fresh installs)
+- Liquorix kernel compilation
 - Automatic checksum generation
 - SourceForge upload integration
-- ISO size target: Under 500MB
 
-## Advanced Features
+### Build Process
+1. **Build Base System**:
+   - Debootstrap Debian Bookworm
+   - Install Liquorix kernel from official repo
+   - Install Phosh desktop environment
+   - Add Steam with 32-bit support
+   - Install Discord
+   - Configure auto-login and branding
+   - Create squashfs image
 
-### Extreme Compression Technology
-Cybr uses multiple compression layers:
-1. **UPX --best --lzma**: Compresses all executables and libraries (50-70% reduction)
-2. **XZ Compression**: Squashfs with maximum XZ compression and BCJ x86 filter
-3. **1MB Block Size**: Optimal compression ratio
-4. **Aggressive Cleanup**: Removes docs, man pages, unnecessary locales
+2. **Build Network Installer**:
+   - Compile minimal Linux kernel (tinyconfig + essentials)
+   - Build static BusyBox
+   - Create initramfs with installer script
+   - Include WiFi firmware
+   - Generate bootable ISO with GRUB (UEFI)
 
-Result: **Full gaming system in under 500MB** with maximum compression!
+## Network Installer Features
 
-### Touch Screen Support
-- **Squeekboard**: Modern on-screen keyboard
-- **Latte Dock**: Touch-friendly app launcher
-- **i3**: Touch-compatible window management
-- Auto-start keyboard option available
+The network installer is ultra-minimal but includes:
+- **WiFi Support**: iwlwifi, Realtek, Atheros firmware
+- **Commands**: `wifi`, `install`, `shell`
+- **Automatic**: Downloads latest base from SourceForge
+- **Partitioning**: Automated GPT partitioning (EFI + root)
+- **Bootloader**: GRUB installation for UEFI systems
+- **Progress**: 6-step installation with clear feedback
 
 ## Customization
 
@@ -225,19 +236,11 @@ flatpak remote-add --if-not-exists flathub https://flathub.org/repo/flathub.flat
 - **Lutris**: Install via `apt install lutris` for non-Steam games
 - **Heroic**: For Epic Games and GOG
 
-### Customizing i3
-Edit `~/.config/i3/config` to customize:
-- Keybindings
-- Workspace layouts
-- Auto-start applications
-- Status bar settings
-
-### Customizing Latte Dock
-Right-click Latte Dock to:
-- Add/remove application shortcuts
-- Change position and size
-- Adjust animation settings
-- Configure transparency
+### Customizing Phosh
+- Settings app for system configuration
+- Appearance settings for themes
+- Touch gesture configuration
+- Application drawer customization
 
 ## Downloads
 
@@ -254,47 +257,47 @@ Right-click Latte Dock to:
 ## Troubleshooting
 
 ### Boot Issues
-- Try "Safe Graphics" boot option
-- Check BIOS/UEFI boot settings
+- Verify UEFI boot mode in BIOS
+- Check boot order settings
 - Verify ISO checksum after download
+
+### WiFi Not Working During Install
+- Check if your WiFi card is supported
+- Try USB WiFi adapter if built-in fails
+- Use Ethernet connection as alternative
+
+### Installation Fails to Download Base
+- Verify internet connection with `ping 8.8.8.8`
+- Check SourceForge status
+- Retry installation
 
 ### Steam Not Launching
 - Run: `sudo apt install --reinstall steam-installer`
 - Check graphics drivers: `glxinfo | grep OpenGL`
+- Verify 32-bit libraries: `dpkg --print-foreign-architectures`
 
-### On-Screen Keyboard Not Appearing
-- Press Win+K to toggle Squeekboard
-- Run manually: `squeekboard &`
-- Add to i3 autostart in config
-
-### Discord or Steam Slow to Start
-- First launch may be slower (UPX decompression)
-- Subsequent launches will be normal speed
-- This is expected with extreme compression
-
-### Latte Dock Not Starting
-- Run manually: `latte-dock &`
-- Check i3 config for autostart entry
-- Restart i3 with Win+Shift+R
+### Slow Performance
+- Liquorix kernel should provide optimal performance
+- Check running processes with `top`
+- Verify graphics drivers are loaded: `lsmod | grep -E "i915|amdgpu|nouveau"`
 
 ## Credits
 
 Cybr is built on amazing open source projects:
 - **Debian Project** - Rock-solid base system
-- **i3 Window Manager** - Efficient tiling WM
-- **KDE Project** - Latte Dock, Dolphin, and frameworks
+- **Phosh** - Modern mobile desktop interface
+- **GNOME Project** - Desktop environment components
+- **Liquorix** - High-performance gaming kernel
 - **Valve** - Steam platform and Proton
-- **Calamares Team** - Beautiful installer
-- **Squeekboard Developers** - On-screen keyboard
-- **MangoHud Team** - Performance overlay
-- **UPX Developers** - Executable compression
+- **BusyBox** - Minimal installer utilities
+- **Linux Kernel** - Core operating system
 - **All open source contributors**
 
 ## Our Team
 
-- **Christopher L Fox Jr** - CEO and Head of Development
-- **Joseph Daniels Stratton** - Head of HR and Marketing
-- **Christopher Ray Fricks** - Programming Department and Finance
+- **Christopher L Fox Jr** - CEO and Lead Developer
+- **Joseph Daniels Stratton** - HR and Marketing
+- **Christopher Ray Fricks** - Programming and Finance
 
 ## Legal
 
@@ -306,12 +309,12 @@ Cybr is free and open source software.
 - Distribute copies
 - Distribute modified versions
 
-This project is community-driven and welcomes contributions.
+This project is licensed under GPL-3.0 and welcomes contributions.
 
 [![Copyrighted.com Registered & Protected](https://static.copyrighted.com/badges/125x75/04.png)](https://app.copyrighted.com/work/GW0cSbajaE2ZDg9X "Copyrighted.com Registered & Protected")
 
 ---
 
-**Note**: Cybr is not affiliated with or endorsed by Debian, i3, KDE, Valve, Discord, or any upstream projects. All trademarks belong to their respective owners. Steam and the Steam logo are trademarks of Valve Corporation.
+**Note**: Cybr is not affiliated with or endorsed by Debian, GNOME, Phosh, Liquorix, Valve, Discord, or any upstream projects. All trademarks belong to their respective owners. Steam and the Steam logo are trademarks of Valve Corporation.
 
-**Made with ❤️ for the gaming community**
+**Made for the mobile gaming community**
