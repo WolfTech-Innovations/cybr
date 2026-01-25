@@ -301,8 +301,8 @@ jobs:
           cp -r chroot/boot/* iso/boot/
           K=$(ls iso/boot/vmlinuz-* | head -1 | sed "s|iso/boot/vmlinuz-||")
           
-          # Create squashfs with EXTREME compression (zstd is faster than xz with similar compression)
-          mksquashfs chroot iso/live/filesystem.squashfs -comp zstd -Xcompression-level 22 -b 256K -no-recovery -no-exports -no-duplicates -no-fragments -processors 1
+          # Create squashfs with MAXIMUM XZ compression (much better than ZSTD for size)
+          mksquashfs chroot iso/live/filesystem.squashfs -comp xz -Xbcj x86 -b 1M -Xdict-size 100% -no-recovery -no-exports -no-duplicates -no-fragments
           
           # Create boot menu (BIOS)
           cat > iso/isolinux/isolinux.cfg <<BOOT
@@ -391,7 +391,7 @@ jobs:
           echo "**ISO:** ${ISO_NAME}.iso | **Size:** ${ISO_SIZE}MB" >> $GITHUB_STEP_SUMMARY
           echo "**Base:** Debian 12 Minimal | **Desktop:** i3 + Latte Dock + Dolphin" >> $GITHUB_STEP_SUMMARY
           echo "**Apps:** Steam, Discord, Calamares, MangoHud (ALL UPX COMPRESSED)" >> $GITHUB_STEP_SUMMARY
-          echo "**Compression:** UPX --best --lzma + ZSTD level 22 squashfs (256K blocks)" >> $GITHUB_STEP_SUMMARY
+          echo "**Compression:** UPX --best --lzma + Maximum XZ squashfs (256K blocks, BCJ filter)" >> $GITHUB_STEP_SUMMARY
 
       - uses: actions/upload-artifact@v4
         with:
