@@ -33,7 +33,7 @@ jobs:
           docker run --rm --privileged -v "$PWD:/w" -e ISO_NAME="${ISO_NAME}" debian:12 bash -c '
           set -euo pipefail
           export DEBIAN_FRONTEND=noninteractive
-          apt-get update && apt-get install -y debootstrap squashfs-tools xorriso isolinux syslinux-efi grub-efi-amd64-bin mtools wget dosfstools gnupg2 curl
+          apt-get update && apt-get install -y debootstrap squashfs-tools xorriso isolinux syslinux-efi mtools wget dosfstools gnupg2 curl
           
           mkdir -p iso/{live,boot,isolinux,EFI/BOOT}
           
@@ -330,59 +330,59 @@ jobs:
           # Create squashfs with MAXIMUM XZ compression (much better than ZSTD for size)
           mksquashfs chroot iso/live/filesystem.squashfs -comp xz -Xbcj x86 -b 1M -Xdict-size 100% -no-recovery -no-exports -no-duplicates -no-fragments
           
-          # Create boot menu (BIOS)
+          # Create boot menu (BIOS) - ISOLINUX only, no vesamenu
           cat > iso/isolinux/isolinux.cfg <<BOOT
-          UI vesamenu.c32
-          MENU TITLE Cybr Gaming - Boot Menu
-          PROMPT 0
-          TIMEOUT 300
           DEFAULT live
+          TIMEOUT 30
+          PROMPT 1
           
           LABEL live
-            MENU LABEL Cybr Gaming (i3 + Latte Dock)
+            SAY Booting Cybr...
             KERNEL /boot/vmlinuz-${K}
             APPEND initrd=/boot/initrd.img-${K} boot=live components quiet splash
           
-          LABEL live-safe
-            MENU LABEL Cybr Gaming (Safe Graphics)
+          LABEL safe
+            SAY Booting Cybr (Safe Graphics)...
             KERNEL /boot/vmlinuz-${K}
             APPEND initrd=/boot/initrd.img-${K} boot=live components nomodeset
           BOOT
           
-          # Setup BIOS boot
+          # Setup BIOS boot with ISOLINUX
           cp /usr/lib/ISOLINUX/isolinux.bin iso/isolinux/
           cp /usr/lib/syslinux/modules/bios/*.c32 iso/isolinux/
           
-          # Create GRUB EFI boot (simpler and more reliable than Syslinux EFI)
-          grub-mkstandalone \
-            --format=x86_64-efi \
-            --output=iso/EFI/BOOT/BOOTX64.EFI \
-            --locales="" \
-            --fonts="" \
-            "boot/grub/grub.cfg=iso/EFI/BOOT/grub.cfg"
+          # Setup UEFI boot with SYSLINUX (NOT GRUB)
+          mkdir -p iso/EFI/BOOT
+          cp /usr/lib/SYSLINUX.EFI/efi64/syslinux.efi iso/EFI/BOOT/BOOTX64.EFI
+          cp /usr/lib/SYSLINUX.EFI/efi64/ldlinux.e64 iso/EFI/BOOT/
+          cp /usr/lib/syslinux/modules/efi64/*.c32 iso/EFI/BOOT/
           
-          cat > iso/EFI/BOOT/grub.cfg <<GRUB
-          set timeout=30
-          set default=0
+          # Single syslinux config for UEFI
+          cat > iso/EFI/BOOT/syslinux.cfg <<SYSLINUX
+          DEFAULT live
+          TIMEOUT 30
           
-          menuentry "Cybr Gaming (i3 + Latte Dock)" {
-              linux /boot/vmlinuz-${K} boot=live components quiet splash
-              initrd /boot/initrd.img-${K}
-          }
+          LABEL live
+            SAY Booting Cybr...
+            LINUX /boot/vmlinuz-${K}
+            APPEND initrd=/boot/initrd.img-${K} boot=live components quiet splash
           
-          menuentry "Cybr Gaming (Safe Graphics)" {
-              linux /boot/vmlinuz-${K} boot=live components nomodeset
-              initrd /boot/initrd.img-${K}
-          }
-          GRUB
+          LABEL safe
+            SAY Booting Cybr (Safe Graphics)...
+            LINUX /boot/vmlinuz-${K}
+            APPEND initrd=/boot/initrd.img-${K} boot=live components nomodeset
+          SYSLINUX
           
-          # Create El Torito EFI boot image
+          # Create El Torito EFI boot image with SYSLINUX
           dd if=/dev/zero of=efiboot.img bs=1M count=10
           mkfs.vfat efiboot.img
           mkdir efi_mount
           mount -o loop efiboot.img efi_mount
           mkdir -p efi_mount/EFI/BOOT
           cp iso/EFI/BOOT/BOOTX64.EFI efi_mount/EFI/BOOT/
+          cp iso/EFI/BOOT/ldlinux.e64 efi_mount/EFI/BOOT/
+          cp iso/EFI/BOOT/syslinux.cfg efi_mount/EFI/BOOT/
+          cp iso/EFI/BOOT/*.c32 efi_mount/EFI/BOOT/ 2>/dev/null || true
           umount efi_mount
           rmdir efi_mount
           mv efiboot.img iso/
@@ -393,7 +393,7 @@ jobs:
             -full-iso9660-filenames \
             -joliet \
             -rational-rock \
-            -volid "CYBR_GAMING" \
+            -volid "CYBR" \
             -eltorito-boot isolinux/isolinux.bin \
             -eltorito-catalog isolinux/boot.cat \
             -no-emul-boot \
