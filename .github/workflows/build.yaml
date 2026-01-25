@@ -77,7 +77,8 @@ jobs:
             picom \
             lxappearance \
             lightdm \
-            lightdm-gtk-greeter
+            lightdm-gtk-greeter \
+            squeekboard
           
           # Install Latte Dock and dependencies
           apt-get install -y --no-install-recommends \
@@ -178,12 +179,14 @@ jobs:
           exec --no-startup-id nitrogen --restore
           exec --no-startup-id picom -b
           exec --no-startup-id nm-applet
+          exec --no-startup-id squeekboard
           
           bindsym \$mod+Return exec alacritty
           bindsym \$mod+d exec rofi -show run
           bindsym \$mod+Shift+q kill
           bindsym \$mod+Shift+c reload
           bindsym \$mod+Shift+r restart
+          bindsym \$mod+k exec squeekboard
           
           bindsym \$mod+h focus left
           bindsym \$mod+j focus down
@@ -193,7 +196,7 @@ jobs:
           bindsym \$mod+Shift+h move left
           bindsym \$mod+Shift+j move down
           bindsym \$mod+Shift+k move up
-          bindsym \$mod+Shift+l move right
+          bindsym \$mod+Shift+l move up
           
           bindsym \$mod+f fullscreen toggle
           bindsym \$mod+v split v
