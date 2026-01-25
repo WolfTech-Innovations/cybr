@@ -327,8 +327,8 @@ jobs:
           cp -r chroot/boot/* iso/boot/
           K=$(ls iso/boot/vmlinuz-* | head -1 | sed "s|iso/boot/vmlinuz-||")
           
-          # Create squashfs with MAXIMUM XZ compression (much better than ZSTD for size)
-          mksquashfs chroot iso/live/filesystem.squashfs -comp xz -Xbcj x86 -b 1M -Xdict-size 100% -no-recovery -no-exports -no-duplicates -no-fragments
+          # Create squashfs with EXTREME XZ compression (absolute maximum)
+          mksquashfs chroot iso/live/filesystem.squashfs -comp xz -Xbcj x86 -b 1M -Xdict-size 100% -no-recovery -no-exports -no-duplicates -no-fragments -Xbcj x86,arm,armthumb,powerpc,sparc,ia64
           
           # Create boot menu (BIOS) - ISOLINUX only, no vesamenu
           cat > iso/isolinux/isolinux.cfg <<BOOT
@@ -354,7 +354,7 @@ jobs:
           # Setup UEFI boot with SYSLINUX (NOT GRUB)
           mkdir -p iso/EFI/BOOT
           cp /usr/lib/SYSLINUX.EFI/efi64/syslinux.efi iso/EFI/BOOT/BOOTX64.EFI
-          cp /usr/lib/SYSLINUX.EFI/efi64/ldlinux.e64 iso/EFI/BOOT/
+          cp /usr/lib/syslinux/modules/efi64/ldlinux.e64 iso/EFI/BOOT/
           cp /usr/lib/syslinux/modules/efi64/*.c32 iso/EFI/BOOT/
           
           # Single syslinux config for UEFI
