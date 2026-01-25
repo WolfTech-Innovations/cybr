@@ -65,20 +65,23 @@ jobs:
             sudo \
             network-manager
           
-          # Install minimal X11 and i3
+          # Install MINIMAL X11 (not full xorg)
           apt-get install -y --no-install-recommends \
-            xorg \
+            xserver-xorg-core \
+            xserver-xorg-input-libinput \
+            xserver-xorg-video-fbdev \
+            xserver-xorg-video-vesa \
+            xserver-xorg-video-intel \
+            xserver-xorg-video-amdgpu \
             xinit \
             i3-wm \
             i3status \
-            i3lock \
             dmenu \
             feh \
-            picom \
-            lxappearance \
             lightdm \
-            lightdm-gtk-greeter \
-            squeekboard
+            slick-greeter \
+            squeekboard \
+            plank
           
           # Install Latte Dock and dependencies
           apt-get install -y --no-install-recommends \
@@ -137,6 +140,12 @@ jobs:
           echo "en_US.UTF-8 UTF-8" > /etc/locale.gen
           locale-gen
           update-locale LANG=en_US.UTF-8
+          
+          # Install Calamares installer (minimal)
+          apt-get install -y --no-install-recommends \
+            calamares \
+            qml-module-qtquick2 \
+            squashfs-tools
           
           # Configure OS branding
           cat > /etc/os-release <<O
