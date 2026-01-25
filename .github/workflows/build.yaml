@@ -101,7 +101,7 @@ jobs:
           docker run --rm --privileged -v "$PWD:/w" -e ISO_NAME="${ISO_NAME}" debian:bookworm bash -c '
           set -e
           export DEBIAN_FRONTEND=noninteractive
-          apt-get update && apt-get install -y wget cpio xorriso isolinux syslinux-utils upx-ucl squashfs-tools
+          apt-get update && apt-get install -y wget cpio xorriso isolinux syslinux-utils squashfs-tools
           
           cd /tmp
           
@@ -113,7 +113,6 @@ jobs:
           # Get busybox
           wget -O busybox https://busybox.net/downloads/binaries/1.35.0-x86_64-linux-musl/busybox
           chmod +x busybox
-          upx --best --lzma busybox 2>/dev/null || upx --best busybox
           
           # Create initramfs
           mkdir -p initramfs/{bin,sbin,proc,sys,dev,mnt,lib/firmware}
@@ -132,15 +131,12 @@ jobs:
           # Get tools
           wget http://deb.debian.org/debian/pool/main/w/wpa/wpasupplicant_2.10-12_amd64.deb
           dpkg-deb -x wpasupplicant*.deb wpa && cp wpa/sbin/wpa_supplicant initramfs/sbin/
-          upx --best initramfs/sbin/wpa_supplicant 2>/dev/null || true
           
           wget http://deb.debian.org/debian/pool/main/p/parted/parted_3.5-3_amd64.deb
           dpkg-deb -x parted*.deb prt && cp prt/sbin/parted initramfs/sbin/
-          upx --best initramfs/sbin/parted 2>/dev/null || true
           
           wget http://deb.debian.org/debian/pool/main/s/squashfs-tools/squashfs-tools_4.6.1-1_amd64.deb
           dpkg-deb -x squashfs-tools*.deb sq && cp sq/usr/sbin/unsquashfs initramfs/sbin/
-          upx --best initramfs/sbin/unsquashfs 2>/dev/null || true
           
           # Copy libs
           mkdir -p initramfs/lib/{x86_64-linux-gnu,64}
