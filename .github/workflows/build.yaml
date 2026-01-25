@@ -1,4 +1,4 @@
-name: "Cybr Network Installer Build"
+name: "Cybr Build"
 
 on:
   workflow_dispatch:
@@ -21,7 +21,7 @@ jobs:
         id: set-names
         run: |
           echo "base_name=cybr-base-v${{ github.run_number }}" >> $GITHUB_OUTPUT
-          echo "iso_name=cybr-netinst-v${{ github.run_number }}" >> $GITHUB_OUTPUT
+          echo "iso_name=cybr-netinstall-v${{ github.run_number }}" >> $GITHUB_OUTPUT
 
       - name: Free up disk space
         run: |
@@ -30,15 +30,14 @@ jobs:
           sudo apt-get purge -y '^aspnetcore-.*' '^dotnet-.*' '^llvm-.*' 'php.*' '^mongodb-.*' '^mysql-.*' azure-cli google-cloud-sdk || true
           sudo apt-get autoremove -y && sudo apt-get clean
 
-      - name: Build Base Filesystem
+      - name: Build Cybr Base System
         run: |
           BASE_NAME="${{ steps.set-names.outputs.base_name }}"
           docker run --rm --privileged -v "$PWD:/w" -e BASE_NAME="${BASE_NAME}" ubuntu:24.04 bash -c '
           set -euo pipefail
           export DEBIAN_FRONTEND=noninteractive
-          apt-get update && apt-get install -y debootstrap squashfs-tools wget gnupg2 curl software-properties-common
+          apt-get update && apt-get install -y debootstrap squashfs-tools wget curl gnupg2 software-properties-common
           
-          # Create base system
           debootstrap --arch=amd64 --variant=minbase noble base http://archive.ubuntu.com/ubuntu/
           
           chroot base bash <<'\''CH'\''
@@ -52,32 +51,23 @@ jobs:
           
           apt-get update && apt-get install -y software-properties-common curl gnupg2 ca-certificates
           
-          # Add Liquorix kernel repo
           curl -fsSL https://liquorix.net/liquorix-keyring.gpg | gpg --dearmor -o /usr/share/keyrings/liquorix-archive-keyring.gpg
           echo "deb [signed-by=/usr/share/keyrings/liquorix-archive-keyring.gpg] https://liquorix.net/ubuntu noble main" > /etc/apt/sources.list.d/liquorix.list
           
-          # Add UbuntuDDE PPA
           add-apt-repository -y ppa:ubuntudde-dev/stable
           
           apt-get update
           
-          # Install everything
           apt-get install -y linux-image-liquorix-amd64 linux-headers-liquorix-amd64 firmware-linux-free firmware-linux-nonfree systemd plymouth sudo
           apt-get install -y ubuntudde-dde lightdm
           apt-get install -y firefox flatpak gparted ntfs-3g dosfstools e2fsprogs git curl wget vim nano network-manager gnome-keyring
           
-          # Gaming packages
           dpkg --add-architecture i386 && apt-get update
           apt-get install -y steam-installer libgl1-mesa-dri:amd64 libgl1-mesa-dri:i386 libgl1:amd64 libgl1:i386 mesa-vulkan-drivers:amd64 mesa-vulkan-drivers:i386 vulkan-tools
           
-          # Discord
           wget -O /tmp/discord.deb "https://discord.com/api/download?platform=linux&format=deb"
           apt-get install -y /tmp/discord.deb || apt-get install -f -y
           
-          # Calamares
-          apt-get install -y calamares calamares-settings-ubuntu qml-module-qtquick2 qml-module-qtquick-window2 rsync cryptsetup squashfs-tools
-          
-          # OS Branding
           cat > /etc/os-release <<O
           NAME="Cybr"
           PRETTY_NAME="Cybr Mobile Gaming Edition"
@@ -89,270 +79,354 @@ jobs:
           
           wget -O /usr/share/pixmaps/cybr-logo.png "https://a.fsdn.com/allura/p/wolfos/icon?w=96&1748003641" || echo "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==" | base64 -d > /usr/share/pixmaps/cybr-logo.png
           
-          # Calamares config
-          mkdir -p /etc/calamares/branding/cybr
-          cat > /etc/calamares/branding/cybr/branding.desc <<BRAND
-          ---
-          componentName: cybr
-          strings:
-              productName: "Cybr Mobile Gaming"
-              shortProductName: "Cybr"
-              version: "1.0"
-              bootloaderEntryName: "Cybr"
-              productUrl: "https://getcybr.org/"
-          images:
-              productLogo: "/usr/share/pixmaps/cybr-logo.png"
-              productIcon: "/usr/share/pixmaps/cybr-logo.png"
-          style:
-              sidebarBackground: "#1a1a1a"
-              sidebarText: "#FFFFFF"
-              sidebarTextSelect: "#0066ff"
-          BRAND
+          useradd -m -s /bin/bash -G sudo,audio,video,netdev -c "Cybr User" cybruser
+          echo "cybruser:cybr" | chpasswd
+          echo "root:root" | chpasswd
           
-          cat > /etc/calamares/settings.conf <<CALA
-          ---
-          modules-search: [ local, /usr/lib/calamares/modules ]
-          sequence:
-          - show:
-            - welcome
-            - locale
-            - keyboard
-            - partition
-            - users
-            - summary
-          - exec:
-            - partition
-            - mount
-            - unpackfs
-            - machineid
-            - fstab
-            - locale
-            - keyboard
-            - localecfg
-            - users
-            - networkcfg
-            - hwclock
-            - services-systemd
-            - bootloader-config
-            - grubcfg
-            - bootloader
-            - umount
-          - show:
-            - finished
-          branding: cybr
-          CALA
+          mkdir -p /etc/lightdm/lightdm.conf.d
+          cat > /etc/lightdm/lightdm.conf.d/50-autologin.conf <<AUTO
+          [Seat:*]
+          autologin-user=cybruser
+          autologin-user-timeout=0
+          AUTO
           
-          cat > /etc/calamares/modules/unpackfs.conf <<UNPACK
-          ---
-          unpack:
-              - source: "/run/live/medium/live/filesystem.squashfs"
-                sourcefs: "squashfs"
-                destination: ""
-          UNPACK
+          mkdir -p /home/cybruser/Desktop
+          cat > /home/cybruser/Desktop/steam.desktop <<D
+          [Desktop Entry]
+          Type=Application
+          Name=Steam
+          Exec=steam
+          Icon=steam
+          Terminal=false
+          Categories=Game;
+          D
+          cat > /home/cybruser/Desktop/discord.desktop <<D
+          [Desktop Entry]
+          Type=Application
+          Name=Discord
+          Exec=/usr/bin/discord
+          Icon=discord
+          Terminal=false
+          Categories=Network;
+          D
+          chmod +x /home/cybruser/Desktop/*.desktop
+          chown -R cybruser:cybruser /home/cybruser
           
           systemctl enable lightdm NetworkManager
           apt-get clean && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
           CH
           
-          # Create squashfs
-          mksquashfs base ${BASE_NAME}.squashfs -comp xz -b 1M -Xdict-size 100%
-          mv ${BASE_NAME}.squashfs /w/
+          mksquashfs base "${BASE_NAME}.squashfs" -comp xz -b 1M -Xdict-size 100%
+          mv "${BASE_NAME}.squashfs" /w/
           '
 
-      - name: Build Network Installer ISO
+      - name: Build Ultra-Minimal Installer ISO
         run: |
           ISO_NAME="${{ steps.set-names.outputs.iso_name }}"
+          
           docker run --rm --privileged -v "$PWD:/w" -e ISO_NAME="${ISO_NAME}" ubuntu:24.04 bash -c '
           set -euo pipefail
           export DEBIAN_FRONTEND=noninteractive
-          apt-get update && apt-get install -y debootstrap squashfs-tools xorriso isolinux syslinux-efi mtools wget dosfstools
+          apt-get update && apt-get install -y build-essential bc bison flex libelf-dev libssl-dev libncurses-dev git wget cpio xorriso isolinux syslinux-efi grub-efi-amd64-bin mtools
           
-          mkdir -p mini iso/{live,boot,isolinux,EFI/boot}
+          cd /tmp
           
-          # Minimal initramfs system
-          debootstrap --arch=amd64 --variant=minbase noble mini http://archive.ubuntu.com/ubuntu/
+          # Build minimal kernel
+          git clone --depth 1 --branch v6.6 https://github.com/torvalds/linux.git
+          cd linux
           
-          chroot mini bash <<'\''CH'\''
-          export DEBIAN_FRONTEND=noninteractive
-          apt-get update
-          apt-get install -y linux-image-generic live-boot network-manager wireless-tools wpasupplicant curl wget dialog whiptail rsync
-          apt-get clean && rm -rf /var/lib/apt/lists/*
+          make tinyconfig
+          
+          # Enable essential features via script
+          scripts/config --enable 64BIT
+          scripts/config --enable TTY
+          scripts/config --enable PRINTK
+          scripts/config --enable BLK_DEV
+          scripts/config --enable BLOCK
+          scripts/config --enable EXT4_FS
+          scripts/config --enable PROC_FS
+          scripts/config --enable SYSFS
+          scripts/config --enable DEVTMPFS
+          scripts/config --enable DEVTMPFS_MOUNT
+          scripts/config --enable BINFMT_ELF
+          scripts/config --enable BINFMT_SCRIPT
+          scripts/config --enable SERIAL_8250
+          scripts/config --enable SERIAL_8250_CONSOLE
+          scripts/config --enable NET
+          scripts/config --enable INET
+          scripts/config --enable NETDEVICES
+          scripts/config --enable ETHERNET
+          scripts/config --enable NET_VENDOR_INTEL
+          scripts/config --enable E1000
+          scripts/config --enable E1000E
+          scripts/config --enable NET_VENDOR_REALTEK
+          scripts/config --enable R8169
+          scripts/config --enable WLAN
+          scripts/config --enable CFG80211
+          scripts/config --enable MAC80211
+          scripts/config --enable IWLWIFI
+          scripts/config --enable ATH9K
+          scripts/config --enable RT2X00
+          scripts/config --enable WIRELESS
+          scripts/config --enable PCI
+          scripts/config --enable USB_SUPPORT
+          scripts/config --enable USB
+          scripts/config --enable USB_XHCI_HCD
+          scripts/config --enable USB_EHCI_HCD
+          scripts/config --enable USB_OHCI_HCD
+          scripts/config --enable VFAT_FS
+          scripts/config --enable FAT_FS
+          scripts/config --enable NLS_CODEPAGE_437
+          scripts/config --enable NLS_ISO8859_1
+          scripts/config --enable SQUASHFS
+          scripts/config --enable SQUASHFS_XZ
+          
+          make -j$(nproc)
+          
+          cp arch/x86/boot/bzImage /tmp/vmlinuz
+          
+          # Build static busybox
+          cd /tmp
+          wget https://busybox.net/downloads/busybox-1.36.1.tar.bz2
+          tar xf busybox-1.36.1.tar.bz2
+          cd busybox-1.36.1
+          
+          make defconfig
+          sed -i "s/# CONFIG_STATIC is not set/CONFIG_STATIC=y/" .config
+          
+          make -j$(nproc)
+          
+          # Create initramfs
+          mkdir -p /tmp/initramfs/{bin,sbin,etc,proc,sys,dev,mnt,tmp,usr/bin,usr/sbin}
+          
+          cp busybox /tmp/initramfs/bin/
+          
+          cd /tmp/initramfs/bin
+          for cmd in sh ash ls cp mv rm mkdir mount umount cat echo grep sed awk wget curl tar gzip gunzip cpio dd find xargs chmod chown ln ps kill sleep ping ifconfig route ip dhcpcd udhcpc; do
+              ln -s busybox $cmd
+          done
+          
+          cd /tmp/initramfs/sbin
+          for cmd in init poweroff reboot halt mdev blkid mkfs.ext4 mkfs.vfat parted fdisk sfdisk mkswap swapon swapoff; do
+              ln -s ../bin/busybox $cmd
+          done
+          
+          # Copy essential WiFi firmware
+          mkdir -p /tmp/initramfs/lib/firmware
+          apt-get install -y firmware-iwlwifi firmware-realtek firmware-atheros
+          
+          # Copy only essential WiFi firmware (keep under 4MB)
+          cp -r /lib/firmware/iwlwifi-* /tmp/initramfs/lib/firmware/ 2>/dev/null || true
+          cp -r /lib/firmware/rtl_nic /tmp/initramfs/lib/firmware/ 2>/dev/null || true
+          cp -r /lib/firmware/ath* /tmp/initramfs/lib/firmware/ 2>/dev/null || true
           
           # Create installer script
-          cat > /usr/local/bin/cybr-install <<'\''INST'\''
-#!/bin/bash
-set -e
+          cat > /tmp/initramfs/init <<'INIT'
+#!/bin/sh
 
-# Colors
-RED='\''\\033[0;31m'\''
-GREEN='\''\\033[0;32m'\''
-BLUE='\''\\033[0;34m'\''
-NC='\''\\033[0m'\''
+export PATH=/bin:/sbin:/usr/bin:/usr/sbin
+
+mount -t proc none /proc
+mount -t sysfs none /sys
+mount -t devtmpfs none /dev
+
+mdev -s
 
 clear
-echo -e "${BLUE}╔════════════════════════════════════════╗${NC}"
-echo -e "${BLUE}║   Cybr Network Installer v1.0         ║${NC}"
-echo -e "${BLUE}╔════════════════════════════════════════╗${NC}"
+echo "======================================="
+echo "  Cybr Network Installer v1.0"
+echo "======================================="
+echo ""
+echo "Commands:"
+echo "  wifi     - Configure WiFi"
+echo "  install  - Install Cybr to disk"
+echo "  shell    - Drop to shell"
 echo ""
 
-# Check internet
-echo -e "${BLUE}[1/5]${NC} Checking internet connection..."
-if ! ping -c 1 8.8.8.8 &>/dev/null; then
-    echo -e "${RED}No internet! Setting up WiFi...${NC}"
-    nmtui-connect
+wifi_setup() {
+    echo "Scanning for WiFi networks..."
+    ip link set wlan0 up 2>/dev/null || ip link set wlp0s20f3 up 2>/dev/null
     sleep 2
-fi
+    
+    echo "Enter SSID:"
+    read SSID
+    echo "Enter password:"
+    read -s PASS
+    
+    cat > /tmp/wpa.conf <<WPA
+network={
+    ssid="$SSID"
+    psk="$PASS"
+}
+WPA
+    
+    wpa_supplicant -B -i wlan0 -c /tmp/wpa.conf 2>/dev/null || wpa_supplicant -B -i wlp0s20f3 -c /tmp/wpa.conf
+    sleep 3
+    udhcpc -i wlan0 2>/dev/null || udhcpc -i wlp0s20f3
+    
+    if ping -c 1 8.8.8.8 >/dev/null 2>&1; then
+        echo "[OK] Connected!"
+    else
+        echo "[FAIL] Connection failed"
+    fi
+}
 
-if ! ping -c 1 8.8.8.8 &>/dev/null; then
-    echo -e "${RED}Still no internet. Cannot continue.${NC}"
-    exit 1
-fi
+install_cybr() {
+    if ! ping -c 1 8.8.8.8 >/dev/null 2>&1; then
+        echo "[FAIL] No internet! Run: wifi"
+        return 1
+    fi
+    
+    echo "Available disks:"
+    blkid | grep -v loop
+    echo ""
+    echo "Enter disk (e.g., sda):"
+    read DISK
+    DISK="/dev/$DISK"
+    
+    echo "WARNING: Erase $DISK?"
+    echo "Type YES:"
+    read CONFIRM
+    [ "$CONFIRM" != "YES" ] && return 1
+    
+    echo "[1/6] Partitioning..."
+    parted -s "$DISK" mklabel gpt
+    parted -s "$DISK" mkpart ESP fat32 1MiB 513MiB
+    parted -s "$DISK" set 1 esp on
+    parted -s "$DISK" mkpart primary ext4 513MiB 100%
+    
+    echo "[2/6] Formatting..."
+    mkfs.vfat -F32 "${DISK}1"
+    mkfs.ext4 -F "${DISK}2"
+    
+    echo "[3/6] Mounting..."
+    mount "${DISK}2" /mnt
+    mkdir -p /mnt/boot/efi
+    mount "${DISK}1" /mnt/boot/efi
+    
+    echo "[4/6] Downloading base system..."
+    BASE_URL="https://sourceforge.net/projects/wolfos/files/gaming/base"
+    LATEST=$(wget -qO- "$BASE_URL/" | grep -oP "cybr-base-v\d+" | sort -V | tail -1)
+    
+    [ -z "$LATEST" ] && echo "[FAIL] Failed to find base" && return 1
+    
+    echo "Downloading ${LATEST}.squashfs..."
+    wget -O /tmp/base.sq "${BASE_URL}/${LATEST}.squashfs/download"
+    
+    echo "[5/6] Extracting (this takes a while)..."
+    unsquashfs -f -d /mnt /tmp/base.sq
+    
+    echo "[6/6] Installing bootloader..."
+    mount --bind /dev /mnt/dev
+    mount --bind /proc /mnt/proc
+    mount --bind /sys /mnt/sys
+    
+    chroot /mnt grub-install --target=x86_64-efi --efi-directory=/boot/efi --bootloader-id=Cybr "$DISK"
+    chroot /mnt update-grub
+    
+    umount /mnt/dev /mnt/proc /mnt/sys
+    sync
+    umount -R /mnt
+    
+    echo "======================================="
+    echo "  Installation Complete!"
+    echo "  Remove USB and reboot"
+    echo "======================================="
+}
 
-echo -e "${GREEN}✓ Connected${NC}"
-
-# Download base
-echo -e "${BLUE}[2/5]${NC} Downloading base system..."
-BASE_URL="https://sourceforge.net/projects/wolfos/files/gaming/base"
-wget --progress=bar:force "${BASE_URL}/cybr-base-latest.squashfs" -O /tmp/cybr-base.squashfs
-
-# Partition selection
-echo -e "${BLUE}[3/5]${NC} Available disks:"
-lsblk -d -n -o NAME,SIZE,TYPE | grep disk | nl
-read -p "Select disk number: " DISK_NUM
-DISK="/dev/$(lsblk -d -n -o NAME,TYPE | grep disk | sed -n "${DISK_NUM}p" | awk '\''{print $1}'\'')"
-
-echo -e "${RED}WARNING: This will erase ${DISK}!${NC}"
-read -p "Continue? (yes/no): " CONFIRM
-[[ "$CONFIRM" != "yes" ]] && exit 1
-
-# Partition & format
-echo -e "${BLUE}[4/5]${NC} Partitioning ${DISK}..."
-parted -s ${DISK} mklabel gpt
-parted -s ${DISK} mkpart primary fat32 1MiB 513MiB
-parted -s ${DISK} set 1 esp on
-parted -s ${DISK} mkpart primary ext4 513MiB 100%
-
-mkfs.vfat -F32 ${DISK}1
-mkfs.ext4 -F ${DISK}2
-
-# Mount & extract
-mount ${DISK}2 /mnt
-mkdir -p /mnt/boot/efi
-mount ${DISK}1 /mnt/boot/efi
-
-echo -e "${BLUE}[5/5]${NC} Installing system..."
-unsquashfs -f -d /mnt /tmp/cybr-base.squashfs
-
-# Configure system
-mount --bind /dev /mnt/dev
-mount --bind /proc /mnt/proc
-mount --bind /sys /mnt/sys
-
-UUID_ROOT=$(blkid -s UUID -o value ${DISK}2)
-UUID_EFI=$(blkid -s UUID -o value ${DISK}1)
-
-cat > /mnt/etc/fstab <<FSTAB
-UUID=${UUID_ROOT} / ext4 defaults 0 1
-UUID=${UUID_EFI} /boot/efi vfat defaults 0 2
-FSTAB
-
-# Install GRUB
-chroot /mnt grub-install --target=x86_64-efi --efi-directory=/boot/efi --bootloader-id=Cybr ${DISK}
-chroot /mnt update-grub
-
-# Create user
-chroot /mnt useradd -m -s /bin/bash -G sudo,audio,video,netdev cybruser
-echo "cybruser:cybr" | chroot /mnt chpasswd
-
-umount -R /mnt
-
-echo -e "${GREEN}═══════════════════════════════════════${NC}"
-echo -e "${GREEN}   Installation Complete!              ${NC}"
-echo -e "${GREEN}═══════════════════════════════════════${NC}"
-echo ""
-echo "Username: cybruser"
-echo "Password: cybr"
-echo ""
-read -p "Reboot now? (y/n): " REBOOT
-[[ "$REBOOT" == "y" ]] && reboot
-INST
-          chmod +x /usr/local/bin/cybr-install
+while true; do
+    echo -n "cybr> "
+    read cmd args
+    case "$cmd" in
+        wifi) wifi_setup ;;
+        install) install_cybr ;;
+        shell) exec /bin/sh ;;
+        *) echo "Unknown: $cmd" ;;
+    esac
+done
+INIT
           
-          # Auto-run installer on boot
-          cat > /etc/systemd/system/cybr-autoinstall.service <<SVC
-          [Unit]
-          Description=Cybr Auto Installer
-          After=network-online.target
-          Wants=network-online.target
+          chmod +x /tmp/initramfs/init
           
-          [Service]
-          Type=oneshot
-          ExecStart=/usr/local/bin/cybr-install
-          StandardInput=tty
-          StandardOutput=tty
-          TTYPath=/dev/tty1
+          cd /tmp/initramfs
+          find . | cpio -o -H newc | gzip -9 > /tmp/initramfs.cpio.gz
           
-          [Install]
-          WantedBy=multi-user.target
-          SVC
+          # Build ISO
+          mkdir -p /w/iso/{boot,isolinux,EFI/boot}
           
-          systemctl enable cybr-autoinstall.service
-          CH
+          cp /tmp/vmlinuz /w/iso/boot/
+          cp /tmp/initramfs.cpio.gz /w/iso/boot/
           
-          # Copy kernel
-          cp -r mini/boot/* iso/boot/
-          K=$(ls iso/boot/vmlinuz-* | head -1 | sed "s|iso/boot/vmlinuz-||")
-          
-          # Minimal squashfs
-          mksquashfs mini iso/live/filesystem.squashfs -comp xz -b 1M -Xdict-size 100%
-          
-          # Boot config
-          cat > iso/isolinux/isolinux.cfg <<BOOT
+          cat > /w/iso/isolinux/isolinux.cfg <<BOOT
           DEFAULT cybr
-          TIMEOUT 30
-          
           LABEL cybr
-            SAY Booting Cybr Network Installer...
-            KERNEL /boot/vmlinuz-${K}
-            APPEND initrd=/boot/initrd.img-${K} boot=live components quiet splash
+            SAY Booting Cybr Installer...
+            KERNEL /boot/vmlinuz
+            APPEND initrd=/boot/initramfs.cpio.gz quiet
           BOOT
           
-          cp /usr/lib/ISOLINUX/isolinux.bin iso/isolinux/
-          cp /usr/lib/syslinux/modules/bios/*.c32 iso/isolinux/
+          cp /usr/lib/ISOLINUX/isolinux.bin /w/iso/isolinux/
+          cp /usr/lib/syslinux/modules/bios/*.c32 /w/iso/isolinux/ 2>/dev/null || true
           
-          # Create ISO
-          xorriso -as mkisofs -iso-level 3 -full-iso9660-filenames -joliet -rational-rock -volid "CYBR_NET" -eltorito-boot isolinux/isolinux.bin -eltorito-catalog isolinux/boot.cat -no-emul-boot -boot-load-size 4 -boot-info-table -isohybrid-mbr /usr/lib/ISOLINUX/isohdpfx.bin -output "/w/${ISO_NAME}.iso" iso/
+          cat > /w/iso/EFI/boot/grub.cfg <<EFI
+          set timeout=3
+          menuentry "Cybr Network Installer" {
+              linux /boot/vmlinuz quiet
+              initrd /boot/initramfs.cpio.gz
+          }
+          EFI
+          
+          grub-mkstandalone -O x86_64-efi -o /w/iso/EFI/boot/bootx64.efi boot/grub/grub.cfg=/w/iso/EFI/boot/grub.cfg
+          
+          dd if=/dev/zero of=/w/iso/efiboot.img bs=1M count=10
+          mkfs.vfat /w/iso/efiboot.img
+          mkdir /tmp/efi_mount
+          mount -o loop /w/iso/efiboot.img /tmp/efi_mount
+          mkdir -p /tmp/efi_mount/EFI/boot
+          cp /w/iso/EFI/boot/bootx64.efi /tmp/efi_mount/EFI/boot/
+          umount /tmp/efi_mount
+          
+          xorriso -as mkisofs \
+            -iso-level 3 \
+            -volid "CYBR" \
+            -eltorito-boot isolinux/isolinux.bin \
+            -eltorito-catalog isolinux/boot.cat \
+            -no-emul-boot \
+            -boot-load-size 4 \
+            -boot-info-table \
+            -isohybrid-mbr /usr/lib/ISOLINUX/isohdpfx.bin \
+            -eltorito-alt-boot \
+            -e efiboot.img \
+            -no-emul-boot \
+            -isohybrid-gpt-basdat \
+            -output "/w/${ISO_NAME}.iso" \
+            /w/iso/
           '
 
-      - name: Generate checksums
+      - name: Generate checksums and stats
         run: |
-          BASE_NAME="${{ steps.set-names.outputs.base_name }}"
           ISO_NAME="${{ steps.set-names.outputs.iso_name }}"
-          
-          sha256sum "${BASE_NAME}.squashfs" > "${BASE_NAME}.squashfs.sha256"
+          BASE_NAME="${{ steps.set-names.outputs.base_name }}"
           sha256sum "${ISO_NAME}.iso" > "${ISO_NAME}.iso.sha256"
+          sha256sum "${BASE_NAME}.squashfs" > "${BASE_NAME}.squashfs.sha256"
           
-          # Create "latest" symlink files
-          echo "${BASE_NAME}.squashfs" > cybr-base-latest.txt
-          
-          BASE_SIZE=$(($(stat -c%s "${BASE_NAME}.squashfs")/1024/1024))
           ISO_SIZE=$(($(stat -c%s "${ISO_NAME}.iso")/1024/1024))
+          BASE_SIZE=$(($(stat -c%s "${BASE_NAME}.squashfs")/1024/1024))
           
-          echo "### Cybr Network Installer Build Complete! 🚀" >> $GITHUB_STEP_SUMMARY
-          echo "**Network Installer ISO:** ${ISO_NAME}.iso (${ISO_SIZE}MB)" >> $GITHUB_STEP_SUMMARY
+          echo "### Cybr Build Complete!" >> $GITHUB_STEP_SUMMARY
+          echo "**Installer ISO:** ${ISO_NAME}.iso (**${ISO_SIZE}MB**)" >> $GITHUB_STEP_SUMMARY
           echo "**Base System:** ${BASE_NAME}.squashfs (${BASE_SIZE}MB)" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "**Stack:** Ubuntu 24.04 + DDE + Liquorix + Steam + Discord" >> $GITHUB_STEP_SUMMARY
 
       - uses: actions/upload-artifact@v4
         with:
-          name: "cybr-network-installer"
+          name: "cybr-build-${{ github.run_number }}"
           path: |
             ${{ steps.set-names.outputs.iso_name }}.iso
             ${{ steps.set-names.outputs.iso_name }}.iso.sha256
             ${{ steps.set-names.outputs.base_name }}.squashfs
             ${{ steps.set-names.outputs.base_name }}.squashfs.sha256
-            cybr-base-latest.txt
           retention-days: 7
 
   upload:
@@ -362,35 +436,26 @@ INST
     steps:
       - uses: actions/download-artifact@v4
         with:
-          name: "cybr-network-installer"
+          name: "cybr-build-${{ github.run_number }}"
 
       - name: Upload to SourceForge
         env:
           SF_USER: ${{ secrets.SF_USER }}
           SF_PASS: ${{ secrets.SF_PASS }}
-          BASE_NAME: ${{ needs.build-base.outputs.base_name }}
           ISO_NAME: ${{ needs.build-base.outputs.iso_name }}
+          BASE_NAME: ${{ needs.build-base.outputs.base_name }}
         run: |
           [ -z "$SF_USER" ] || [ -z "$SF_PASS" ] && echo "Configure SF secrets" && exit 0
           sudo apt-get update && sudo apt-get install -y sshpass rsync
           
-          # Upload ISO to main gaming folder
           for i in 1 2 3; do
             timeout 1800 sshpass -p "$SF_PASS" rsync -avP -e "ssh -o StrictHostKeyChecking=no" "${ISO_NAME}.iso" "$SF_USER@frs.sourceforge.net:/home/frs/project/wolfos/gaming/" && break
             [ $i -eq 3 ] && exit 1
             sleep 30
           done
           
-          # Upload base system to separate folder
           for i in 1 2 3; do
             timeout 1800 sshpass -p "$SF_PASS" rsync -avP -e "ssh -o StrictHostKeyChecking=no" "${BASE_NAME}.squashfs" "$SF_USER@frs.sourceforge.net:/home/frs/project/wolfos/gaming/base/" && break
-            [ $i -eq 3 ] && exit 1
-            sleep 30
-          done
-          
-          # Upload "latest" pointer
-          for i in 1 2 3; do
-            timeout 1800 sshpass -p "$SF_PASS" rsync -avP -e "ssh -o StrictHostKeyChecking=no" cybr-base-latest.txt "$SF_USER@frs.sourceforge.net:/home/frs/project/wolfos/gaming/base/" && break
             [ $i -eq 3 ] && exit 1
             sleep 30
           done
