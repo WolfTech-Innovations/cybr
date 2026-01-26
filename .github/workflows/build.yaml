@@ -110,7 +110,7 @@ jobs:
           apt-get update
           
           # Install everything we need
-          apt-get install -y linux-image-amd64 firmware-iwlwifi wpasupplicant parted squashfs-tools
+          apt-get install -y linux-image-amd64 firmware-iwlwifi wpasupplicant parted squashfs-tools iw
           
           # Get kernel
           cp /boot/vmlinuz-* /tmp/vmlinuz
@@ -124,7 +124,7 @@ jobs:
           cp busybox initramfs/bin/
           
           cd initramfs/bin
-          for cmd in sh ls cp mv rm mkdir mount umount cat echo wget tar gzip cpio dd chmod ln ps sleep ping ip; do ln -s busybox $cmd; done
+          for cmd in sh ls cp mv rm mkdir mount umount cat echo wget tar gzip cpio dd chmod ln ps sleep ping ip grep head sort tail cut awk sed find; do ln -s busybox $cmd; done
           cd ../sbin
           for cmd in init poweroff reboot mdev blkid mkfs.ext4 mkfs.vfat udhcpc; do ln -s ../bin/busybox $cmd; done
           cd /tmp
@@ -135,6 +135,7 @@ jobs:
           # Copy tools
           cp /sbin/wpa_supplicant initramfs/sbin/
           cp /sbin/parted initramfs/sbin/
+          cp /sbin/iw initramfs/sbin/
           cp $(which unsquashfs) initramfs/sbin/ || cp /usr/bin/unsquashfs initramfs/sbin/
           
           # Copy libs
