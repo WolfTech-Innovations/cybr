@@ -189,10 +189,11 @@ jobs:
           cd initramfs
           find . | cpio -o -H newc | gzip -9 > /tmp/initrd.gz
           
-          # Build ISO with ISOLINUX
-          mkdir -p /w/iso/{boot,isolinux}
+          # Build ISO with ISOLINUX (BIOS) and GRUB (EFI)
+          mkdir -p /w/iso/{boot,isolinux,EFI/BOOT}
           cp /tmp/vmlinuz /tmp/initrd.gz /w/iso/boot/
           
+          # ISOLINUX for BIOS boot
           cat > /w/iso/isolinux/isolinux.cfg <<CFG
           DEFAULT linux
           LABEL linux
@@ -206,7 +207,47 @@ jobs:
           cp /usr/lib/syslinux/modules/bios/libcom32.c32 /w/iso/isolinux/
           cp /usr/lib/syslinux/modules/bios/libutil.c32 /w/iso/isolinux/
           
-          xorriso -as mkisofs -o "/w/${ISO_NAME}.iso" -b isolinux/isolinux.bin -c isolinux/boot.cat -no-emul-boot -boot-load-size 4 -boot-info-table -isohybrid-mbr /usr/lib/ISOLINUX/isohdpfx.bin /w/iso/
+          # GRUB for EFI boot
+          apt-get install -y grub-efi-amd64-bin mtools
+          
+          cat > /w/iso/EFI/BOOT/grub.cfg <<GRUBCFG
+          set timeout=5
+          set default=0
+          
+          menuentry "Cybr Installer" {
+            linux /boot/vmlinuz quiet
+            initrd /boot/initrd.gz
+          }
+          GRUBCFG
+          
+          # Create EFI boot image
+          grub-mkstandalone \
+            --format=x86_64-efi \
+            --output=/w/iso/EFI/BOOT/BOOTX64.EFI \
+            --locales="" \
+            --fonts="" \
+            "boot/grub/grub.cfg=/w/iso/EFI/BOOT/grub.cfg"
+          
+          # Create El Torito EFI boot image
+          dd if=/dev/zero of=/w/efiboot.img bs=1M count=10
+          mkfs.vfat /w/efiboot.img
+          mmd -i /w/efiboot.img ::/EFI
+          mmd -i /w/efiboot.img ::/EFI/BOOT
+          mcopy -i /w/efiboot.img /w/iso/EFI/BOOT/BOOTX64.EFI ::/EFI/BOOT/
+          
+          # Build hybrid ISO with both BIOS and EFI support
+          xorriso -as mkisofs \
+            -o "/w/${ISO_NAME}.iso" \
+            -isohybrid-mbr /usr/lib/ISOLINUX/isohdpfx.bin \
+            -c isolinux/boot.cat \
+            -b isolinux/isolinux.bin \
+            -no-emul-boot -boot-load-size 4 -boot-info-table \
+            -eltorito-alt-boot \
+            -e --interval:appended_partition_2:all:: \
+            -no-emul-boot \
+            -isohybrid-gpt-basdat \
+            -append_partition 2 C12A7328-F81F-11D2-BA4B-00A0C93EC93B /w/efiboot.img \
+            /w/iso/
           '
 
       - name: Generate checksums
