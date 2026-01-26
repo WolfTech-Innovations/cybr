@@ -379,7 +379,7 @@ jobs:
               sshpass -p "$SF_PASS" rsync -avP \
                 -e "ssh -o StrictHostKeyChecking=no" \
                 "$iso_file" \
-                "$SF_USER@frs.sourceforge.net:/home/frs/project/wolfos/gaming/lxde/" \
+                "$SF_USER@frs.sourceforge.net:/home/frs/project/wolfos/" \
                 && break
               sleep 30
             done
