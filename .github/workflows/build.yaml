@@ -120,7 +120,7 @@ jobs:
           chmod +x busybox
           
           # Create initramfs
-          mkdir -p initramfs/{bin,sbin,proc,sys,dev,mnt,lib/firmware}
+          mkdir -p initramfs/{bin,sbin,proc,sys,dev,mnt,lib/firmware,lib/x86_64-linux-gnu,lib64}
           cp busybox initramfs/bin/
           
           cd initramfs/bin
@@ -138,7 +138,6 @@ jobs:
           cp $(which unsquashfs) initramfs/sbin/ || cp /usr/bin/unsquashfs initramfs/sbin/
           
           # Copy libs
-          mkdir -p initramfs/lib/{x86_64-linux-gnu,64}
           cp /lib64/ld-linux-x86-64.so.2 initramfs/lib64/
           for lib in libc.so.6 libnl-3.so.200 libnl-genl-3.so.200 libblkid.so.1 libuuid.so.1; do
             find /lib /usr/lib -name "$lib" -exec cp {} initramfs/lib/x86_64-linux-gnu/ \; 2>/dev/null
