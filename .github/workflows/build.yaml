@@ -135,7 +135,7 @@ jobs:
           # Copy tools
           cp /sbin/wpa_supplicant initramfs/sbin/
           cp /sbin/parted initramfs/sbin/
-          cp /usr/sbin/unsquashfs initramfs/sbin/
+          cp $(which unsquashfs) initramfs/sbin/ || cp /usr/bin/unsquashfs initramfs/sbin/
           
           # Copy libs
           mkdir -p initramfs/lib/{x86_64-linux-gnu,64}
