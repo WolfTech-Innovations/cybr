@@ -1,4 +1,4 @@
-name: "Cybr LXDE Build"
+name: "Cybr Build"
 
 on:
   workflow_dispatch:
@@ -253,7 +253,7 @@ jobs:
               if sshpass -p "$SF_PASS" rsync -avP \
                 -e "ssh -o StrictHostKeyChecking=no" \
                 "$iso_file" \
-                "$SF_USER@frs.sourceforge.net:/home/frs/project/wolfos/gaming/lxde/"; then
+                "$SF_USER@frs.sourceforge.net:/home/frs/project/wolfos/"; then
                 echo "Successfully uploaded $iso_file"
                 break
               else
