@@ -122,7 +122,7 @@ jobs:
           apt-get update && apt-get install -y linux-image-amd64 firmware-iwlwifi wpasupplicant parted iw
           cd /tmp
           
-          # Get kernel and strip modules
+          # Get kernel
           cp "$(find /boot -name "vmlinuz-*" | tail -1)" vmlinuz
           
           # Get busybox & create minimal initramfs
@@ -132,8 +132,10 @@ jobs:
           cd i/bin && for c in sh mount umount cat wget ping ip grep reboot; do ln -s busybox $c; done
           cd ../sbin && for c in init mdev udhcpc; do ln -s ../bin/busybox $c; done && cd /tmp
           
-          # Copy minimal firmware (Intel WiFi only - most common)
-          cp /lib/firmware/iwlwifi/iwlwifi-*-*.ucode i/lib/firmware/iwlwifi/ 2>/dev/null | head -20 || true
+          # Copy minimal firmware (only 5 most common Intel WiFi files)
+          for f in iwlwifi-7260-17.ucode iwlwifi-8000C-36.ucode iwlwifi-8265-36.ucode iwlwifi-9000-pu-b0-jf-b0-46.ucode iwlwifi-QuZ-a0-hr-b0-77.ucode; do
+            cp /lib/firmware/iwlwifi/$f i/lib/firmware/iwlwifi/ 2>/dev/null || true
+          done
           
           # Copy only critical tools
           cp /sbin/wpa_supplicant /sbin/parted /sbin/iw i/sbin/ 2>/dev/null
@@ -147,9 +149,9 @@ jobs:
           done
           
           # Minimal network config
-          echo -e "nameserver 8.8.8.8" > i/etc/resolv.conf
+          echo "nameserver 8.8.8.8" > i/etc/resolv.conf
           
-          cat > i/init <<'"'"'EOF'"'"'
+          cat > i/init <<"EOF"
           #!/bin/sh
           export PATH=/bin:/sbin LD_LIBRARY_PATH=/lib/x86_64-linux-gnu:/lib64
           mount -t proc none /proc;mount -t sysfs none /sys;mount -t devtmpfs none /dev;mdev -s;hostname cybr;clear
@@ -165,19 +167,24 @@ jobs:
           cd i && find .|cpio -oH newc|gzip -9>/tmp/initrd.gz && cd /tmp
           echo "Sizes: vmlinuz=$(($(stat -c%s vmlinuz)/1024/1024))M initrd=$(($(stat -c%s initrd.gz)/1024))K"
           
-          # Build tiny ISO
-          mkdir -p /w/iso/{boot,isolinux,EFI/BOOT}
+          # Build tiny ISO - BIOS only to save space
+          mkdir -p /w/iso/{boot,isolinux}
           cp vmlinuz initrd.gz /w/iso/boot/
           echo -e "DEFAULT linux\nLABEL linux\nKERNEL /boot/vmlinuz\nAPPEND initrd=/boot/initrd.gz">/w/iso/isolinux/isolinux.cfg
           cp /usr/lib/ISOLINUX/isolinux.bin /w/iso/isolinux/
           cp /usr/lib/syslinux/modules/bios/ldlinux.c32 /w/iso/isolinux/
-          echo -e "set timeout=3\nmenuentry \"Cybr\" {\nlinux /boot/vmlinuz\ninitrd /boot/initrd.gz\n}">/w/iso/EFI/BOOT/grub.cfg
-          grub-mkstandalone --format=x86_64-efi --output=/w/iso/EFI/BOOT/BOOTX64.EFI --locales="" --fonts="" "boot/grub/grub.cfg=/w/iso/EFI/BOOT/grub.cfg" 2>/dev/null
-          dd if=/dev/zero of=/w/efi.img bs=1M count=4 2>/dev/null
-          mkfs.vfat /w/efi.img>/dev/null 2>&1
-          mmd -i /w/efi.img ::/EFI ::/EFI/BOOT
-          mcopy -i /w/efi.img /w/iso/EFI/BOOT/BOOTX64.EFI ::/EFI/BOOT/
-          xorriso -as mkisofs -o "/w/${ISO_NAME}.iso" -isohybrid-mbr /usr/lib/ISOLINUX/isohdpfx.bin -c isolinux/boot.cat -b isolinux/isolinux.bin -no-emul-boot -boot-load-size 4 -boot-info-table -eltorito-alt-boot -e --interval:appended_partition_2:all:: -no-emul-boot -isohybrid-gpt-basdat -append_partition 2 C12A7328-F81F-11D2-BA4B-00A0C93EC93B /w/efi.img /w/iso/ 2>&1|grep -E "ISO image|Final"
+          
+          # Create ISO with BIOS boot only
+          xorriso -as mkisofs \
+            -o "/w/${ISO_NAME}.iso" \
+            -isohybrid-mbr /usr/lib/ISOLINUX/isohdpfx.bin \
+            -c isolinux/boot.cat \
+            -b isolinux/isolinux.bin \
+            -no-emul-boot \
+            -boot-load-size 4 \
+            -boot-info-table \
+            /w/iso/ 2>&1 | grep -E "ISO image|sectors"
+          
           echo "ISO: $(($(stat -c%s /w/${ISO_NAME}.iso)/1024/1024))MB"
           '
             -eltorito-alt-boot \
