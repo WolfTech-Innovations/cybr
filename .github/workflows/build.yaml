@@ -180,7 +180,7 @@ jobs:
           # Copy kernel and initrd
           cp vmlinuz initrd.gz iso/boot/
           
-          # Create GRUB config
+          # Create GRUB configuration
           cat>iso/boot/grub/grub.cfg<<G
           set timeout=5
           menuentry "Install Cybr" {
@@ -189,22 +189,18 @@ jobs:
           }
           G
           
-          # Create GRUB BIOS core image
-          grub-mkstandalone \
-            -d /usr/lib/grub/i386-pc \
-            -O i386-pc \
-            --modules="part_gpt part_msdos biosdisk iso9660 linux normal" \
-            --locales="" \
-            --fonts="" \
-            -o iso/boot/grub/core.img \
-            "boot/grub/grub.cfg=iso/boot/grub/grub.cfg"
+          # For BIOS: Copy GRUB modules to ISO
+          mkdir -p iso/boot/grub/i386-pc
+          cp /usr/lib/grub/i386-pc/*.mod iso/boot/grub/i386-pc/ 2>/dev/null || true
+          cp /usr/lib/grub/i386-pc/*.lst iso/boot/grub/i386-pc/ 2>/dev/null || true
+          cp /usr/lib/grub/i386-pc/eltorito.img iso/boot/grub/i386-pc/ 2>/dev/null || true
           
           # Create GRUB EFI bootloader
           mkdir -p iso/EFI/BOOT
           grub-mkstandalone \
             -d /usr/lib/grub/x86_64-efi \
             -O x86_64-efi \
-            --modules="part_gpt part_msdos iso9660 linux normal" \
+            --modules="part_gpt part_msdos iso9660" \
             --locales="" \
             --fonts="" \
             -o iso/EFI/BOOT/BOOTX64.EFI \
@@ -216,18 +212,13 @@ jobs:
           mmd -i iso/efi.img ::/EFI ::/EFI/BOOT
           mcopy -i iso/efi.img iso/EFI/BOOT/BOOTX64.EFI ::/EFI/BOOT/
           
-          # Prepare BIOS boot
-          cat /usr/lib/grub/i386-pc/cdboot.img iso/boot/grub/core.img > iso/boot/grub/bios.img
-          
-          # Create hybrid ISO with GRUB for both BIOS and UEFI
+          # Create hybrid ISO with both BIOS and UEFI support
           xorriso -as mkisofs -o "/w/${ISO}.iso" \
-            -r -J \
-            -b boot/grub/bios.img \
+            -r -J -joliet-long \
+            -b boot/grub/i386-pc/eltorito.img \
             -no-emul-boot \
             -boot-load-size 4 \
             -boot-info-table \
-            --grub2-boot-info \
-            --grub2-mbr /usr/lib/grub/i386-pc/boot_hybrid.img \
             -eltorito-alt-boot \
             -e efi.img \
             -no-emul-boot \
