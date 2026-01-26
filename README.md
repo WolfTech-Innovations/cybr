@@ -1,63 +1,58 @@
-# Welcome to Cybr - Mobile Gaming Edition
+# Welcome to Cybr K9 - Desktop Edition
 ![WTLogo](https://github.com/WolfTech-Innovations/cybr/blob/51e1cbc62285ed52d3deb320b47af5670b163d6e/images/Screenshot_20260120-190710.png)
 [![Cybr Build System](https://github.com/WolfTech-Innovations/cybr/actions/workflows/build.yaml/badge.svg)](https://github.com/WolfTech-Innovations/cybr/actions/workflows/build.yaml)
 
-Cybr is a Linux distribution built for mobile gaming on handheld devices, tablets, and touch-enabled systems. Combining Debian's rock-solid foundation with Phosh's modern mobile interface and the high-performance Liquorix kernel, Cybr delivers a touch-first gaming experience with an ultra-minimal network installer.
+Cybr K9 is a lightweight Linux distribution featuring the K9 Desktop Environment - a modern, sleek X11-based desktop with rounded window decorations, blur effects, and smooth window management. Built on Debian's rock-solid foundation with minimal bloat, Cybr K9 delivers a fast, efficient desktop experience.
 
-**Perfect for:** Handheld gaming devices, GPD devices, AYANEO handhelds, gaming tablets, 2-in-1 laptops, and Steam Deck alternatives.
+**Perfect for:** Desktop users seeking a lightweight, modern DE with elegant visuals and efficient performance.
 
 ## Features
 
 - **Base**: Debian 12 Bookworm (stable, secure, minimal)
-- **Desktop**: Phosh (GNOME-based mobile interface)
-- **Display Manager**: GDM3 with auto-login
-- **Kernel**: Liquorix (optimized for gaming and low latency)
-- **Installer**: Network-based (~50MB ISO)
-- **Size**: Ultra-minimal installer, downloads latest base during install
-- **Gaming**: Steam pre-installed with full 32-bit support and Vulkan
-- **Communications**: Discord pre-installed
+- **Desktop**: K9 Desktop Environment (custom X11-based DE)
+- **Window Manager**: Built-in compositor with blur effects
+- **Filesystem**: Standard Filesystem Hierarchy (FHS compliant)
+- **Installer**: Live ISO boots directly into K9 DE
+- **Size**: Minimal installation with only essential packages
+- **Visual Effects**: Rounded windows, blur effects, smooth animations
+- **Performance**: Lightweight and optimized for speed
 
 ## What's Included
 
-### Desktop Environment
-- **Phosh**: Modern mobile desktop with touch gestures
-- **GDM3**: GNOME Display Manager with auto-login
-- **Touch-Optimized**: Native gesture support and adaptive apps
-- **Mobile-Friendly**: Designed for handheld and touch devices
+### K9 Desktop Environment
+- **Custom Window Manager**: X11-based with integrated compositor
+- **Blur Effects**: XRender-powered background blur for modern aesthetics
+- **Rounded Windows**: Smooth, rounded window decorations
+- **System Panel**: Built-in panel for system management
+- **System Menu**: Quick access via right-click or Super key
+- **Auto-login**: Boots directly into K9 desktop
 
-### Pre-installed Applications
-- **Web Browser**: Firefox ESR
-- **Gaming Platform**: Steam with complete 32-bit runtime libraries
-- **Communications**: Discord
-- **Partition Editor**: GParted
-- **Network**: NetworkManager with WiFi support
+### System Features
+- **Minimal Xorg**: Only essential X11 packages installed
+- **Network Support**: NetworkManager with WiFi and Ethernet
+- **Partition Tools**: GParted for disk management
+- **File System Support**: ext4, NTFS, and more
+- **Text Editors**: nano and vim included
 
-### Gaming Optimizations
-- **Liquorix Kernel**: High-performance kernel optimized for gaming
-- **Vulkan Drivers**: Mesa Vulkan drivers for AMD and Intel GPUs (32-bit + 64-bit)
-- **Steam Ready**: Pre-configured with all dependencies
-- **32-bit Support**: Full multilib for Windows game compatibility
-- **Proton Compatible**: Ready for Windows games via Steam Play
-
-### Mobile Features
-- **Touch Interface**: Native touch gesture support throughout
-- **Adaptive Layout**: Interface adjusts to device orientation
-- **On-Screen Keyboard**: Integrated mobile keyboard
-- **Desktop Shortcuts**: Steam and Discord ready on desktop
+### K9 Keybindings
+- `Super+I`: Open system information popup
+- `Super+M`: Open system menu
+- Right-click: Context menu access
+- Window management via mouse and keyboard
 
 ## System Requirements
 
-- **RAM**: 2GB minimum (4GB+ recommended for gaming)
-- **Storage**: 16GB minimum (64GB+ recommended for game library)
+- **RAM**: 512MB minimum (1GB+ recommended)
+- **Storage**: 4GB minimum (8GB+ recommended)
 - **Processor**: 64-bit x86 processor (AMD64/Intel64)
-- **Graphics**: Any GPU with KMS support (AMD/Intel recommended, NVIDIA supported)
-- **Network**: WiFi or Ethernet required for installation
-- **Boot**: UEFI (dual-boot support with GRUB)
+- **Graphics**: Any GPU with KMS support
+- **Network**: Not required for live boot, needed for updates
+- **Boot**: UEFI and Legacy BIOS supported
 
 ## Installation
 
 ### Step 1: Download
-Download the latest network installer ISO (~50MB) from [SourceForge Mirror](https://sourceforge.net/projects/wolfos/files/gaming/)
+Download the latest ISO from [SourceForge Mirror](https://sourceforge.net/projects/wolfos/files/gaming/k9/)
 
 ### Step 2: Create Bootable Media
 Create a bootable USB drive using:
@@ -66,154 +61,53 @@ Create a bootable USB drive using:
 
 Example with dd:
 ```bash
-sudo dd if=cybr-netinstall-v*.iso of=/dev/sdX bs=4M status=progress && sync
+sudo dd if=cybr-k9-v*.iso of=/dev/sdX bs=4M status=progress && sync
 ```
 
 ### Step 3: Boot from USB
 1. Boot your device from the USB drive
-2. You'll see the Cybr Network Installer command line interface
+2. Select "Cybr K9 Live" from GRUB menu
+3. K9 Desktop Environment will start automatically
 
-### Step 4: Connect to WiFi
-```bash
-cybr> wifi
-Enter SSID: YourNetworkName
-Enter password: ********
-[OK] Connected!
-```
-
-### Step 5: Install to Disk
-```bash
-cybr> install
-Available disks:
-/dev/sda: 512GB SSD
-Enter disk (e.g., sda): sda
-WARNING: Erase /dev/sda?
-Type YES: YES
-
-[1/6] Partitioning...
-[2/6] Formatting...
-[3/6] Mounting...
-[4/6] Downloading base system...
-[5/6] Extracting (this takes a while)...
-[6/6] Installing bootloader...
-
-=======================================
-  Installation Complete!
-  Remove USB and reboot
-=======================================
-```
-
-### Alternative: Shell Access
-For advanced users:
-```bash
-cybr> shell
-```
-
-## First Boot
-
-On first boot, Cybr is ready with:
-- Phosh mobile desktop environment
-- Auto-login as "cybruser" (password: cybr)
-- Steam ready to launch from desktop
-- Discord ready for voice chat
-- Network connectivity configured
-- All gaming codecs and drivers installed
-- Liquorix kernel for optimal gaming performance
+### Step 4: Live System
+The ISO boots into a fully functional live system:
+- All changes are stored in RAM (non-persistent)
+- Perfect for testing before installation
+- Full K9 desktop experience
+- Network connectivity available
 
 ## Default Credentials
 
-- **Username**: cybruser
-- **Password**: cybr
+- **Username**: k9user
+- **Password**: k9
 - **Root Password**: root
 
-**Important**: Change these passwords after first login:
-```bash
-passwd  # Change user password
-sudo passwd root  # Change root password
-```
+**Live System Note**: The live system runs from RAM with an overlay filesystem. Changes persist during the session but are lost on reboot.
 
-## Gaming on Cybr
+## Using K9 Desktop Environment
 
-### Steam
-Steam is pre-installed with desktop shortcut:
-1. Click Steam icon on desktop or in app drawer
-2. Sign in to your Steam account
-3. Enable Proton in Steam Settings → Compatibility for Windows games
-4. Configure controller support in Settings → Controller
-5. Start gaming!
+### First Launch
+When K9 starts, you'll see:
+- Clean desktop with rounded window decorations
+- System panel for quick access to applications
+- Blur effects on window backgrounds
+- Smooth window animations
 
-### Controller Support
-- Native Steam Input support
-- Xbox, PlayStation, Nintendo controllers work out of the box
-- Built-in handheld controls supported
+### Opening Applications
+1. Press `Super+M` or right-click desktop for system menu
+2. Access terminal, file manager, and system tools
+3. Launch applications from menu
 
-### Discord
-Discord is pre-installed with desktop shortcut:
-- Launch from desktop or app drawer
-- Screen share support for streaming gameplay
-- Voice chat optimized for gaming
+### System Information
+- Press `Super+I` to view system details
+- Shows K9 registration as desktop environment
+- Displays system resources and information
 
-## Use Cases
-
-Cybr is designed for:
-- **Handheld Gaming**: GPD Win, AYANEO, OneXPlayer, Steam Deck alternatives
-- **Gaming Tablets**: x86 tablets with touch screens
-- **2-in-1 Laptops**: Convertible devices for gaming and productivity
-- **Touch-First Devices**: Any device with a touch screen
-- **Mobile Gaming**: Portable gaming on handheld devices
-
-## Building from Source
-
-Build your own Cybr ISO using our automated system:
-
-```bash
-# Clone the repository
-git clone https://github.com/WolfTech-Innovations/cybr.git
-cd cybr
-
-# Build runs automatically via GitHub Actions
-# Or trigger manually from the Actions tab
-```
-
-The build process creates:
-1. **Network Installer ISO** (~50MB): Ultra-minimal bootable installer
-2. **Base System** (squashfs): Complete Cybr system downloaded during install
-
-### Build Features
-- Fully automated GitHub Actions workflow
-- Docker-based clean build environment
-- Reproducible builds
-- Network installer approach (always fresh installs)
-- Liquorix kernel compilation
-- Automatic checksum generation
-- SourceForge upload integration
-
-### Build Process
-1. **Build Base System**:
-   - Debootstrap Debian Bookworm
-   - Install Liquorix kernel from official repo
-   - Install Phosh desktop environment
-   - Add Steam with 32-bit support
-   - Install Discord
-   - Configure auto-login and branding
-   - Create squashfs image
-
-2. **Build Network Installer**:
-   - Compile minimal Linux kernel (tinyconfig + essentials)
-   - Build static BusyBox
-   - Create initramfs with installer script
-   - Include WiFi firmware
-   - Generate bootable ISO with GRUB (UEFI)
-
-## Network Installer Features
-
-The network installer is ultra-minimal but includes:
-- **WiFi Support**: iwlwifi, Realtek, Atheros firmware
-- **Commands**: `wifi`, `install`, `shell`
-- **Automatic**: Downloads latest base from SourceForge
-- **Partitioning**: Automated GPT partitioning (EFI + root)
-- **Bootloader**: GRUB installation for UEFI systems
-- **Progress**: 6-step installation with clear feedback
+### Window Management
+- Drag windows with mouse
+- Resize from window edges
+- Minimize, maximize, close buttons on title bar
+- Alt+Tab for window switching (if implemented)
 
 ## Customization
 
@@ -225,72 +119,189 @@ sudo apt update
 # Install from Debian repos
 sudo apt install <package>
 
-# Enable Flatpak (optional)
-sudo apt install flatpak
-flatpak remote-add --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo
+# Common additions
+sudo apt install firefox-esr libreoffice gimp
 ```
 
-### Adding More Games
-- **Steam**: Install games directly through Steam
-- **Flatpak**: Flathub has many games
-- **Lutris**: Install via `apt install lutris` for non-Steam games
-- **Heroic**: For Epic Games and GOG
+### Network Configuration
+```bash
+# WiFi setup
+nmcli device wifi list
+nmcli device wifi connect "SSID" password "password"
 
-### Customizing Phosh
-- Settings app for system configuration
-- Appearance settings for themes
-- Touch gesture configuration
-- Application drawer customization
+# Check connection
+nmcli connection show
+```
+
+### Installing Desktop Applications
+```bash
+# Web browsers
+sudo apt install firefox-esr chromium
+
+# Office suite
+sudo apt install libreoffice
+
+# Media players
+sudo apt install vlc mpv
+
+# Graphics
+sudo apt install gimp inkscape
+```
+
+### K9 Development
+Interested in K9 development? Check out the source:
+- **K9 Repository**: [https://github.com/WolfTech-Innovations/K9](https://github.com/WolfTech-Innovations/K9)
+- Build from source for latest features
+- Contribute improvements and bug fixes
+
+## Building from Source
+
+Build your own Cybr K9 ISO using our automated system:
+
+```bash
+# Clone the repository
+git clone https://github.com/WolfTech-Innovations/cybr.git
+cd cybr
+
+# Build runs automatically via GitHub Actions
+# Or trigger manually from the Actions tab
+```
+
+### Build Features
+- Fully automated GitHub Actions workflow
+- Docker-based clean build environment
+- Reproducible builds
+- Live ISO with persistent overlay
+- K9 built from source during build process
+- Automatic checksum generation
+- SourceForge upload integration
+
+### Build Process
+1. **Create Base System**:
+   - Debootstrap Debian Bookworm
+   - Install minimal Xorg and dependencies
+   - Clone and compile K9 from GitHub
+   - Install K9 system-wide
+   - Configure auto-login and session
+   - Apply K9 branding
+
+2. **Create Live ISO**:
+   - Build initramfs with live boot support
+   - Create SquashFS from root filesystem
+   - Configure overlay filesystem
+   - Generate bootable ISO with GRUB (UEFI + BIOS)
+   - Package everything into hybrid ISO
+
+## K9 Desktop Environment
+
+### About K9
+K9 is a lightweight, modern X11-based desktop environment featuring:
+- Custom window management and compositing
+- XRender-based blur effects
+- Rounded window decorations
+- Integrated system panel
+- Minimal resource usage
+- Built for performance and aesthetics
+
+### K9 Architecture
+- **Window Manager**: Custom X11 WM with compositing
+- **Compositor**: Integrated blur and transparency effects
+- **Panel**: Built-in system panel with menu access
+- **Libraries**: libx11, libxrender, libxext, libxrandr, libxft, libxcomposite
+
+### K9 Features
+- Blur background effects for modern look
+- Smooth window animations
+- System info popup (Super+I)
+- Configurable keybindings
+- Lightweight and fast
+- Minimal dependencies
+
+## Live System Details
+
+### How Live Boot Works
+1. ISO boots with initramfs
+2. SquashFS filesystem mounted read-only
+3. Overlay filesystem created in RAM
+4. Changes stored in overlay (temporary)
+5. Full desktop functionality available
+
+### Advantages of Live System
+- Test before installing
+- Safe system recovery
+- Portable desktop environment
+- No installation required
+- Fresh start every boot
+
+### Making It Persistent
+Currently, the live system is non-persistent. For a permanent installation, you can:
+1. Boot the live system
+2. Use GParted to partition your disk
+3. Manually rsync the system to disk
+4. Install GRUB bootloader
+5. Configure for permanent boot
+
+(Automated installer coming in future releases)
 
 ## Downloads
 
-- [SourceForge](https://sourceforge.net/projects/wolfos/files/gaming/) - Stable releases
+- [SourceForge](https://sourceforge.net/projects/wolfos/files/gaming/k9/) - Stable releases
 - [GitHub Releases](https://github.com/WolfTech-Innovations/cybr/releases) - Version archives
 - [GitHub Actions](https://github.com/WolfTech-Innovations/cybr/actions) - Development builds
 
 ## Support & Community
 
 - **Website**: [https://getcybr.org](https://getcybr.org)
+- **K9 Repository**: [https://github.com/WolfTech-Innovations/K9](https://github.com/WolfTech-Innovations/K9)
 - **GitHub Issues**: Report bugs or request features
 - **GitHub Discussions**: Community help and questions
 
 ## Troubleshooting
 
 ### Boot Issues
-- Verify UEFI boot mode in BIOS
-- Check boot order settings
 - Verify ISO checksum after download
+- Try both UEFI and Legacy BIOS boot modes
+- Check boot order settings in BIOS
 
-### WiFi Not Working During Install
-- Check if your WiFi card is supported
-- Try USB WiFi adapter if built-in fails
-- Use Ethernet connection as alternative
+### K9 Not Starting
+- Check Xorg logs: `cat /var/log/Xorg.0.log`
+- Verify X11 dependencies are installed
+- Try starting manually: `startx`
 
-### Installation Fails to Download Base
-- Verify internet connection with `ping 8.8.8.8`
-- Check SourceForge status
-- Retry installation
+### Display Issues
+- Verify graphics drivers: `lsmod | grep -E "i915|amdgpu|nouveau|radeon"`
+- Check display configuration: `xrandr`
+- Try safe mode boot option
 
-### Steam Not Launching
-- Run: `sudo apt install --reinstall steam-installer`
-- Check graphics drivers: `glxinfo | grep OpenGL`
-- Verify 32-bit libraries: `dpkg --print-foreign-architectures`
+### Network Not Working
+- Check interface status: `ip link show`
+- Use NetworkManager: `nmcli device status`
+- Verify drivers: `lspci -k | grep -A3 Network`
 
-### Slow Performance
-- Liquorix kernel should provide optimal performance
-- Check running processes with `top`
-- Verify graphics drivers are loaded: `lsmod | grep -E "i915|amdgpu|nouveau"`
+### Performance Issues
+- K9 is lightweight by design
+- Check running processes: `top` or `htop`
+- Disable blur effects if needed (modify K9 config)
+
+## Roadmap
+
+Future enhancements planned:
+- Automated disk installer
+- Persistent live USB option
+- Additional K9 themes and customization
+- Enhanced system panel features
+- More integrated applications
+- Improved window management features
 
 ## Credits
 
-Cybr is built on amazing open source projects:
+Cybr K9 is built on amazing open source projects:
 - **Debian Project** - Rock-solid base system
-- **Phosh** - Modern mobile desktop interface
-- **GNOME Project** - Desktop environment components
-- **Liquorix** - High-performance gaming kernel
-- **Valve** - Steam platform and Proton
-- **BusyBox** - Minimal installer utilities
+- **K9 Desktop Environment** - Custom DE by WolfTech Innovations
+- **X.Org** - X11 windowing system
 - **Linux Kernel** - Core operating system
+- **BusyBox** - Minimal system utilities
+- **GRUB** - Bootloader
 - **All open source contributors**
 
 ## Our Team
@@ -301,10 +312,10 @@ Cybr is built on amazing open source projects:
 
 ## Legal
 
-Cybr is free and open source software.
+Cybr K9 is free and open source software.
 
 **You are free to:**
-- Use Cybr for any purpose
+- Use Cybr K9 for any purpose
 - Study and modify the source code
 - Distribute copies
 - Distribute modified versions
@@ -315,6 +326,6 @@ This project is licensed under GPL-3.0 and welcomes contributions.
 
 ---
 
-**Note**: Cybr is not affiliated with or endorsed by Debian, GNOME, Phosh, Liquorix, Valve, Discord, or any upstream projects. All trademarks belong to their respective owners. Steam and the Steam logo are trademarks of Valve Corporation.
+**Note**: Cybr K9 is not affiliated with or endorsed by Debian, X.Org, or any upstream projects. All trademarks belong to their respective owners.
 
-**Made for the mobile gaming community**
+**Made with ❤️ for the Linux desktop community**
