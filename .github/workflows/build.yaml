@@ -1,16 +1,7 @@
-name: "Cybr Build"
+name: "Cybr K9 Build"
 
 on:
   workflow_dispatch:
-    inputs:
-      build_type:
-        description: 'Build type'
-        required: true
-        default: 'full'
-        type: choice
-        options:
-          - full
-          - iso-only
   push:
     branches: [main, develop]
   schedule:
@@ -20,13 +11,12 @@ jobs:
   build:
     runs-on: ubuntu-latest
     timeout-minutes: 120
-    
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
       - name: Free disk space
-        if: ${{ inputs.build_type != 'iso-only' }}
         run: |
           sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache
           sudo docker system prune -af --volumes
@@ -53,81 +43,126 @@ jobs:
             wpasupplicant parted iw ethtool
           
           cd /w
-          BASE="cybr-base-v${RUN_NUM}"
-          ISO="cybr-netinstall-v${RUN_NUM}"
+          ISO="cybr-k9-v${RUN_NUM}"
           
-          if [ "$BUILD_TYPE" = "full" ]; then
-            echo "=== Building Base System ==="
-            debootstrap --arch=amd64 --variant=minbase bookworm base \
-              http://deb.debian.org/debian/
-            
-            # Configure base system
-            cat > base/etc/apt/sources.list << 'BASE_APT'
+          echo "=== Building Root Filesystem ==="
+          debootstrap --arch=amd64 --variant=minbase bookworm rootfs \
+            http://deb.debian.org/debian/
+          
+          # Configure system
+          cat > rootfs/etc/apt/sources.list << 'BASE_APT'
           deb http://deb.debian.org/debian bookworm main contrib non-free non-free-firmware
           deb http://deb.debian.org/debian-security bookworm-security main contrib non-free non-free-firmware
           BASE_APT
-            
-            chroot base /bin/bash << 'CHROOT_COMMANDS'
-          apt-get update && apt-get install -y curl gnupg2 ca-certificates
           
-          curl -fsSL https://liquorix.net/liquorix-keyring.gpg \
-            -o /usr/share/keyrings/liquorix.gpg
+          # Mount necessary filesystems for chroot
+          mount --bind /dev rootfs/dev
+          mount --bind /proc rootfs/proc
+          mount --bind /sys rootfs/sys
           
-          cat > /etc/apt/sources.list.d/liquorix.sources << 'LIQUORIX'
-          Types: deb
-          URIs: https://liquorix.net/debian
-          Suites: bookworm
-          Components: main
-          Signed-By: /usr/share/keyrings/liquorix.gpg
-          LIQUORIX
+          chroot rootfs /bin/bash << 'CHROOT_COMMANDS'
+          export DEBIAN_FRONTEND=noninteractive
           
+          # Update and install base packages
           apt-get update && apt-get install -y \
-            linux-image-liquorix-amd64 firmware-linux systemd sudo \
-            phosh-full gdm3 network-manager firefox-esr flatpak gparted \
-            ntfs-3g e2fsprogs nano grub-efi-amd64 grub-pc-bin
+            linux-image-amd64 firmware-linux systemd sudo \
+            network-manager wpasupplicant iw ethtool \
+            xorg xserver-xorg xinit \
+            libx11-dev libxrender-dev libxext-dev libxrandr-dev \
+            libxft-dev libxcomposite-dev libxdamage-dev libxfixes-dev \
+            git build-essential make gcc pkg-config \
+            ntfs-3g e2fsprogs parted gparted \
+            nano vim grub-efi-amd64 grub-pc-bin \
+            console-setup keyboard-configuration locales \
+            ca-certificates curl wget
           
-          dpkg --add-architecture i386 && apt-get update
-          apt-get install -y steam \
-            libgl1-mesa-dri:amd64 libgl1-mesa-dri:i386 \
-            mesa-vulkan-drivers:amd64 mesa-vulkan-drivers:i386 liblzma-dev
+          # Configure locale
+          echo "en_US.UTF-8 UTF-8" >> /etc/locale.gen
+          locale-gen
           
-          wget -qO /tmp/discord.deb \
-            "https://discord.com/api/download?platform=linux&format=deb"
-          apt-get install -y /tmp/discord.deb || apt-get install -f -y
+          # Clone and build K9 Desktop Environment
+          cd /opt
+          git clone https://github.com/WolfTech-Innovations/K9.git
+          cd K9
           
-          cat > /etc/os-release << 'OS_RELEASE'
-          NAME="Cybr"
-          ID=cybr
-          ID_LIKE=debian
-          VERSION_ID="1.0"
-          OS_RELEASE
+          # Build K9
+          bash build.bash
           
-          useradd -m -s /bin/bash -G sudo,audio,video,netdev cybruser
-          echo "cybruser:cybr" | chpasswd
+          # Install K9 system-wide
+          mkdir -p /usr/local/bin /usr/share/xsessions
+          cp k9 /usr/local/bin/
+          chmod +x /usr/local/bin/k9
+          
+          # Create K9 desktop session file
+          cat > /usr/share/xsessions/k9.desktop << 'K9_DESKTOP'
+          [Desktop Entry]
+          Name=K9 Desktop
+          Comment=Lightweight X11 Desktop Environment
+          Exec=/usr/local/bin/k9
+          Type=Application
+          DesktopNames=K9
+          K9_DESKTOP
+          
+          # Create default user
+          useradd -m -s /bin/bash -G sudo,audio,video,netdev k9user
+          echo "k9user:k9" | chpasswd
           echo "root:root" | chpasswd
           
-          cat > /etc/gdm3/custom.conf << 'GDM_CONF'
-          [daemon]
-          AutomaticLoginEnable=true
-          AutomaticLogin=cybruser
-          GDM_CONF
+          # Configure auto-login and auto-start X with K9
+          mkdir -p /etc/systemd/system/getty@tty1.service.d
+          cat > /etc/systemd/system/getty@tty1.service.d/autologin.conf << 'AUTOLOGIN'
+          [Service]
+          ExecStart=
+          ExecStart=-/sbin/agetty --autologin k9user --noclear %I \$TERM
+          AUTOLOGIN
           
-          systemctl enable gdm3 NetworkManager
-          apt-get clean && rm -rf /var/lib/apt/lists/* /tmp/*
-          CHROOT_COMMANDS
-            
-            mksquashfs base "${BASE}.squashfs" -comp xz -b 1M
-            echo "✓ Base system created: $(($(stat -c%s ${BASE}.squashfs)/1024/1024))MB"
-          else
-            echo "=== Skipping base system build (ISO-only mode) ==="
+          # Auto-start X with K9 on login
+          cat > /home/k9user/.bash_profile << 'BASH_PROFILE'
+          if [ -z "$DISPLAY" ] && [ "$XDG_VTNR" = "1" ]; then
+            exec startx
           fi
+          BASH_PROFILE
+          
+          # Create .xinitrc to start K9
+          cat > /home/k9user/.xinitrc << 'XINITRC'
+          #!/bin/sh
+          exec /usr/local/bin/k9
+          XINITRC
+          
+          chmod +x /home/k9user/.xinitrc
+          chown k9user:k9user /home/k9user/.bash_profile /home/k9user/.xinitrc
+          
+          # Create OS release info
+          cat > /etc/os-release << 'OS_RELEASE'
+          NAME="Cybr K9"
+          ID=cybr-k9
+          ID_LIKE=debian
+          VERSION_ID="1.0"
+          PRETTY_NAME="Cybr K9 Desktop"
+          OS_RELEASE
+          
+          # Enable NetworkManager
+          systemctl enable NetworkManager
+          
+          # Cleanup
+          apt-get clean
+          rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
+          CHROOT_COMMANDS
+          
+          # Unmount chroot filesystems
+          umount rootfs/dev rootfs/proc rootfs/sys
+          
+          # Create squashfs from rootfs
+          echo "=== Creating SquashFS ==="
+          mksquashfs rootfs filesystem.squashfs -comp xz -b 1M
+          echo "✓ Filesystem created: $(($(stat -c%s filesystem.squashfs)/1024/1024))MB"
           
           echo "=== Building ISO ==="
           cd /tmp
           
-          # Copy kernel
-          cp "$(find /boot -name 'vmlinuz-*' | tail -1)" vmlinuz
-          KVER=$(ls /lib/modules/ | tail -1)
+          # Copy kernel from rootfs
+          cp "$(find /w/rootfs/boot -name 'vmlinuz-*' | tail -1)" vmlinuz
+          KVER=$(ls /w/rootfs/lib/modules/ | tail -1)
           
           # Download static busybox
           wget -qO busybox \
@@ -144,7 +179,7 @@ jobs:
           for cmd in sh mount umount cat ls cp mv rm mkdir mknod chmod chown ln \
                      grep sed awk cut sort head tail wc tr find xargs \
                      wget ping ip ifconfig route modprobe insmod lsmod \
-                     sleep sync reboot poweroff; do
+                     sleep sync reboot poweroff switch_root; do
             ln -sf busybox initramfs/bin/$cmd 2>/dev/null || true
           done
           
@@ -156,39 +191,28 @@ jobs:
           mkdir -p initramfs/lib/firmware
           cp -r /lib/firmware/* initramfs/lib/firmware/ 2>/dev/null || true
           
-          # Copy kernel modules (including virtio)
+          # Copy kernel modules
           mkdir -p initramfs/lib/modules/$KVER
-          for module_dir in drivers/net drivers/virtio kernel/net kernel/drivers/virtio; do
-            find /lib/modules/$KVER/$module_dir -name "*.ko" 2>/dev/null | \
+          for module_dir in drivers/net drivers/virtio kernel/net kernel/drivers/virtio \
+                           fs/isofs fs/squashfs fs/overlayfs; do
+            find /w/rootfs/lib/modules/$KVER/$module_dir -name "*.ko" 2>/dev/null | \
             while read module; do
-              relative_path="${module#/lib/modules/$KVER/}"
-              mkdir -p "initramfs/lib/modules/$KVER/$(dirname $relative_path)"
-              cp "$module" "initramfs/lib/modules/$KVER/$relative_path"
-            done
-          done
-          
-          # Explicitly copy critical virtio modules
-          for virtio_mod in virtio.ko virtio_ring.ko virtio_pci.ko virtio_net.ko \
-                            virtio_mmio.ko net_failover.ko failover.ko; do
-            find /lib/modules/$KVER -name "$virtio_mod" 2>/dev/null | \
-            while read module; do
-              relative_path="${module#/lib/modules/$KVER/}"
+              relative_path="${module#/w/rootfs/lib/modules/$KVER/}"
               mkdir -p "initramfs/lib/modules/$KVER/$(dirname $relative_path)"
               cp "$module" "initramfs/lib/modules/$KVER/$relative_path"
             done
           done
           
           # Copy module dependency files
-          cp /lib/modules/$KVER/modules.* initramfs/lib/modules/$KVER/ 2>/dev/null || true
+          cp /w/rootfs/lib/modules/$KVER/modules.* initramfs/lib/modules/$KVER/ 2>/dev/null || true
           
-          # Copy additional binaries and dependencies
+          # Copy additional binaries
           for binary in /usr/sbin/unsquashfs /sbin/parted /sbin/wpa_supplicant; do
             if [ -f "$binary" ]; then
               target_dir="initramfs$(dirname $binary)"
               mkdir -p "$target_dir"
               cp "$binary" "$target_dir/"
               
-              # Copy library dependencies
               ldd "$binary" 2>/dev/null | grep -oE '/[^ ]+' | while read lib; do
                 if [ -f "$lib" ]; then
                   lib_dir="initramfs$(dirname $lib)"
@@ -206,10 +230,9 @@ jobs:
           # DNS configuration
           echo "nameserver 8.8.8.8" > initramfs/etc/resolv.conf
           
-          # Create init script
+          # Create init script for live boot
           cat > initramfs/init << 'INIT_SCRIPT'
           #!/bin/busybox sh
-          # PID 1 - must NEVER exit
           
           set +m
           set +e
@@ -218,7 +241,7 @@ jobs:
           export PATH=/bin:/sbin:/usr/bin:/usr/sbin
           export LD_LIBRARY_PATH=/lib:/lib64:/usr/lib
           
-          echo "Starting Cybr Installer..."
+          echo "Starting Cybr K9 Live System..."
           
           # Mount filesystems
           mount -t proc none /proc 2>/dev/null
@@ -230,164 +253,42 @@ jobs:
           mount -t tmpfs none /run 2>/dev/null
           
           mdev -s 2>/dev/null
-          hostname cybr 2>/dev/null
+          hostname cybr-k9 2>/dev/null
           
-          # Load network modules
-          for m in virtio virtio_ring virtio_pci virtio_net virtio_mmio \
-                   e1000 e1000e r8169 8139too pcnet32 ne2k-pci; do
-            modprobe $m 2>/dev/null && echo "  Loaded: $m"
-          done
-          sleep 2
+          # Load essential modules
+          modprobe loop 2>/dev/null
+          modprobe squashfs 2>/dev/null
+          modprobe overlay 2>/dev/null
           
-          # Bring up interfaces
-          for iface in /sys/class/net/*; do
-            iface=$(basename "$iface")
-            [ "$iface" = "lo" ] && continue
-            ip link set "$iface" up 2>/dev/null
+          # Find and mount the ISO
+          for dev in /dev/sr* /dev/sd*; do
+            [ -b "$dev" ] || continue
+            mount -o ro "$dev" /mnt 2>/dev/null && break
           done
           
-          clear
-          cat << 'MENU'
-          ╔═══════════════════╗
-          ║  CYBR INSTALLER   ║
-          ╠═══════════════════╣
-          ║ 1) WiFi           ║
-          ║ 2) Ethernet       ║
-          ║ 3) Install        ║
-          ║ 4) Shell          ║
-          ╚═══════════════════╝
-          MENU
+          if [ -f /mnt/live/filesystem.squashfs ]; then
+            echo "Found filesystem, booting live system..."
+            
+            # Create mount points
+            mkdir -p /squash /overlay /newroot
+            
+            # Mount squashfs
+            mount -t squashfs -o loop,ro /mnt/live/filesystem.squashfs /squash
+            
+            # Create overlay
+            mkdir -p /overlay/upper /overlay/work
+            mount -t overlay overlay -o lowerdir=/squash,upperdir=/overlay/upper,workdir=/overlay/work /newroot
+            
+            # Move mounts
+            mount --move /dev /newroot/dev
+            mount --move /proc /newroot/proc
+            mount --move /sys /newroot/sys
+            
+            # Switch to new root
+            exec switch_root /newroot /sbin/init
+          fi
           
-          do_eth() {
-            eth=$(ip -br l 2>/dev/null | grep "^e" | head -1 | awk '{print $1}')
-            [ -z "$eth" ] && { echo "No ethernet adapter"; return 1; }
-            echo "Using $eth..."
-            ip link set "$eth" up 2>/dev/null
-            udhcpc -i "$eth" -qn 2>&1 | tail -2
-            ping -c1 -W2 8.8.8.8 >/dev/null 2>&1 && echo "✓ Connected" || echo "✗ Failed"
-          }
-          
-          do_wifi() {
-            wifi=$(ip -br l 2>/dev/null | grep "^wl" | head -1 | awk '{print $1}')
-            [ -z "$wifi" ] && { echo "No WiFi adapter"; return 1; }
-            printf "SSID: "; read ssid
-            printf "Password: "; read -s pass; echo
-            
-            cat > /tmp/wpa.conf << WIFI_CONF
-          network={
-            ssid="$ssid"
-            psk="$pass"
-          }
-          WIFI_CONF
-            
-            killall wpa_supplicant 2>/dev/null
-            wpa_supplicant -B -i "$wifi" -c /tmp/wpa.conf 2>/dev/null
-            sleep 4
-            udhcpc -i "$wifi" -qn 2>&1 | tail -2
-            ping -c1 -W2 8.8.8.8 >/dev/null 2>&1 && echo "✓ Connected" || echo "✗ Failed"
-          }
-          
-          do_install() {
-            ping -c1 -W2 8.8.8.8 >/dev/null 2>&1 || {
-              echo "No internet - configure network first"
-              return 1
-            }
-            
-            lsblk -d -o NAME,SIZE,TYPE 2>/dev/null | grep disk
-            printf "Target disk (e.g. sda): "; read disk
-            disk="/dev/$disk"
-            [ ! -b "$disk" ] && { echo "Invalid disk"; return 1; }
-            
-            printf "ERASE ALL DATA on $disk? Type YES: "; read confirm
-            [ "$confirm" != "YES" ] && { echo "Cancelled"; return 0; }
-            
-            echo "Partitioning..."
-            parted -s "$disk" mklabel gpt \
-              mkpart ESP fat32 1MiB 513MiB \
-              mkpart primary ext4 513MiB 100% \
-              set 1 esp on 2>&1 | tail -2
-            
-            sleep 2
-            echo "Formatting..."
-            mkfs.vfat -F32 "${disk}1" >/dev/null 2>&1
-            mkfs.ext4 -F "${disk}2" >/dev/null 2>&1
-            
-            echo "Mounting..."
-            mount "${disk}2" /mnt 2>/dev/null || { echo "Mount failed"; return 1; }
-            mkdir -p /mnt/boot/efi
-            mount "${disk}1" /mnt/boot/efi 2>/dev/null || {
-              umount /mnt 2>/dev/null
-              echo "EFI mount failed"
-              return 1
-            }
-            
-            echo "Downloading base system..."
-            base_url="https://sourceforge.net/projects/wolfos/files/gaming/base"
-            latest=$(wget -qO- "$base_url" 2>/dev/null | \
-                     grep -oP "cybr-base-v[0-9]+" | sort -V | tail -1)
-            
-            [ -z "$latest" ] && {
-              echo "Base system not found"
-              umount -R /mnt 2>/dev/null
-              return 1
-            }
-            
-            echo "Found: $latest"
-            wget -O /tmp/base.squashfs \
-              "$base_url/$latest.squashfs/download" 2>&1 | grep "saved"
-            
-            [ ! -f /tmp/base.squashfs ] && {
-              echo "Download failed"
-              umount -R /mnt 2>/dev/null
-              return 1
-            }
-            
-            echo "Extracting (takes several minutes)..."
-            unsquashfs -f -d /mnt /tmp/base.squashfs 2>&1 | grep "created"
-            
-            echo "Installing bootloader..."
-            mount --bind /dev /mnt/dev 2>/dev/null
-            mount --bind /proc /mnt/proc 2>/dev/null
-            mount --bind /sys /mnt/sys 2>/dev/null
-            
-            chroot /mnt grub-install \
-              --target=x86_64-efi \
-              --efi-directory=/boot/efi \
-              --bootloader-id=Cybr "$disk" 2>&1 | tail -2
-            chroot /mnt grub-install --target=i386-pc "$disk" 2>&1 | tail -2
-            chroot /mnt update-grub 2>&1 | tail -2
-            
-            sync
-            umount -R /mnt 2>/dev/null
-            
-            echo ""
-            echo "══════════════════════════════"
-            echo "✓ Installation Complete!"
-            echo "══════════════════════════════"
-            echo "Remove media and type: reboot"
-          }
-          
-          # Try auto-connect
-          do_eth >/dev/null 2>&1
-          
-          # Main loop - NEVER EXIT
-          while true; do
-            printf "\ncybr> "
-            read -r cmd || { sleep 1; continue; }
-            
-            case "$cmd" in
-              1|wifi) do_wifi || true ;;
-              2|eth|ethernet) do_eth || true ;;
-              3|install) do_install || true ;;
-              4|shell) echo "Type exit to return"; /bin/sh || true ;;
-              reboot) sync; sleep 1; reboot -f ;;
-              poweroff|halt) sync; sleep 1; poweroff -f ;;
-              help|h|\?) echo "Commands: 1=WiFi 2=Ethernet 3=Install 4=Shell" ;;
-              "") ;;
-              *) echo "Unknown command. Type help for commands." ;;
-            esac
-          done
-          
+          echo "ERROR: Could not find filesystem"
           exec /bin/sh
           INIT_SCRIPT
           
@@ -402,16 +303,22 @@ jobs:
           
           # Prepare ISO structure
           rm -rf iso
-          mkdir -p iso/boot/grub
+          mkdir -p iso/boot/grub iso/live
           cp vmlinuz initrd.gz iso/boot/
+          cp /w/filesystem.squashfs iso/live/
           
           # GRUB config
           cat > iso/boot/grub/grub.cfg << 'GRUB_CFG'
           set timeout=5
           set default=0
           
-          menuentry "Install Cybr" {
-            linux /boot/vmlinuz quiet
+          menuentry "Cybr K9 Live" {
+            linux /boot/vmlinuz quiet splash
+            initrd /boot/initrd.gz
+          }
+          
+          menuentry "Cybr K9 Live (Safe Mode)" {
+            linux /boot/vmlinuz nomodeset
             initrd /boot/initrd.gz
           }
           GRUB_CFG
@@ -466,12 +373,10 @@ jobs:
           # Checksums
           cd /w
           sha256sum "${ISO}.iso" > "${ISO}.iso.sha256"
-          [ -f "${BASE}.squashfs" ] && \
-            sha256sum "${BASE}.squashfs" > "${BASE}.squashfs.sha256"
           
           echo ""
           echo "═══ Build Complete ═══"
-          ls -lh *.iso *.squashfs 2>/dev/null || ls -lh *.iso
+          ls -lh *.iso
           BUILD_SCRIPT_EOF
           
           chmod +x build.sh
@@ -480,7 +385,6 @@ jobs:
         run: |
           docker run --rm --privileged \
             -v "$PWD:/w" \
-            -e BUILD_TYPE="${{ inputs.build_type || 'full' }}" \
             -e RUN_NUM="${{ github.run_number }}" \
             debian:bookworm \
             /w/build.sh
@@ -488,24 +392,22 @@ jobs:
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: "cybr-build-${{ github.run_number }}"
+          name: "cybr-k9-build-${{ github.run_number }}"
           path: |
             *.iso
             *.iso.sha256
-            *.squashfs
-            *.squashfs.sha256
           retention-days: 7
 
   upload:
     runs-on: ubuntu-latest
     needs: build
     if: ${{ github.event_name == 'workflow_dispatch' || github.ref == 'refs/heads/main' }}
-    
+
     steps:
       - name: Download artifacts
         uses: actions/download-artifact@v4
         with:
-          name: "cybr-build-${{ github.run_number }}"
+          name: "cybr-k9-build-${{ github.run_number }}"
 
       - name: Upload to SourceForge
         env:
@@ -517,26 +419,12 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y sshpass rsync
           
-          # Upload ISOs
           for iso_file in *.iso; do
             for attempt in 1 2 3; do
               sshpass -p "$SF_PASS" rsync -avP \
                 -e "ssh -o StrictHostKeyChecking=no" \
                 "$iso_file" \
-                "$SF_USER@frs.sourceforge.net:/home/frs/project/wolfos/gaming/" \
-                && break
-              sleep 30
-            done
-          done
-          
-          # Upload squashfs files
-          for squashfs_file in *.squashfs; do
-            [ -f "$squashfs_file" ] || continue
-            for attempt in 1 2 3; do
-              sshpass -p "$SF_PASS" rsync -avP \
-                -e "ssh -o StrictHostKeyChecking=no" \
-                "$squashfs_file" \
-                "$SF_USER@frs.sourceforge.net:/home/frs/project/wolfos/gaming/base/" \
+                "$SF_USER@frs.sourceforge.net:/home/frs/project/wolfos/k9/" \
                 && break
               sleep 30
             done
