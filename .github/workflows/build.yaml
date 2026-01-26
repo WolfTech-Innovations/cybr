@@ -121,51 +121,296 @@ jobs:
           done
           cp /lib/modules/$KVER/modules.* i/lib/modules/$KVER/ 2>/dev/null||true
           for t in /usr/sbin/unsquashfs /sbin/{parted,wpa_supplicant,iw,ethtool}; do
-            [ -f "$t" ] && cp "$t" i/sbin/ && ldd "$t" 2>/dev/null|grep -oP "/lib[^ ]*"|while read l; do
-              [ -f "$l" ] && cp --parents "$l" i/
-            done
+            if [ -f "$t" ]; then
+              cp "$t" i/sbin/
+              ldd "$t" 2>/dev/null | grep -oP '/[^ ]+' | while read l; do
+                [ -f "$l" ] && mkdir -p "i$(dirname $l)" && cp "$l" "i$l" 2>/dev/null
+              done
+            fi
           done
-          cp /lib64/ld-linux-x86-64.so.2 i/lib64/
-          for l in libc.so.6 libm.so.6 libnl-*.so.200 libdbus-1.so.3 libblkid.so.1 libuuid.so.1 libz.so.1 \
-                   liblzma.so.5 libresolv.so.2 libnss_*.so.2 libcrypto.so.3 libssl.so.3; do
-            find /lib /usr/lib -name "$l" 2>/dev/null|head -1|while read f; do
-              [ -f "$f" ] && cp "$f" i/lib/x86_64-linux-gnu/
+          
+          # Copy essential system libraries
+          cp /lib64/ld-linux-x86-64.so.2 i/lib64/ 2>/dev/null || true
+          
+          # Copy all required libraries to the proper location
+          for l in libc.so.6 libm.so.6 libpthread.so.0 libdl.so.2 librt.so.1 \
+                   libnl-*.so.* libdbus-1.so.* libblkid.so.* libuuid.so.* \
+                   libz.so.* liblzma.so.* libresolv.so.* libnss_*.so.* \
+                   libcrypto.so.* libssl.so.* libgcc_s.so.*; do
+            find /lib /usr/lib /lib64 -name "$l" 2>/dev/null | while read f; do
+              [ -f "$f" ] && mkdir -p "i$(dirname $f)" && cp "$f" "i$f" 2>/dev/null
             done
           done
           echo "nameserver 8.8.8.8">i/etc/resolv.conf
           
-          cat>i/init<<"F"
-          #!/bin/sh
-          export PATH=/bin:/sbin LD_LIBRARY_PATH=/lib/x86_64-linux-gnu:/lib64
-          mount -t proc none /proc;mount -t sysfs none /sys;mount -t devtmpfs none /dev;mdev -s;hostname cybr
-          for m in virtio virtio_pci virtio_net e1000 r8169 cfg80211 iwlwifi;do modprobe $m 2>/dev/null||true;done
-          sleep 2;for n in /sys/class/net/*;do n=$(basename $n);[ "$n" != "lo" ]&&ip link set $n up;done
-          clear;printf "\033[36m╔══════════════════╗\n║ CYBR INSTALLER   ║\n╠══════════════════╣\n║ 1)WiFi 2)Eth     ║\n║ 3)Install 4)Shell║\n╚══════════════════╝\033[0m\n"
-          eth(){E=$(ip -br l|grep "^e"|head -1|awk "{print \$1}");[ -z "$E" ]&&echo "No eth"&&return
-          ip link set $E up;udhcpc -i $E -qn 2>&1|grep -q obtained&&ping -c1 8.8.8.8>/dev/null&&echo "✓"||echo "✗";}
-          wifi(){W=$(ip -br l|grep "^wl"|head -1|awk "{print \$1}");[ -z "$W" ]&&echo "No WiFi"&&return
-          ip link set $W up;printf "SSID:";read S;printf "Pass:";read -s P;echo
-          echo -e "network={\nssid=\"$S\"\npsk=\"$P\"\n}">/tmp/w;killall wpa_supplicant 2>/dev/null
-          wpa_supplicant -Bi $W -c /tmp/w;sleep 3;udhcpc -i $W -qn 2>&1|tail -1
-          ping -c1 8.8.8.8>/dev/null&&echo "✓"||echo "✗";}
-          inst(){ping -c1 8.8.8.8>/dev/null||{echo "No net";return;};lsblk -d|grep disk;printf "Disk:";read D
-          D="/dev/$D";[ ! -b "$D" ]&&echo "Invalid"&&return;printf "ERASE $D? (YES):";read C;[ "$C" != "YES" ]&&return
-          parted -s $D mklabel gpt mkpart ESP fat32 1M 513M mkpart primary ext4 513M 100% set 1 esp on 2>&1|tail -1
-          mkfs.vfat -F32 ${D}1>/dev/null 2>&1;mkfs.ext4 -F ${D}2>/dev/null 2>&1;mount ${D}2 /mnt
-          mkdir -p /mnt/boot/efi;mount ${D}1 /mnt/boot/efi
-          U="https://sourceforge.net/projects/wolfos/files/gaming/base"
-          L=$(wget -qO- $U|grep -oP "cybr-base-v\d+"|sort -V|tail -1)
-          [ -z "$L" ]&&echo "✗ Not found"&&umount -R /mnt&&return;echo "→ $L"
-          wget -qO /tmp/b.sq "$U/$L.squashfs/download"||{echo "✗ DL fail";umount -R /mnt;return;}
-          echo "→ Extracting...";unsquashfs -f -d /mnt /tmp/b.sq>/dev/null||{echo "✗";umount -R /mnt;return;}
-          mount --bind /dev /mnt/dev;mount --bind /proc /mnt/proc;mount --bind /sys /mnt/sys
-          chroot /mnt grub-install --target=x86_64-efi --efi-directory=/boot/efi --bootloader-id=Cybr $D>/dev/null 2>&1
-          chroot /mnt grub-install --target=i386-pc $D>/dev/null 2>&1;chroot /mnt update-grub>/dev/null 2>&1
-          sync;umount -R /mnt;echo "✓ Done! Type: reboot";}
-          eth>/dev/null 2>&1
-          while :;do printf "\ncybr>";read c;case $c in 1|wifi)wifi;;2|eth)eth;;3|install)inst;;4|shell)exec sh;;
-          reboot)reboot -f;;*)echo "1-4";;esac;done
-          F
+          cat>i/init<<'INITEOF'
+#!/bin/sh
+# This runs as PID 1 - must never exit or kernel panics
+
+# Trap to prevent exit
+trap "" EXIT
+
+# Basic error handling - don't exit, just report
+set +e
+
+export PATH=/bin:/sbin:/usr/bin:/usr/sbin
+export LD_LIBRARY_PATH=/lib:/lib64:/lib/x86_64-linux-gnu:/usr/lib:/usr/lib/x86_64-linux-gnu
+
+echo "Starting Cybr installer (PID: $$)..."
+
+# Mount core filesystems
+mount -t proc none /proc 2>/dev/null || echo "proc mount failed"
+mount -t sysfs none /sys 2>/dev/null || echo "sys mount failed"
+mount -t devtmpfs none /dev 2>/dev/null || echo "dev mount failed"
+mkdir -p /dev/pts /dev/shm /tmp /run
+mount -t devpts none /dev/pts 2>/dev/null
+mount -t tmpfs none /dev/shm 2>/dev/null
+mount -t tmpfs none /tmp 2>/dev/null
+mount -t tmpfs none /run 2>/dev/null
+
+# Populate /dev
+/sbin/mdev -s 2>/dev/null
+
+hostname cybr 2>/dev/null || true
+
+echo "Loading network modules..."
+for m in e1000 e1000e r8169 virtio_net; do
+  modprobe $m 2>/dev/null && echo "  $m: OK" || true
+done
+
+sleep 2
+
+echo "Bringing up network interfaces..."
+for n in /sys/class/net/*; do
+  n=$(basename "$n")
+  [ "$n" = "lo" ] && continue
+  ip link set "$n" up 2>/dev/null && echo "  $n: up" || true
+done
+
+clear
+cat<<MENU
+╔══════════════════╗
+║ CYBR INSTALLER   ║
+╠══════════════════╣
+║ 1) WiFi          ║
+║ 2) Ethernet      ║
+║ 3) Install       ║
+║ 4) Shell         ║
+╚══════════════════╝
+MENU
+
+do_eth() {
+  E=$(ip -br l 2>/dev/null|grep "^e"|head -1|awk '{print $1}')
+  if [ -z "$E" ]; then
+    echo "No ethernet adapter found"
+    return 1
+  fi
+  echo "Using $E..."
+  ip link set "$E" up 2>/dev/null
+  udhcpc -i "$E" -qn 2>&1|tail -2
+  if ping -c1 -W2 8.8.8.8 >/dev/null 2>&1; then
+    echo "✓ Connected"
+    return 0
+  else
+    echo "✗ Connection failed"
+    return 1
+  fi
+}
+
+do_wifi() {
+  W=$(ip -br l 2>/dev/null|grep "^wl"|head -1|awk '{print $1}')
+  if [ -z "$W" ]; then
+    echo "No WiFi adapter found"
+    return 1
+  fi
+  printf "SSID: "; read -r S
+  printf "Password: "; read -rs P; echo
+  cat>/tmp/wpa.conf<<WPA
+network={
+  ssid="$S"
+  psk="$P"
+}
+WPA
+  killall wpa_supplicant 2>/dev/null
+  wpa_supplicant -B -i "$W" -c /tmp/wpa.conf 2>/dev/null
+  sleep 4
+  udhcpc -i "$W" -qn 2>&1|tail -2
+  if ping -c1 -W2 8.8.8.8 >/dev/null 2>&1; then
+    echo "✓ Connected"
+    return 0
+  else
+    echo "✗ Connection failed"
+    return 1
+  fi
+}
+
+do_install() {
+  if ! ping -c1 -W2 8.8.8.8 >/dev/null 2>&1; then
+    echo "No internet connection - try option 1 or 2 first"
+    return 1
+  fi
+  
+  lsblk -d -o NAME,SIZE,TYPE 2>/dev/null | grep disk
+  printf "Target disk (e.g. sda): "; read -r D
+  D="/dev/$D"
+  
+  if [ ! -b "$D" ]; then
+    echo "Invalid disk: $D"
+    return 1
+  fi
+  
+  printf "ERASE ALL DATA on $D? Type YES: "; read -r C
+  if [ "$C" != "YES" ]; then
+    echo "Cancelled"
+    return 0
+  fi
+  
+  echo "Partitioning $D..."
+  parted -s "$D" mklabel gpt \
+    mkpart ESP fat32 1MiB 513MiB \
+    mkpart primary ext4 513MiB 100% \
+    set 1 esp on 2>&1 | tail -3
+  
+  if [ $? -ne 0 ]; then
+    echo "Partitioning failed"
+    return 1
+  fi
+  
+  sleep 2
+  echo "Formatting partitions..."
+  mkfs.vfat -F32 "${D}1" >/dev/null 2>&1
+  mkfs.ext4 -F "${D}2" >/dev/null 2>&1
+  
+  echo "Mounting..."
+  mount "${D}2" /mnt 2>/dev/null
+  if [ $? -ne 0 ]; then
+    echo "Failed to mount root partition"
+    return 1
+  fi
+  
+  mkdir -p /mnt/boot/efi
+  mount "${D}1" /mnt/boot/efi 2>/dev/null
+  if [ $? -ne 0 ]; then
+    echo "Failed to mount EFI partition"
+    umount /mnt 2>/dev/null
+    return 1
+  fi
+  
+  echo "Downloading base system..."
+  U="https://sourceforge.net/projects/wolfos/files/gaming/base"
+  L=$(wget -qO- "$U" 2>/dev/null|grep -oP "cybr-base-v[0-9]+"|sort -V|tail -1)
+  
+  if [ -z "$L" ]; then
+    echo "Could not find base system online"
+    umount -R /mnt 2>/dev/null
+    return 1
+  fi
+  
+  echo "Found: $L"
+  echo "Downloading (this may take a while)..."
+  
+  wget -O /tmp/base.squashfs "$U/$L.squashfs/download" 2>&1 | grep -E "saved|failed"
+  
+  if [ ! -f /tmp/base.squashfs ]; then
+    echo "Download failed"
+    umount -R /mnt 2>/dev/null
+    return 1
+  fi
+  
+  echo "Extracting base system (this takes several minutes)..."
+  unsquashfs -f -d /mnt /tmp/base.squashfs 2>&1 | grep -E "created|failed"
+  
+  if [ $? -ne 0 ]; then
+    echo "Extraction failed"
+    umount -R /mnt 2>/dev/null
+    return 1
+  fi
+  
+  echo "Installing bootloader..."
+  mount --bind /dev /mnt/dev 2>/dev/null
+  mount --bind /proc /mnt/proc 2>/dev/null
+  mount --bind /sys /mnt/sys 2>/dev/null
+  
+  chroot /mnt grub-install --target=x86_64-efi --efi-directory=/boot/efi --bootloader-id=Cybr "$D" 2>&1|tail -3
+  chroot /mnt grub-install --target=i386-pc "$D" 2>&1|tail -3
+  chroot /mnt update-grub 2>&1|tail -3
+  
+  sync
+  umount -R /mnt 2>/dev/null
+  
+  echo ""
+  echo "════════════════════════════════════"
+  echo "✓ Installation complete!"
+  echo "════════════════════════════════════"
+  echo "Remove installation media and type: reboot"
+  echo ""
+  
+  return 0
+}
+
+# Try ethernet on startup
+echo "Attempting automatic ethernet connection..."
+do_eth >/dev/null 2>&1 && echo "Auto-connected via ethernet" || true
+
+# Main loop - MUST NEVER EXIT (we are PID 1)
+while true; do
+  printf "\ncybr> "
+  read -r cmd || { sleep 1; continue; }
+  
+  case "$cmd" in
+    1|wifi)
+      do_wifi || true
+      ;;
+    2|eth|ethernet)
+      do_eth || true
+      ;;
+    3|install)
+      do_install || true
+      ;;
+    4|shell)
+      echo "Type 'exit' to return to menu"
+      /bin/sh || true
+      ;;
+    reboot)
+      echo "Rebooting..."
+      sync
+      sleep 1
+      reboot -f
+      # If reboot fails, loop continues
+      ;;
+    poweroff|halt|shutdown)
+      echo "Powering off..."
+      sync
+      sleep 1
+      poweroff -f
+      # If poweroff fails, loop continues
+      ;;
+    help|h|\?)
+      cat<<HELP
+
+Available commands:
+  1, wifi      - Configure WiFi connection
+  2, eth       - Configure Ethernet connection
+  3, install   - Install Cybr to disk
+  4, shell     - Drop to shell (type 'exit' to return)
+  reboot       - Reboot system
+  poweroff     - Power off system
+  help         - Show this help
+
+HELP
+      ;;
+    "")
+      # Empty input, just continue
+      ;;
+    *)
+      echo "Unknown command. Type 'help' for available commands."
+      ;;
+  esac
+done
+
+# This line should never be reached, but just in case:
+exec /bin/sh
+INITEOF
           chmod +x i/init
           cd i
           find . | cpio -oH newc | gzip -9 > /tmp/initrd.gz
