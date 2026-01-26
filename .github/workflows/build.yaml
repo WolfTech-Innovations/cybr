@@ -106,8 +106,8 @@ jobs:
           :s
           shell
           I
-          make bin/ipxe.lkrn EMBED=e.ipxe -j4 2>&1|tail -10||true
-          make bin-x86_64-efi/ipxe.efi EMBED=e.ipxe -j4 2>&1|tail -10||true
+          make bin/ipxe.lkrn EMBED=e.ipxe 2>&1|tail -10||true
+          make bin-x86_64-efi/ipxe.efi EMBED=e.ipxe 2>&1|tail -10||true
           cp bin/ipxe.lkrn bin-x86_64-efi/ipxe.efi /tmp/ 2>/dev/null||true; cd /tmp
           
           wget -qO bb https://busybox.net/downloads/binaries/1.35.0-x86_64-linux-musl/busybox; chmod +x bb
