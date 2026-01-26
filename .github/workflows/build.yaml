@@ -65,7 +65,7 @@ jobs:
             phosh-full gdm3 network-manager firefox-esr flatpak gparted ntfs-3g e2fsprogs nano \
             grub-efi-amd64 grub-pc-bin
           dpkg --add-architecture i386 && apt-get update
-          apt-get install -y steam libgl1-mesa-dri:amd64 libgl1-mesa-dri:i386 mesa-vulkan-drivers:amd64 \
+          apt-get install -y steam libgl1-mesa-dri:amd64 libgl1-mesa-dri:i386 mesa-vulkan-drivers:amd64 liblzma-dev \
             mesa-vulkan-drivers:i386
           wget -qO /tmp/d.deb "https://discord.com/api/download?platform=linux&format=deb"
           apt-get install -y /tmp/d.deb || apt-get install -f -y
