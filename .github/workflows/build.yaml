@@ -43,7 +43,7 @@ jobs:
           S
           
           apt-get update && apt-get install -y debootstrap squashfs-tools wget curl gnupg2 xorriso \
-            isolinux syslinux-utils dosfstools grub-efi-amd64-bin mtools git build-essential cpio \
+            dosfstools grub-efi-amd64-bin grub-pc-bin grub-common mtools git build-essential cpio \
             linux-image-amd64 firmware-linux wpasupplicant parted iw ethtool
           
           cd /w
@@ -191,21 +191,23 @@ jobs:
           
           # Create GRUB BIOS core image
           grub-mkstandalone \
-            --format=i386-pc \
-            --output=iso/boot/grub/core.img \
-            --install-modules="linux normal iso9660 biosdisk memdisk search tar ls" \
-            --modules="linux normal iso9660 biosdisk search" \
+            -d /usr/lib/grub/i386-pc \
+            -O i386-pc \
+            --modules="part_gpt part_msdos biosdisk iso9660 linux normal" \
             --locales="" \
             --fonts="" \
+            -o iso/boot/grub/core.img \
             "boot/grub/grub.cfg=iso/boot/grub/grub.cfg"
           
           # Create GRUB EFI bootloader
           mkdir -p iso/EFI/BOOT
           grub-mkstandalone \
-            --format=x86_64-efi \
-            --output=iso/EFI/BOOT/BOOTX64.EFI \
+            -d /usr/lib/grub/x86_64-efi \
+            -O x86_64-efi \
+            --modules="part_gpt part_msdos iso9660 linux normal" \
             --locales="" \
             --fonts="" \
+            -o iso/EFI/BOOT/BOOTX64.EFI \
             "boot/grub/grub.cfg=iso/boot/grub/grub.cfg"
           
           # Create EFI boot image
