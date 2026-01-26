@@ -197,7 +197,7 @@ jobs:
           menuentry "iPXE" {chainloader /EFI/BOOT/BOOTX64.EFI}
           G
           mkdir -p iso
-          dd if=/dev/zero of iso/efi.img bs=1M count=10 2>/dev/null;mkfs.vfat iso/efi.img>/dev/null 2>&1
+          dd if=/dev/zero of=iso/efi.img bs=1M count=10 2>/dev/null;mkfs.vfat iso/efi.img>/dev/null 2>&1
           mmd -i iso/efi.img ::/EFI ::/EFI/BOOT;mcopy -i iso/efi.img iso/EFI/BOOT/BOOTX64.EFI ::/EFI/BOOT/
           xorriso -as mkisofs -o "/w/${ISO}.iso" -isohybrid-mbr /usr/lib/ISOLINUX/isohdpfx.bin \
             -c isolinux/boot.cat -b isolinux/isolinux.bin -no-emul-boot -boot-load-size 4 \
