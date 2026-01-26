@@ -2,6 +2,20 @@ name: "Cybr Build"
 
 on:
   workflow_dispatch:
+    inputs:
+      build_type:
+        description: 'Build type'
+        required: true
+        default: 'full'
+        type: choice
+        options:
+          - full
+          - iso-only
+      skip_base:
+        description: 'Skip base system build (faster ISO-only builds)'
+        required: false
+        default: false
+        type: boolean
   push:
     branches: [main, develop]
   schedule:
@@ -11,6 +25,7 @@ jobs:
   build-base:
     runs-on: ubuntu-latest
     timeout-minutes: 120
+    if: ${{ !inputs.skip_base }}
     outputs:
       base_name: ${{ steps.set-names.outputs.base_name }}
       iso_name: ${{ steps.set-names.outputs.iso_name }}
@@ -31,6 +46,7 @@ jobs:
           sudo apt-get autoremove -y && sudo apt-get clean
 
       - name: Build Cybr Base System
+        if: ${{ inputs.build_type != 'iso-only' }}
         run: |
           BASE_NAME="${{ steps.set-names.outputs.base_name }}"
           docker run --rm --privileged -v "$PWD:/w" -e BASE_NAME="${BASE_NAME}" debian:bookworm bash -c '
@@ -101,7 +117,7 @@ jobs:
           docker run --rm --privileged -v "$PWD:/w" -e ISO_NAME="${ISO_NAME}" debian:bookworm bash -c '
           set -e
           export DEBIAN_FRONTEND=noninteractive
-          apt-get update && apt-get install -y wget cpio xorriso isolinux syslinux-utils squashfs-tools
+          apt-get update && apt-get install -y wget cpio xorriso isolinux syslinux-utils squashfs-tools dosfstools
           
           cd /tmp
           
@@ -253,11 +269,18 @@ jobs:
       - name: Generate checksums
         run: |
           sha256sum "${{ steps.set-names.outputs.iso_name }}.iso" > "${{ steps.set-names.outputs.iso_name }}.iso.sha256"
-          sha256sum "${{ steps.set-names.outputs.base_name }}.squashfs" > "${{ steps.set-names.outputs.base_name }}.squashfs.sha256"
+          
+          if [ "${{ inputs.build_type }}" != "iso-only" ]; then
+            sha256sum "${{ steps.set-names.outputs.base_name }}.squashfs" > "${{ steps.set-names.outputs.base_name }}.squashfs.sha256"
+          fi
           
           echo "### Build Complete" >> $GITHUB_STEP_SUMMARY
+          echo "**Build Type:** ${{ inputs.build_type || 'full' }}" >> $GITHUB_STEP_SUMMARY
           echo "**ISO:** ${{ steps.set-names.outputs.iso_name }}.iso ($(($(stat -c%s "${{ steps.set-names.outputs.iso_name }}.iso")/1024/1024))MB)" >> $GITHUB_STEP_SUMMARY
-          echo "**Base:** ${{ steps.set-names.outputs.base_name }}.squashfs ($(($(stat -c%s "${{ steps.set-names.outputs.base_name }}.squashfs")/1024/1024))MB)" >> $GITHUB_STEP_SUMMARY
+          
+          if [ "${{ inputs.build_type }}" != "iso-only" ]; then
+            echo "**Base:** ${{ steps.set-names.outputs.base_name }}.squashfs ($(($(stat -c%s "${{ steps.set-names.outputs.base_name }}.squashfs")/1024/1024))MB)" >> $GITHUB_STEP_SUMMARY
+          fi
 
       - uses: actions/upload-artifact@v4
         with:
@@ -265,14 +288,14 @@ jobs:
           path: |
             ${{ steps.set-names.outputs.iso_name }}.iso
             ${{ steps.set-names.outputs.iso_name }}.iso.sha256
-            ${{ steps.set-names.outputs.base_name }}.squashfs
-            ${{ steps.set-names.outputs.base_name }}.squashfs.sha256
+            ${{ inputs.build_type != 'iso-only' && format('{0}.squashfs', steps.set-names.outputs.base_name) || '' }}
+            ${{ inputs.build_type != 'iso-only' && format('{0}.squashfs.sha256', steps.set-names.outputs.base_name) || '' }}
           retention-days: 7
 
   upload:
     runs-on: ubuntu-latest
     needs: build-base
-    if: github.event_name == 'workflow_dispatch' || github.ref == 'refs/heads/main'
+    if: ${{ (github.event_name == 'workflow_dispatch' || github.ref == 'refs/heads/main') && !inputs.skip_base }}
     steps:
       - uses: actions/download-artifact@v4
         with:
@@ -284,6 +307,7 @@ jobs:
           SF_PASS: ${{ secrets.SF_PASS }}
           ISO_NAME: ${{ needs.build-base.outputs.iso_name }}
           BASE_NAME: ${{ needs.build-base.outputs.base_name }}
+          BUILD_TYPE: ${{ inputs.build_type }}
         run: |
           [ -z "$SF_USER" ] && exit 0
           sudo apt-get update && sudo apt-get install -y sshpass rsync
@@ -295,9 +319,11 @@ jobs:
             sleep 30
           done
           
-          # Upload Base with retry logic
-          for i in 1 2 3; do
-            sshpass -p "$SF_PASS" rsync -avP -e "ssh -o StrictHostKeyChecking=no" "${BASE_NAME}.squashfs" "$SF_USER@frs.sourceforge.net:/home/frs/project/wolfos/gaming/base/" && break
-            [ $i -eq 3 ] && exit 1
-            sleep 30
-          done
+          # Upload Base with retry logic (only if full build)
+          if [ "$BUILD_TYPE" != "iso-only" ]; then
+            for i in 1 2 3; do
+              sshpass -p "$SF_PASS" rsync -avP -e "ssh -o StrictHostKeyChecking=no" "${BASE_NAME}.squashfs" "$SF_USER@frs.sourceforge.net:/home/frs/project/wolfos/gaming/base/" && break
+              [ $i -eq 3 ] && exit 1
+              sleep 30
+            done
+          fi
