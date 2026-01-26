@@ -111,19 +111,79 @@ jobs:
           mv "${BASE_NAME}.squashfs" /w/
           '
 
-      - name: Build Minimal Installer ISO
+      - name: Build iPXE BIOS+UEFI Installer ISO
         run: |
           ISO_NAME="${{ steps.set-names.outputs.iso_name }}"
           docker run --rm --privileged -v "$PWD:/w" -e ISO_NAME="${ISO_NAME}" debian:bookworm bash -c '
           set -e
           export DEBIAN_FRONTEND=noninteractive
-          apt-get update && apt-get install -y wget cpio xorriso isolinux syslinux-utils squashfs-tools dosfstools grub-efi-amd64-bin mtools
+          apt-get update && apt-get install -y wget cpio xorriso isolinux syslinux-utils squashfs-tools dosfstools grub-efi-amd64-bin mtools git build-essential liblzma-dev
           echo "deb http://deb.debian.org/debian bookworm main contrib non-free non-free-firmware" > /etc/apt/sources.list
           apt-get update && apt-get install -y linux-image-amd64 firmware-iwlwifi wpasupplicant parted iw
           cd /tmp
           
           # Get kernel
           cp "$(find /boot -name "vmlinuz-*" | tail -1)" vmlinuz
+          
+          # Build iPXE with embedded script
+          git clone --depth 1 https://github.com/ipxe/ipxe.git
+          cd ipxe/src
+          
+          cat > embed.ipxe <<"IPXE"
+          #!ipxe
+          dhcp || goto retry
+          :retry
+          echo Network configuration...
+          dhcp && goto menu || goto manual
+          
+          :manual
+          echo Manual network setup
+          set idx:int8 0
+          :loop isset ${net${idx}/mac} || goto menu
+          echo [${idx}] ${net${idx}/mac} ${net${idx}/chip}
+          inc idx && goto loop
+          
+          :menu
+          menu Cybr Installer
+          item --gap Network
+          item wifi Configure WiFi
+          item eth Configure Ethernet
+          item --gap Actions  
+          item install Install Cybr to Disk
+          item shell iPXE Shell
+          item reboot Reboot
+          choose option && goto ${option}
+          
+          :wifi
+          echo WiFi configuration via iPXE is limited
+          echo Please use ethernet or boot to installer shell
+          goto menu
+          
+          :eth
+          dhcp || echo DHCP failed
+          goto menu
+          
+          :install
+          echo Booting installer kernel...
+          kernel http://boot.ipxe.org/demo/boot.php || kernel vmlinuz initrd=initrd.gz || goto menu
+          boot || goto menu
+          
+          :shell
+          shell
+          
+          :reboot
+          reboot
+          IPXE
+          
+          # Build iPXE BIOS
+          make bin/ipxe.lkrn EMBED=embed.ipxe -j$(nproc)
+          
+          # Build iPXE UEFI
+          make bin-x86_64-efi/ipxe.efi EMBED=embed.ipxe -j$(nproc)
+          
+          cp bin/ipxe.lkrn /tmp/ipxe-bios.lkrn
+          cp bin-x86_64-efi/ipxe.efi /tmp/ipxe-uefi.efi
+          cd /tmp
           
           # Get busybox & create minimal initramfs
           wget -qO busybox https://busybox.net/downloads/binaries/1.35.0-x86_64-linux-musl/busybox && chmod +x busybox
@@ -155,26 +215,82 @@ jobs:
           #!/bin/sh
           export PATH=/bin:/sbin LD_LIBRARY_PATH=/lib/x86_64-linux-gnu:/lib64
           mount -t proc none /proc;mount -t sysfs none /sys;mount -t devtmpfs none /dev;mdev -s;hostname cybr;clear
-          echo "Cybr Installer - wifi | eth | install | shell"
-          eth(){ E=$(ip link|grep -oE "e[a-z0-9]*"|head -1);ip link set $E up;udhcpc -i $E -qn;ping -c1 8.8.8.8>/dev/null&&echo "OK"||echo "FAIL"; }
-          wifi(){ W=$(ip link|grep -o "wl[^:]*"|head -1);ip link set $W up;sleep 1;read -p "SSID: " S;read -sp "Pass: " P;echo;echo -e "network={\nssid=\"$S\"\npsk=\"$P\"\n}">/tmp/w;wpa_supplicant -B -i $W -c /tmp/w;sleep 3;udhcpc -i $W -qn;ping -c1 8.8.8.8>/dev/null&&echo "OK"||echo "FAIL"; }
-          inst(){ ping -c1 8.8.8.8>/dev/null||{ echo "No net";return; };lsblk -do NAME,SIZE|grep -v loop;read -p "Disk: " D;D="/dev/$D";read -p "ERASE $D? (YES): " C;[ "$C" != "YES" ]&&return;parted -s $D mklabel gpt mkpart ESP fat32 1M 513M mkpart primary ext4 513M 100% set 1 esp on;mkfs.vfat -F32 ${D}1>/dev/null;mkfs.ext4 -F ${D}2>/dev/null;mount ${D}2 /mnt;mkdir -p /mnt/boot/efi;mount ${D}1 /mnt/boot/efi;U="https://sourceforge.net/projects/wolfos/files/gaming/base";L=$(wget -qO- $U|grep -oP "cybr-base-v\d+"|tail -1);echo "DL $L...";wget -qO /tmp/b.sq "$U/$L.squashfs/download"&&echo "Extract..."&&unsquashfs -f -d /mnt /tmp/b.sq>/dev/null&&mount --bind /dev /mnt/dev&&mount --bind /proc /mnt/proc&&mount --bind /sys /mnt/sys&&chroot /mnt grub-install --target=x86_64-efi --efi-directory=/boot/efi --bootloader-id=Cybr $D>/dev/null&&chroot /mnt update-grub>/dev/null;sync;umount -R /mnt;echo "Done! reboot"; }
-          eth>/dev/null 2>&1&&echo "Auto-connected"
-          while :;do read -p "> " c;case $c in wifi)wifi;;eth)eth;;install)inst;;shell)exec sh;;reboot)reboot -f;;*)echo "wifi|eth|install|shell|reboot";;esac;done
+          echo "=== Cybr Installer ==="
+          echo "Commands: wifi | eth | install | shell | reboot"
+          echo
+          eth(){ E=$(ip link|grep -oE "e[a-z0-9]*"|head -1);ip link set $E up;udhcpc -i $E -qn;ping -c1 8.8.8.8>/dev/null&&echo "Ethernet: OK"||echo "Ethernet: FAIL"; }
+          wifi(){ W=$(ip link|grep -o "wl[^:]*"|head -1);ip link set $W up;sleep 1;read -p "SSID: " S;read -sp "Password: " P;echo;echo -e "network={\nssid=\"$S\"\npsk=\"$P\"\n}">/tmp/w;wpa_supplicant -B -i $W -c /tmp/w;sleep 3;udhcpc -i $W -qn;ping -c1 8.8.8.8>/dev/null&&echo "WiFi: OK"||echo "WiFi: FAIL"; }
+          inst(){ ping -c1 8.8.8.8>/dev/null||{ echo "ERROR: No network connection";return; };echo;lsblk -do NAME,SIZE,TYPE|grep disk;echo;read -p "Target disk (e.g. sda): " D;D="/dev/$D";[ ! -b "$D" ]&&{ echo "ERROR: Invalid disk";return; };echo;echo "WARNING: This will ERASE $D";read -p "Type YES to confirm: " C;[ "$C" != "YES" ]&&{ echo "Cancelled";return; };echo "Partitioning $D...";parted -s $D mklabel gpt mkpart ESP fat32 1M 513M mkpart primary ext4 513M 100% set 1 esp on||{ echo "Partition failed";return; };sleep 2;echo "Creating filesystems...";mkfs.vfat -F32 ${D}1>/dev/null;mkfs.ext4 -F ${D}2>/dev/null;mount ${D}2 /mnt;mkdir -p /mnt/boot/efi;mount ${D}1 /mnt/boot/efi;U="https://sourceforge.net/projects/wolfos/files/gaming/base";echo "Fetching latest base...";L=$(wget -qO- $U|grep -oP "cybr-base-v\d+"|sort -V|tail -1);[ -z "$L" ]&&{ echo "ERROR: Could not find base image";umount -R /mnt;return; };echo "Downloading $L.squashfs...";wget -qO /tmp/b.sq "$U/$L.squashfs/download"||{ echo "Download failed";umount -R /mnt;return; };echo "Extracting base system (this takes a few minutes)...";unsquashfs -f -d /mnt /tmp/b.sq>/dev/null||{ echo "Extract failed";umount -R /mnt;return; };echo "Installing bootloader...";mount --bind /dev /mnt/dev;mount --bind /proc /mnt/proc;mount --bind /sys /mnt/sys;chroot /mnt grub-install --target=x86_64-efi --efi-directory=/boot/efi --bootloader-id=Cybr $D>/dev/null 2>&1;chroot /mnt grub-install --target=i386-pc $D>/dev/null 2>&1;chroot /mnt update-grub>/dev/null 2>&1;sync;umount -R /mnt;echo;echo "Installation complete!";echo "Remove installation media and type: reboot"; }
+          eth>/dev/null 2>&1&&echo "Auto-configured network"||true
+          while :;do read -p "cybr> " c;case $c in wifi)wifi;;eth)eth;;install)inst;;shell)exec sh;;reboot)reboot -f;;*)echo "Commands: wifi | eth | install | shell | reboot";;esac;done
           EOF
           chmod +x i/init
           
           cd i && find .|cpio -oH newc|gzip -9>/tmp/initrd.gz && cd /tmp
-          echo "Sizes: vmlinuz=$(($(stat -c%s vmlinuz)/1024/1024))M initrd=$(($(stat -c%s initrd.gz)/1024))K"
+          echo "Kernel: $(($(stat -c%s vmlinuz)/1024/1024))M | Initrd: $(($(stat -c%s initrd.gz)/1024))K"
           
-          # Build tiny ISO - BIOS only to save space
-          mkdir -p /w/iso/{boot,isolinux}
+          # Build ISO structure
+          mkdir -p /w/iso/{boot/grub,EFI/BOOT,isolinux}
+          
+          # Copy bootloaders and kernel
           cp vmlinuz initrd.gz /w/iso/boot/
-          echo -e "DEFAULT linux\nLABEL linux\nKERNEL /boot/vmlinuz\nAPPEND initrd=/boot/initrd.gz">/w/iso/isolinux/isolinux.cfg
-          cp /usr/lib/ISOLINUX/isolinux.bin /w/iso/isolinux/
-          cp /usr/lib/syslinux/modules/bios/ldlinux.c32 /w/iso/isolinux/
+          cp ipxe-bios.lkrn /w/iso/boot/
+          cp ipxe-uefi.efi /w/iso/EFI/BOOT/BOOTX64.EFI
           
-          # Create ISO with BIOS boot only
+          # ISOLINUX config (BIOS)
+          cp /usr/lib/ISOLINUX/isolinux.bin /w/iso/isolinux/
+          cp /usr/lib/syslinux/modules/bios/{ldlinux.c32,libcom32.c32,libutil.c32,menu.c32} /w/iso/isolinux/
+          
+          cat > /w/iso/isolinux/isolinux.cfg <<"ISOLINUX"
+          DEFAULT menu.c32
+          PROMPT 0
+          TIMEOUT 100
+          
+          MENU TITLE Cybr Installer
+          
+          LABEL installer
+            MENU LABEL Cybr Installer (Direct)
+            KERNEL /boot/vmlinuz
+            APPEND initrd=/boot/initrd.gz
+          
+          LABEL ipxe
+            MENU LABEL Cybr Installer (iPXE)
+            KERNEL /boot/ipxe-bios.lkrn
+          
+          LABEL shell
+            MENU LABEL Boot to Shell
+            KERNEL /boot/vmlinuz
+            APPEND initrd=/boot/initrd.gz
+          ISOLINUX
+          
+          # GRUB config (UEFI)
+          cat > /w/iso/boot/grub/grub.cfg <<"GRUB"
+          set timeout=10
+          set default=0
+          
+          menuentry "Cybr Installer (Direct)" {
+            linux /boot/vmlinuz
+            initrd /boot/initrd.gz
+          }
+          
+          menuentry "Cybr Installer (iPXE)" {
+            chainloader /EFI/BOOT/BOOTX64.EFI
+          }
+          
+          menuentry "Boot to Shell" {
+            linux /boot/vmlinuz
+            initrd /boot/initrd.gz
+          }
+          GRUB
+          
+          # Create UEFI boot image
+          dd if=/dev/zero of=/tmp/efiboot.img bs=1M count=10
+          mkfs.vfat /tmp/efiboot.img
+          mmd -i /tmp/efiboot.img ::/EFI
+          mmd -i /tmp/efiboot.img ::/EFI/BOOT
+          mcopy -i /tmp/efiboot.img /w/iso/EFI/BOOT/BOOTX64.EFI ::/EFI/BOOT/
+          
+          # Build hybrid BIOS+UEFI ISO
           xorriso -as mkisofs \
             -o "/w/${ISO_NAME}.iso" \
             -isohybrid-mbr /usr/lib/ISOLINUX/isohdpfx.bin \
@@ -183,23 +299,21 @@ jobs:
             -no-emul-boot \
             -boot-load-size 4 \
             -boot-info-table \
-            /w/iso/ 2>&1 | grep -E "ISO image|sectors"
-          
-          echo "ISO: $(($(stat -c%s /w/${ISO_NAME}.iso)/1024/1024))MB"
-          '
-            --eltorito-alt-boot \
-            -e --interval:appended_partition_2:all:: \
+            -eltorito-alt-boot \
+            -e efiboot.img \
             -no-emul-boot \
             -isohybrid-gpt-basdat \
-            -append_partition 2 C12A7328-F81F-11D2-BA4B-00A0C93EC93B /w/efiboot.img \
-            /w/iso/
+            -append_partition 2 0xef /tmp/efiboot.img \
+            /w/iso/ 2>&1 | grep -E "ISO|sectors|Written"
+          
+          echo "ISO: $(($(stat -c%s /w/${ISO_NAME}.iso)/1024/1024))MB"
           '
 
       - name: Generate checksums
         run: |
           sha256sum "${{ steps.set-names.outputs.iso_name }}.iso" > "${{ steps.set-names.outputs.iso_name }}.iso.sha256"
           
-          if [ "${{ inputs.build_type }}" != "iso-only" ]; then
+          if [ "${{ inputs.build_type }}" != "iso-only" ] && [ -f "${{ steps.set-names.outputs.base_name }}.squashfs" ]; then
             sha256sum "${{ steps.set-names.outputs.base_name }}.squashfs" > "${{ steps.set-names.outputs.base_name }}.squashfs.sha256"
           fi
           
@@ -207,7 +321,7 @@ jobs:
           echo "**Build Type:** ${{ inputs.build_type || 'full' }}" >> $GITHUB_STEP_SUMMARY
           echo "**ISO:** ${{ steps.set-names.outputs.iso_name }}.iso ($(($(stat -c%s "${{ steps.set-names.outputs.iso_name }}.iso")/1024/1024))MB)" >> $GITHUB_STEP_SUMMARY
           
-          if [ "${{ inputs.build_type }}" != "iso-only" ]; then
+          if [ "${{ inputs.build_type }}" != "iso-only" ] && [ -f "${{ steps.set-names.outputs.base_name }}.squashfs" ]; then
             echo "**Base:** ${{ steps.set-names.outputs.base_name }}.squashfs ($(($(stat -c%s "${{ steps.set-names.outputs.base_name }}.squashfs")/1024/1024))MB)" >> $GITHUB_STEP_SUMMARY
           fi
 
@@ -217,8 +331,8 @@ jobs:
           path: |
             ${{ steps.set-names.outputs.iso_name }}.iso
             ${{ steps.set-names.outputs.iso_name }}.iso.sha256
-            ${{ inputs.build_type != 'iso-only' && format('{0}.squashfs', steps.set-names.outputs.base_name) || '' }}
-            ${{ inputs.build_type != 'iso-only' && format('{0}.squashfs.sha256', steps.set-names.outputs.base_name) || '' }}
+            ${{ steps.set-names.outputs.base_name }}.squashfs
+            ${{ steps.set-names.outputs.base_name }}.squashfs.sha256
           retention-days: 7
 
   upload:
@@ -249,7 +363,7 @@ jobs:
           done
           
           # Upload Base with retry logic (only if full build)
-          if [ "$BUILD_TYPE" != "iso-only" ]; then
+          if [ "$BUILD_TYPE" != "iso-only" ] && [ -f "${BASE_NAME}.squashfs" ]; then
             for i in 1 2 3; do
               sshpass -p "$SF_PASS" rsync -avP -e "ssh -o StrictHostKeyChecking=no" "${BASE_NAME}.squashfs" "$SF_USER@frs.sourceforge.net:/home/frs/project/wolfos/gaming/base/" && break
               [ $i -eq 3 ] && exit 1
