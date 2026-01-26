@@ -20,8 +20,10 @@ jobs:
   build:
     runs-on: ubuntu-latest
     timeout-minutes: 120
+    
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
       - name: Free disk space
         if: ${{ inputs.build_type != 'iso-only' }}
@@ -29,425 +31,368 @@ jobs:
           sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache
           sudo docker system prune -af --volumes
 
-      - name: Build Cybr
+      - name: Create build script
         run: |
-          docker run --rm --privileged -v "$PWD:/w" \
-            -e BUILD_TYPE="${{ inputs.build_type || 'full' }}" \
-            -e RUN_NUM="${{ github.run_number }}" \
-            debian:bookworm bash -c '
+          cat > build.sh << 'BUILD_SCRIPT_EOF'
+          #!/bin/bash
           set -ex
           export DEBIAN_FRONTEND=noninteractive
           
-          cat>/etc/apt/sources.list<<EOF
+          # Configure APT sources
+          cat > /etc/apt/sources.list << 'APT_SOURCES'
           deb http://deb.debian.org/debian bookworm main contrib non-free non-free-firmware
           deb http://deb.debian.org/debian-security bookworm-security main contrib non-free non-free-firmware
           deb http://deb.debian.org/debian bookworm-updates main contrib non-free non-free-firmware
-          EOF
+          APT_SOURCES
           
-          apt-get update && apt-get install -y debootstrap squashfs-tools wget curl gnupg2 xorriso \
-            dosfstools grub-efi-amd64-bin grub-pc-bin grub-common mtools git build-essential cpio \
-            linux-image-amd64 firmware-linux wpasupplicant parted iw ethtool
+          # Install build dependencies
+          apt-get update && apt-get install -y \
+            debootstrap squashfs-tools wget curl gnupg2 xorriso \
+            dosfstools grub-efi-amd64-bin grub-pc-bin grub-common mtools \
+            git build-essential cpio linux-image-amd64 firmware-linux \
+            wpasupplicant parted iw ethtool
           
           cd /w
           BASE="cybr-base-v${RUN_NUM}"
           ISO="cybr-netinstall-v${RUN_NUM}"
           
           if [ "$BUILD_TYPE" = "full" ]; then
-            echo "=== Building Base ==="
-            debootstrap --arch=amd64 --variant=minbase bookworm base http://deb.debian.org/debian/
+            echo "=== Building Base System ==="
+            debootstrap --arch=amd64 --variant=minbase bookworm base \
+              http://deb.debian.org/debian/
             
-            chroot base bash<<CHROOT_EOF
-          cat>/etc/apt/sources.list<<EOF
+            # Configure base system
+            cat > base/etc/apt/sources.list << 'BASE_APT'
           deb http://deb.debian.org/debian bookworm main contrib non-free non-free-firmware
           deb http://deb.debian.org/debian-security bookworm-security main contrib non-free non-free-firmware
-          EOF
-          
+          BASE_APT
+            
+            chroot base /bin/bash << 'CHROOT_COMMANDS'
           apt-get update && apt-get install -y curl gnupg2 ca-certificates
           
-          curl -fsSL https://liquorix.net/liquorix-keyring.gpg -o /usr/share/keyrings/liquorix.gpg
+          curl -fsSL https://liquorix.net/liquorix-keyring.gpg \
+            -o /usr/share/keyrings/liquorix.gpg
           
-          cat>/etc/apt/sources.list.d/liquorix.sources<<EOF
+          cat > /etc/apt/sources.list.d/liquorix.sources << 'LIQUORIX'
           Types: deb
           URIs: https://liquorix.net/debian
           Suites: bookworm
           Components: main
           Signed-By: /usr/share/keyrings/liquorix.gpg
-          EOF
+          LIQUORIX
           
-          apt-get update && apt-get install -y linux-image-liquorix-amd64 firmware-linux systemd sudo \
-            phosh-full gdm3 network-manager firefox-esr flatpak gparted ntfs-3g e2fsprogs nano \
-            grub-efi-amd64 grub-pc-bin
+          apt-get update && apt-get install -y \
+            linux-image-liquorix-amd64 firmware-linux systemd sudo \
+            phosh-full gdm3 network-manager firefox-esr flatpak gparted \
+            ntfs-3g e2fsprogs nano grub-efi-amd64 grub-pc-bin
           
           dpkg --add-architecture i386 && apt-get update
-          apt-get install -y steam libgl1-mesa-dri:amd64 libgl1-mesa-dri:i386 mesa-vulkan-drivers:amd64 \
-            mesa-vulkan-drivers:i386 liblzma-dev
+          apt-get install -y steam \
+            libgl1-mesa-dri:amd64 libgl1-mesa-dri:i386 \
+            mesa-vulkan-drivers:amd64 mesa-vulkan-drivers:i386 liblzma-dev
           
-          wget -qO /tmp/d.deb "https://discord.com/api/download?platform=linux&format=deb"
-          apt-get install -y /tmp/d.deb || apt-get install -f -y
+          wget -qO /tmp/discord.deb \
+            "https://discord.com/api/download?platform=linux&format=deb"
+          apt-get install -y /tmp/discord.deb || apt-get install -f -y
           
-          cat>/etc/os-release<<EOF
+          cat > /etc/os-release << 'OS_RELEASE'
           NAME="Cybr"
           ID=cybr
           ID_LIKE=debian
           VERSION_ID="1.0"
-          EOF
+          OS_RELEASE
           
           useradd -m -s /bin/bash -G sudo,audio,video,netdev cybruser
-          echo "cybruser:cybr"|chpasswd
-          echo "root:root"|chpasswd
-          echo -e "[daemon]\nAutomaticLoginEnable=true\nAutomaticLogin=cybruser">/etc/gdm3/custom.conf
+          echo "cybruser:cybr" | chpasswd
+          echo "root:root" | chpasswd
+          
+          cat > /etc/gdm3/custom.conf << 'GDM_CONF'
+          [daemon]
+          AutomaticLoginEnable=true
+          AutomaticLogin=cybruser
+          GDM_CONF
+          
           systemctl enable gdm3 NetworkManager
           apt-get clean && rm -rf /var/lib/apt/lists/* /tmp/*
-          CHROOT_EOF
-          
+          CHROOT_COMMANDS
+            
             mksquashfs base "${BASE}.squashfs" -comp xz -b 1M
-            echo "✓ Base: $(($(stat -c%s ${BASE}.squashfs)/1024/1024))MB"
+            echo "✓ Base system created: $(($(stat -c%s ${BASE}.squashfs)/1024/1024))MB"
           else
-            echo "=== Skipping Base (ISO-only) ==="
+            echo "=== Skipping base system build (ISO-only mode) ==="
           fi
           
           echo "=== Building ISO ==="
           cd /tmp
           
           # Copy kernel
-          cp "$(find /boot -name vmlinuz-* | tail -1)" vmlinuz
-          KVER=$(ls /lib/modules/|tail -1)
+          cp "$(find /boot -name 'vmlinuz-*' | tail -1)" vmlinuz
+          KVER=$(ls /lib/modules/ | tail -1)
           
           # Download static busybox
-          wget -qO bb https://busybox.net/downloads/binaries/1.35.0-x86_64-linux-musl/busybox
-          chmod +x bb
+          wget -qO busybox \
+            https://busybox.net/downloads/binaries/1.35.0-x86_64-linux-musl/busybox
+          chmod +x busybox
           
           # Create initramfs structure
-          mkdir -p i/{bin,sbin,proc,sys,dev,tmp,run,mnt,etc,lib/modules,lib64}
+          mkdir -p initramfs/{bin,sbin,proc,sys,dev,tmp,run,mnt,etc,lib/modules,lib64}
           
-          # Install busybox and create symlinks
-          cp bb i/bin/busybox
+          # Install busybox
+          cp busybox initramfs/bin/busybox
           
-          # Create essential busybox symlinks
+          # Create busybox symlinks
           for cmd in sh mount umount cat ls cp mv rm mkdir mknod chmod chown ln \
                      grep sed awk cut sort head tail wc tr find xargs \
                      wget ping ip ifconfig route modprobe insmod lsmod \
                      sleep sync reboot poweroff; do
-            ln -sf busybox i/bin/$cmd 2>/dev/null || true
+            ln -sf busybox initramfs/bin/$cmd 2>/dev/null || true
           done
           
           for cmd in init mdev udhcpc; do
-            ln -sf ../bin/busybox i/sbin/$cmd 2>/dev/null || true
+            ln -sf ../bin/busybox initramfs/sbin/$cmd 2>/dev/null || true
           done
           
           # Copy firmware
-          mkdir -p i/lib/firmware
-          cp -r /lib/firmware/* i/lib/firmware/ 2>/dev/null || true
+          mkdir -p initramfs/lib/firmware
+          cp -r /lib/firmware/* initramfs/lib/firmware/ 2>/dev/null || true
           
-          # Copy essential kernel modules
-          mkdir -p i/lib/modules/$KVER
-          for d in drivers/net drivers/virtio kernel/net; do
-            find /lib/modules/$KVER/$d -name "*.ko" 2>/dev/null | while read m; do
-              r="${m#/lib/modules/$KVER/}"
-              mkdir -p "i/lib/modules/$KVER/$(dirname $r)"
-              cp "$m" "i/lib/modules/$KVER/$r"
+          # Copy kernel modules
+          mkdir -p initramfs/lib/modules/$KVER
+          for module_dir in drivers/net drivers/virtio kernel/net; do
+            find /lib/modules/$KVER/$module_dir -name "*.ko" 2>/dev/null | \
+            while read module; do
+              relative_path="${module#/lib/modules/$KVER/}"
+              mkdir -p "initramfs/lib/modules/$KVER/$(dirname $relative_path)"
+              cp "$module" "initramfs/lib/modules/$KVER/$relative_path"
             done
           done
-          cp /lib/modules/$KVER/modules.* i/lib/modules/$KVER/ 2>/dev/null || true
+          cp /lib/modules/$KVER/modules.* initramfs/lib/modules/$KVER/ 2>/dev/null || true
           
-          # Copy additional binaries and their dependencies
+          # Copy additional binaries and dependencies
           for binary in /usr/sbin/unsquashfs /sbin/parted /sbin/wpa_supplicant; do
             if [ -f "$binary" ]; then
-              target_dir="i$(dirname $binary)"
+              target_dir="initramfs$(dirname $binary)"
               mkdir -p "$target_dir"
               cp "$binary" "$target_dir/"
               
               # Copy library dependencies
-              ldd "$binary" 2>/dev/null | grep -oE "/[^ ]+" | while read lib; do
-                if [ -f "$lib" ] && [ ! -L "$lib" ]; then
-                  lib_dir="i$(dirname $lib)"
+              ldd "$binary" 2>/dev/null | grep -oE '/[^ ]+' | while read lib; do
+                if [ -f "$lib" ]; then
+                  lib_dir="initramfs$(dirname $lib)"
                   mkdir -p "$lib_dir"
                   cp "$lib" "$lib_dir/" 2>/dev/null || true
-                  
-                  # Also copy symlink target if it is one
-                  if [ -L "$lib" ]; then
-                    target=$(readlink -f "$lib")
-                    [ -f "$target" ] && cp "$target" "$lib_dir/" 2>/dev/null || true
-                  fi
                 fi
               done
             fi
           done
           
-          # Copy dynamic linker (critical for non-static binaries)
-          if [ -f /lib64/ld-linux-x86-64.so.2 ]; then
-            cp /lib64/ld-linux-x86-64.so.2 i/lib64/
-          fi
+          # Copy dynamic linker
+          [ -f /lib64/ld-linux-x86-64.so.2 ] && \
+            cp /lib64/ld-linux-x86-64.so.2 initramfs/lib64/
           
-          # Basic DNS configuration
-          echo "nameserver 8.8.8.8" > i/etc/resolv.conf
+          # DNS configuration
+          echo "nameserver 8.8.8.8" > initramfs/etc/resolv.conf
           
-          # Create init script - MUST NEVER EXIT (PID 1)
-          cat>i/init<<"INIT_EOF"
-#!/bin/busybox sh
-# This is PID 1 - must NEVER exit or kernel panics
-
-# Disable job control messages and prevent script exit
-set +m
-set +e
-trap "" EXIT HUP INT TERM
-
-export PATH=/bin:/sbin:/usr/bin:/usr/sbin
-export LD_LIBRARY_PATH=/lib:/lib64:/usr/lib
-
-echo "Starting Cybr Installer (PID $$)..."
-
-# Mount core filesystems
-mount -t proc none /proc 2>/dev/null
-mount -t sysfs none /sys 2>/dev/null  
-mount -t devtmpfs none /dev 2>/dev/null
-mkdir -p /dev/pts /dev/shm /tmp /run
-mount -t devpts none /dev/pts 2>/dev/null
-mount -t tmpfs none /tmp 2>/dev/null
-mount -t tmpfs none /run 2>/dev/null
-
-# Populate /dev
-mdev -s 2>/dev/null
-
-hostname cybr 2>/dev/null
-
-# Load network modules
-echo "Loading network drivers..."
-for m in e1000 e1000e r8169 virtio_net; do
-  modprobe $m 2>/dev/null
-done
-
-sleep 2
-
-# Bring up network interfaces
-for iface in /sys/class/net/*; do
-  iface=$(basename "$iface")
-  [ "$iface" = "lo" ] && continue
-  ip link set "$iface" up 2>/dev/null
-done
-
-clear
-
-cat<<MENU
-╔═══════════════════╗
-║  CYBR INSTALLER   ║
-╠═══════════════════╣
-║ 1) WiFi           ║
-║ 2) Ethernet       ║
-║ 3) Install        ║
-║ 4) Shell          ║
-╚═══════════════════╝
-MENU
-
-do_eth() {
-  eth=$(ip -br l 2>/dev/null|grep "^e"|head -1|awk "{print \$1}")
-  if [ -z "$eth" ]; then
-    echo "No ethernet adapter"
-    return 1
-  fi
-  echo "Using $eth..."
-  ip link set "$eth" up 2>/dev/null
-  udhcpc -i "$eth" -qn 2>&1 | tail -2
-  if ping -c1 -W2 8.8.8.8 >/dev/null 2>&1; then
-    echo "✓ Connected"
-  else
-    echo "✗ Connection failed"
-  fi
-}
-
-do_wifi() {
-  wifi=$(ip -br l 2>/dev/null|grep "^wl"|head -1|awk "{print \$1}")
-  if [ -z "$wifi" ]; then
-    echo "No WiFi adapter"
-    return 1
-  fi
-  printf "SSID: "; read ssid
-  printf "Password: "; read -s pass; echo
-  
-  cat>/tmp/wpa.conf<<WPA_EOF
-network={
-  ssid="$ssid"
-  psk="$pass"
-}
-WPA_EOF
-  
-  killall wpa_supplicant 2>/dev/null
-  wpa_supplicant -B -i "$wifi" -c /tmp/wpa.conf 2>/dev/null
-  sleep 4
-  udhcpc -i "$wifi" -qn 2>&1 | tail -2
-  if ping -c1 -W2 8.8.8.8 >/dev/null 2>&1; then
-    echo "✓ Connected"
-  else
-    echo "✗ Connection failed"
-  fi
-}
-
-do_install() {
-  if ! ping -c1 -W2 8.8.8.8 >/dev/null 2>&1; then
-    echo "No internet - configure network first (option 1 or 2)"
-    return 1
-  fi
-  
-  lsblk -d -o NAME,SIZE,TYPE 2>/dev/null | grep disk
-  printf "Target disk (e.g. sda): "; read disk
-  disk="/dev/$disk"
-  
-  if [ ! -b "$disk" ]; then
-    echo "Invalid disk: $disk"
-    return 1
-  fi
-  
-  printf "ERASE ALL DATA on $disk? Type YES: "; read confirm
-  if [ "$confirm" != "YES" ]; then
-    echo "Cancelled"
-    return 0
-  fi
-  
-  echo "Partitioning $disk..."
-  parted -s "$disk" mklabel gpt \
-    mkpart ESP fat32 1MiB 513MiB \
-    mkpart primary ext4 513MiB 100% \
-    set 1 esp on 2>&1 | tail -2
-  
-  sleep 2
-  echo "Formatting..."
-  mkfs.vfat -F32 "${disk}1" >/dev/null 2>&1
-  mkfs.ext4 -F "${disk}2" >/dev/null 2>&1
-  
-  echo "Mounting..."
-  mount "${disk}2" /mnt 2>/dev/null || { echo "Mount failed"; return 1; }
-  mkdir -p /mnt/boot/efi
-  mount "${disk}1" /mnt/boot/efi 2>/dev/null || {
-    umount /mnt 2>/dev/null
-    echo "EFI mount failed"
-    return 1
-  }
-  
-  echo "Downloading base system..."
-  base_url="https://sourceforge.net/projects/wolfos/files/gaming/base"
-  latest=$(wget -qO- "$base_url" 2>/dev/null | grep -oP "cybr-base-v[0-9]+" | sort -V | tail -1)
-  
-  if [ -z "$latest" ]; then
-    echo "Could not find base system"
-    umount -R /mnt 2>/dev/null
-    return 1
-  fi
-  
-  echo "Found: $latest"
-  echo "Downloading..."
-  wget -O /tmp/base.squashfs "$base_url/$latest.squashfs/download" 2>&1 | grep -E "saved|failed"
-  
-  if [ ! -f /tmp/base.squashfs ]; then
-    echo "Download failed"
-    umount -R /mnt 2>/dev/null
-    return 1
-  fi
-  
-  echo "Extracting (takes several minutes)..."
-  unsquashfs -f -d /mnt /tmp/base.squashfs 2>&1 | grep -E "created|failed"
-  
-  if [ $? -ne 0 ]; then
-    echo "Extraction failed"
-    umount -R /mnt 2>/dev/null
-    return 1
-  fi
-  
-  echo "Installing bootloader..."
-  mount --bind /dev /mnt/dev 2>/dev/null
-  mount --bind /proc /mnt/proc 2>/dev/null
-  mount --bind /sys /mnt/sys 2>/dev/null
-  
-  chroot /mnt grub-install --target=x86_64-efi --efi-directory=/boot/efi --bootloader-id=Cybr "$disk" 2>&1 | tail -2
-  chroot /mnt grub-install --target=i386-pc "$disk" 2>&1 | tail -2
-  chroot /mnt update-grub 2>&1 | tail -2
-  
-  sync
-  umount -R /mnt 2>/dev/null
-  
-  echo ""
-  echo "══════════════════════════════"
-  echo "✓ Installation Complete!"
-  echo "══════════════════════════════"
-  echo "Remove media and type: reboot"
-  echo ""
-}
-
-# Try auto-connect ethernet
-do_eth >/dev/null 2>&1
-
-# Main loop - INFINITE, NEVER EXIT
-while true; do
-  printf "\ncybr> "
-  read -r cmd || { sleep 1; continue; }
-  
-  case "$cmd" in
-    1|wifi)
-      do_wifi || true
-      ;;
-    2|eth|ethernet)
-      do_eth || true
-      ;;
-    3|install)
-      do_install || true
-      ;;
-    4|shell)
-      echo "Type exit to return"
-      /bin/sh || true
-      ;;
-    reboot)
-      echo "Rebooting..."
-      sync; sleep 1
-      reboot -f
-      ;;
-    poweroff|halt)
-      echo "Powering off..."
-      sync; sleep 1
-      poweroff -f
-      ;;
-    help|h|\?)
-      cat<<HELP_EOF
-
-Commands:
-  1, wifi      - Configure WiFi
-  2, eth       - Configure Ethernet
-  3, install   - Install to disk
-  4, shell     - Shell (type exit to return)
-  reboot       - Reboot
-  poweroff     - Power off
-
-HELP_EOF
-      ;;
-    "")
-      # Empty input
-      ;;
-    *)
-      echo "Unknown command. Type help for commands."
-      ;;
-  esac
-done
-
-# Failsafe: if loop somehow breaks, exec a shell (should never reach here)
-exec /bin/sh
-INIT_EOF
+          # Create init script
+          cat > initramfs/init << 'INIT_SCRIPT'
+          #!/bin/busybox sh
+          # PID 1 - must NEVER exit
           
-          chmod +x i/init
+          set +m
+          set +e
+          trap "" EXIT HUP INT TERM
+          
+          export PATH=/bin:/sbin:/usr/bin:/usr/sbin
+          export LD_LIBRARY_PATH=/lib:/lib64:/usr/lib
+          
+          echo "Starting Cybr Installer..."
+          
+          # Mount filesystems
+          mount -t proc none /proc 2>/dev/null
+          mount -t sysfs none /sys 2>/dev/null
+          mount -t devtmpfs none /dev 2>/dev/null
+          mkdir -p /dev/pts /dev/shm /tmp /run
+          mount -t devpts none /dev/pts 2>/dev/null
+          mount -t tmpfs none /tmp 2>/dev/null
+          mount -t tmpfs none /run 2>/dev/null
+          
+          mdev -s 2>/dev/null
+          hostname cybr 2>/dev/null
+          
+          # Load network modules
+          for m in e1000 e1000e r8169 virtio_net; do
+            modprobe $m 2>/dev/null
+          done
+          sleep 2
+          
+          # Bring up interfaces
+          for iface in /sys/class/net/*; do
+            iface=$(basename "$iface")
+            [ "$iface" = "lo" ] && continue
+            ip link set "$iface" up 2>/dev/null
+          done
+          
+          clear
+          cat << 'MENU'
+          ╔═══════════════════╗
+          ║  CYBR INSTALLER   ║
+          ╠═══════════════════╣
+          ║ 1) WiFi           ║
+          ║ 2) Ethernet       ║
+          ║ 3) Install        ║
+          ║ 4) Shell          ║
+          ╚═══════════════════╝
+          MENU
+          
+          do_eth() {
+            eth=$(ip -br l 2>/dev/null | grep "^e" | head -1 | awk '{print $1}')
+            [ -z "$eth" ] && { echo "No ethernet adapter"; return 1; }
+            echo "Using $eth..."
+            ip link set "$eth" up 2>/dev/null
+            udhcpc -i "$eth" -qn 2>&1 | tail -2
+            ping -c1 -W2 8.8.8.8 >/dev/null 2>&1 && echo "✓ Connected" || echo "✗ Failed"
+          }
+          
+          do_wifi() {
+            wifi=$(ip -br l 2>/dev/null | grep "^wl" | head -1 | awk '{print $1}')
+            [ -z "$wifi" ] && { echo "No WiFi adapter"; return 1; }
+            printf "SSID: "; read ssid
+            printf "Password: "; read -s pass; echo
+            
+            cat > /tmp/wpa.conf << WIFI_CONF
+          network={
+            ssid="$ssid"
+            psk="$pass"
+          }
+          WIFI_CONF
+            
+            killall wpa_supplicant 2>/dev/null
+            wpa_supplicant -B -i "$wifi" -c /tmp/wpa.conf 2>/dev/null
+            sleep 4
+            udhcpc -i "$wifi" -qn 2>&1 | tail -2
+            ping -c1 -W2 8.8.8.8 >/dev/null 2>&1 && echo "✓ Connected" || echo "✗ Failed"
+          }
+          
+          do_install() {
+            ping -c1 -W2 8.8.8.8 >/dev/null 2>&1 || {
+              echo "No internet - configure network first"
+              return 1
+            }
+            
+            lsblk -d -o NAME,SIZE,TYPE 2>/dev/null | grep disk
+            printf "Target disk (e.g. sda): "; read disk
+            disk="/dev/$disk"
+            [ ! -b "$disk" ] && { echo "Invalid disk"; return 1; }
+            
+            printf "ERASE ALL DATA on $disk? Type YES: "; read confirm
+            [ "$confirm" != "YES" ] && { echo "Cancelled"; return 0; }
+            
+            echo "Partitioning..."
+            parted -s "$disk" mklabel gpt \
+              mkpart ESP fat32 1MiB 513MiB \
+              mkpart primary ext4 513MiB 100% \
+              set 1 esp on 2>&1 | tail -2
+            
+            sleep 2
+            echo "Formatting..."
+            mkfs.vfat -F32 "${disk}1" >/dev/null 2>&1
+            mkfs.ext4 -F "${disk}2" >/dev/null 2>&1
+            
+            echo "Mounting..."
+            mount "${disk}2" /mnt 2>/dev/null || { echo "Mount failed"; return 1; }
+            mkdir -p /mnt/boot/efi
+            mount "${disk}1" /mnt/boot/efi 2>/dev/null || {
+              umount /mnt 2>/dev/null
+              echo "EFI mount failed"
+              return 1
+            }
+            
+            echo "Downloading base system..."
+            base_url="https://sourceforge.net/projects/wolfos/files/gaming/base"
+            latest=$(wget -qO- "$base_url" 2>/dev/null | \
+                     grep -oP "cybr-base-v[0-9]+" | sort -V | tail -1)
+            
+            [ -z "$latest" ] && {
+              echo "Base system not found"
+              umount -R /mnt 2>/dev/null
+              return 1
+            }
+            
+            echo "Found: $latest"
+            wget -O /tmp/base.squashfs \
+              "$base_url/$latest.squashfs/download" 2>&1 | grep "saved"
+            
+            [ ! -f /tmp/base.squashfs ] && {
+              echo "Download failed"
+              umount -R /mnt 2>/dev/null
+              return 1
+            }
+            
+            echo "Extracting (takes several minutes)..."
+            unsquashfs -f -d /mnt /tmp/base.squashfs 2>&1 | grep "created"
+            
+            echo "Installing bootloader..."
+            mount --bind /dev /mnt/dev 2>/dev/null
+            mount --bind /proc /mnt/proc 2>/dev/null
+            mount --bind /sys /mnt/sys 2>/dev/null
+            
+            chroot /mnt grub-install \
+              --target=x86_64-efi \
+              --efi-directory=/boot/efi \
+              --bootloader-id=Cybr "$disk" 2>&1 | tail -2
+            chroot /mnt grub-install --target=i386-pc "$disk" 2>&1 | tail -2
+            chroot /mnt update-grub 2>&1 | tail -2
+            
+            sync
+            umount -R /mnt 2>/dev/null
+            
+            echo ""
+            echo "══════════════════════════════"
+            echo "✓ Installation Complete!"
+            echo "══════════════════════════════"
+            echo "Remove media and type: reboot"
+          }
+          
+          # Try auto-connect
+          do_eth >/dev/null 2>&1
+          
+          # Main loop - NEVER EXIT
+          while true; do
+            printf "\ncybr> "
+            read -r cmd || { sleep 1; continue; }
+            
+            case "$cmd" in
+              1|wifi) do_wifi || true ;;
+              2|eth|ethernet) do_eth || true ;;
+              3|install) do_install || true ;;
+              4|shell) echo "Type exit to return"; /bin/sh || true ;;
+              reboot) sync; sleep 1; reboot -f ;;
+              poweroff|halt) sync; sleep 1; poweroff -f ;;
+              help|h|\?) echo "Commands: 1=WiFi 2=Ethernet 3=Install 4=Shell" ;;
+              "") ;;
+              *) echo "Unknown command. Type help for commands." ;;
+            esac
+          done
+          
+          exec /bin/sh
+          INIT_SCRIPT
+          
+          chmod +x initramfs/init
           
           # Create initramfs
-          cd i
+          cd initramfs
           find . | cpio -o -H newc 2>/dev/null | gzip -9 > /tmp/initrd.gz
           cd /tmp
           
-          echo "Initramfs created: $(du -h initrd.gz | cut -f1)"
+          echo "Initramfs: $(du -h initrd.gz | cut -f1)"
           
-          # Clean up
+          # Prepare ISO structure
           rm -rf iso
           mkdir -p iso/boot/grub
-          
-          # Copy kernel and initrd
           cp vmlinuz initrd.gz iso/boot/
           
-          # Create GRUB config
-          cat>iso/boot/grub/grub.cfg<<GRUB_EOF
+          # GRUB config
+          cat > iso/boot/grub/grub.cfg << 'GRUB_CFG'
           set timeout=5
           set default=0
           
@@ -455,14 +400,13 @@ INIT_EOF
             linux /boot/vmlinuz quiet
             initrd /boot/initrd.gz
           }
-          GRUB_EOF
+          GRUB_CFG
           
-          # Copy GRUB modules for BIOS
+          # BIOS boot setup
           mkdir -p iso/boot/grub/i386-pc
           cp /usr/lib/grub/i386-pc/*.mod iso/boot/grub/i386-pc/ 2>/dev/null || true
           cp /usr/lib/grub/i386-pc/*.lst iso/boot/grub/i386-pc/ 2>/dev/null || true
           
-          # Create BIOS boot image
           cat /usr/lib/grub/i386-pc/cdboot.img > iso/boot/grub/bios.img
           grub-mkimage \
             -d /usr/lib/grub/i386-pc \
@@ -473,7 +417,7 @@ INIT_EOF
           cat core.img >> iso/boot/grub/bios.img
           rm core.img
           
-          # Create GRUB EFI bootloader
+          # EFI boot setup
           mkdir -p iso/EFI/BOOT
           grub-mkstandalone \
             -d /usr/lib/grub/x86_64-efi \
@@ -484,7 +428,7 @@ INIT_EOF
             -o iso/EFI/BOOT/BOOTX64.EFI \
             "boot/grub/grub.cfg=iso/boot/grub/grub.cfg"
           
-          # Create EFI boot image
+          # EFI image
           dd if=/dev/zero of=iso/efi.img bs=1M count=10 2>/dev/null
           mkfs.vfat iso/efi.img >/dev/null 2>&1
           mmd -i iso/efi.img ::/EFI ::/EFI/BOOT
@@ -505,20 +449,30 @@ INIT_EOF
             -isohybrid-gpt-basdat \
             iso/ 2>&1 | tail -5
           
-          # Generate checksums
+          # Checksums
           cd /w
           sha256sum "${ISO}.iso" > "${ISO}.iso.sha256"
-          if [ -f "${BASE}.squashfs" ]; then
+          [ -f "${BASE}.squashfs" ] && \
             sha256sum "${BASE}.squashfs" > "${BASE}.squashfs.sha256"
-          fi
           
           echo ""
           echo "═══ Build Complete ═══"
           ls -lh *.iso *.squashfs 2>/dev/null || ls -lh *.iso
-          echo ""
-          '
+          BUILD_SCRIPT_EOF
+          
+          chmod +x build.sh
 
-      - uses: actions/upload-artifact@v4
+      - name: Run build in Docker
+        run: |
+          docker run --rm --privileged \
+            -v "$PWD:/w" \
+            -e BUILD_TYPE="${{ inputs.build_type || 'full' }}" \
+            -e RUN_NUM="${{ github.run_number }}" \
+            debian:bookworm \
+            /w/build.sh
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
         with:
           name: "cybr-build-${{ github.run_number }}"
           path: |
@@ -532,8 +486,10 @@ INIT_EOF
     runs-on: ubuntu-latest
     needs: build
     if: ${{ github.event_name == 'workflow_dispatch' || github.ref == 'refs/heads/main' }}
+    
     steps:
-      - uses: actions/download-artifact@v4
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
         with:
           name: "cybr-build-${{ github.run_number }}"
 
@@ -543,21 +499,31 @@ INIT_EOF
           SF_PASS: ${{ secrets.SF_PASS }}
         run: |
           [ -z "$SF_USER" ] && exit 0
-          sudo apt-get update && sudo apt-get install -y sshpass rsync
           
-          for f in *.iso; do
-            for i in 1 2 3; do
-              sshpass -p "$SF_PASS" rsync -avP -e "ssh -o StrictHostKeyChecking=no" \
-                "$f" "$SF_USER@frs.sourceforge.net:/home/frs/project/wolfos/gaming/" && break
+          sudo apt-get update
+          sudo apt-get install -y sshpass rsync
+          
+          # Upload ISOs
+          for iso_file in *.iso; do
+            for attempt in 1 2 3; do
+              sshpass -p "$SF_PASS" rsync -avP \
+                -e "ssh -o StrictHostKeyChecking=no" \
+                "$iso_file" \
+                "$SF_USER@frs.sourceforge.net:/home/frs/project/wolfos/gaming/" \
+                && break
               sleep 30
             done
           done
           
-          for f in *.squashfs; do
-            [ -f "$f" ] || continue
-            for i in 1 2 3; do
-              sshpass -p "$SF_PASS" rsync -avP -e "ssh -o StrictHostKeyChecking=no" \
-                "$f" "$SF_USER@frs.sourceforge.net:/home/frs/project/wolfos/gaming/base/" && break
+          # Upload squashfs files
+          for squashfs_file in *.squashfs; do
+            [ -f "$squashfs_file" ] || continue
+            for attempt in 1 2 3; do
+              sshpass -p "$SF_PASS" rsync -avP \
+                -e "ssh -o StrictHostKeyChecking=no" \
+                "$squashfs_file" \
+                "$SF_USER@frs.sourceforge.net:/home/frs/project/wolfos/gaming/base/" \
+                && break
               sleep 30
             done
           done
