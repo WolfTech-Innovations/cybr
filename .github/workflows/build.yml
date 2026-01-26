@@ -8,7 +8,7 @@ on:
     - cron: '0 2 * * 0'
 
 jobs:
-  build:
+  build-and-upload:
     runs-on: ubuntu-latest
     timeout-minutes: 120
 
@@ -231,43 +231,28 @@ jobs:
             debian:bookworm \
             /w/build.sh
 
-      - name: Upload artifacts
-        uses: upload-artifact@v4
-        with:
-          name: "cybr-lxde-build-${{ github.run_number }}"
-          path: |
-            *.iso
-            *.iso.sha256
-          retention-days: 7
-
-  upload:
-    runs-on: ubuntu-latest
-    needs: build
-    if: ${{ github.event_name == 'workflow_dispatch' || github.ref == 'refs/heads/main' }}
-
-    steps:
-      - name: Download artifacts
-        uses: actions/download-artifact@v4
-        with:
-          name: "cybr-lxde-build-${{ github.run_number }}"
-
       - name: Upload to SourceForge
+        if: ${{ (github.event_name == 'workflow_dispatch' || github.ref == 'refs/heads/main') && secrets.SF_USER != '' }}
         env:
           SF_USER: ${{ secrets.SF_USER }}
           SF_PASS: ${{ secrets.SF_PASS }}
         run: |
-          [ -z "$SF_USER" ] && exit 0
-          
           sudo apt-get update
           sudo apt-get install -y sshpass rsync
           
           for iso_file in *.iso; do
+            [ -f "$iso_file" ] || continue
+            echo "Uploading $iso_file to SourceForge..."
             for attempt in 1 2 3; do
-              sshpass -p "$SF_PASS" rsync -avP \
+              if sshpass -p "$SF_PASS" rsync -avP \
                 -e "ssh -o StrictHostKeyChecking=no" \
                 "$iso_file" \
-                "$SF_USER@frs.sourceforge.net:/home/frs/project/wolfos/gaming/lxde/" \
-                && break
-              sleep 30
+                "$SF_USER@frs.sourceforge.net:/home/frs/project/wolfos/gaming/lxde/"; then
+                echo "Successfully uploaded $iso_file"
+                break
+              else
+                echo "Upload attempt $attempt failed, retrying in 30s..."
+                sleep 30
+              fi
             done
           done
