@@ -39,11 +39,13 @@ jobs:
           export DEBIAN_FRONTEND=noninteractive
           
           # Install build tools
+          echo "deb http://deb.debian.org/debian bookworm main contrib non-free non-free-firmware" > /etc/apt/sources.list
+          echo "deb http://deb.debian.org/debian-security bookworm-security main contrib non-free non-free-firmware" >> /etc/apt/sources.list
+          echo "deb http://deb.debian.org/debian bookworm-updates main contrib non-free non-free-firmware" >> /etc/apt/sources.list
+          
           apt-get update && apt-get install -y debootstrap squashfs-tools wget curl gnupg2 \
             xorriso isolinux syslinux-utils dosfstools grub-efi-amd64-bin mtools git build-essential \
-            liblzma-dev cpio linux-image-amd64 firmware-linux-free firmware-linux-nonfree \
-            firmware-iwlwifi firmware-atheros firmware-realtek firmware-bnx2 firmware-bnx2x \
-            firmware-brcm80211 firmware-misc-nonfree firmware-ti-connectivity firmware-ralink \
+            liblzma-dev cpio linux-image-amd64 firmware-linux firmware-linux-free \
             wpasupplicant parted iw ethtool pciutils usbutils
           
           cd /w
@@ -71,8 +73,8 @@ jobs:
           echo "Components: main" >> /etc/apt/sources.list.d/liquorix.sources
           echo "Architectures: amd64" >> /etc/apt/sources.list.d/liquorix.sources
           echo "Signed-By: /usr/share/keyrings/liquorix-archive-keyring.gpg" >> /etc/apt/sources.list.d/liquorix.sources
-          apt-get update && apt-get install -y linux-image-liquorix-amd64 firmware-linux-free \
-            firmware-linux-nonfree systemd sudo phosh-full gdm3 network-manager firefox-esr \
+          apt-get update && apt-get install -y linux-image-liquorix-amd64 firmware-linux \
+            firmware-linux-free systemd sudo phosh-full gdm3 network-manager firefox-esr \
             flatpak gparted ntfs-3g dosfstools e2fsprogs nano
           dpkg --add-architecture i386 && apt-get update
           apt-get install -y steam libgl1-mesa-dri:amd64 libgl1-mesa-dri:i386 \
