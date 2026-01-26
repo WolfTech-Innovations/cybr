@@ -188,7 +188,7 @@ jobs:
           cd initramfs
           find . | cpio -o -H newc | gzip -9 > /tmp/initrd.gz
           
-          # Build ISO with ISOLINUX only
+          # Build ISO with ISOLINUX
           mkdir -p /w/iso/{boot,isolinux}
           cp /tmp/vmlinuz /tmp/initrd.gz /w/iso/boot/
           
@@ -199,7 +199,11 @@ jobs:
             APPEND initrd=/boot/initrd.gz quiet
           CFG
           
+          # Copy ISOLINUX binaries and required modules
           cp /usr/lib/ISOLINUX/isolinux.bin /w/iso/isolinux/
+          cp /usr/lib/syslinux/modules/bios/ldlinux.c32 /w/iso/isolinux/
+          cp /usr/lib/syslinux/modules/bios/libcom32.c32 /w/iso/isolinux/
+          cp /usr/lib/syslinux/modules/bios/libutil.c32 /w/iso/isolinux/
           
           xorriso -as mkisofs -o "/w/${ISO_NAME}.iso" -b isolinux/isolinux.bin -c isolinux/boot.cat -no-emul-boot -boot-load-size 4 -boot-info-table -isohybrid-mbr /usr/lib/ISOLINUX/isohdpfx.bin /w/iso/
           '
