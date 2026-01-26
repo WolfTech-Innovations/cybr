@@ -99,25 +99,6 @@ jobs:
           cp "$(find /boot -name vmlinuz-* | tail -1)" vmlinuz
           KVER=$(ls /lib/modules/|tail -1)
           
-          git clone --depth 1 https://github.com/ipxe/ipxe.git
-          cd ipxe/src
-          cat>e.ipxe<<I
-          #!ipxe
-          dhcp||goto m
-          :m
-          menu Cybr
-          item i Install
-          item s Shell
-          choose o && goto \${o}
-          :i
-          kernel vmlinuz initrd=initrd.gz
-          boot
-          :s
-          shell
-          I
-          make bin/ipxe.lkrn EMBED=e.ipxe 2>&1|tail -10||true
-          make bin-x86_64-efi/ipxe.efi EMBED=e.ipxe 2>&1|tail -10||true
-          cp bin/ipxe.lkrn bin-x86_64-efi/ipxe.efi /tmp/ 2>/dev/null||true
           cd /tmp
           
           wget -qO bb https://busybox.net/downloads/binaries/1.35.0-x86_64-linux-musl/busybox
@@ -199,46 +180,20 @@ jobs:
           # Copy kernel and initrd
           cp vmlinuz initrd.gz iso/boot/
           
-          # Copy iPXE if available
-          if [ -f ipxe.lkrn ]; then
-            cp ipxe.lkrn iso/boot/
-            echo "✓ iPXE BIOS copied"
-          else
-            echo "⚠ iPXE BIOS not built"
-          fi
-          
-          if [ -f ipxe.efi ]; then
-            cp ipxe.efi iso/EFI/BOOT/BOOTX64.EFI
-            echo "✓ iPXE EFI copied"
-          else
-            echo "⚠ iPXE EFI not built"
-          fi
-          
-          # Copy ISOLINUX files
+          # Copy ISOLINUX bootloader for BIOS
           cp /usr/lib/ISOLINUX/isolinux.bin iso/isolinux/
-          cp /usr/lib/syslinux/modules/bios/ldlinux.c32 iso/isolinux/
-          cp /usr/lib/syslinux/modules/bios/menu.c32 iso/isolinux/
           
-          # Create ISOLINUX config
+          # Create simple ISOLINUX config for BIOS
           cat>iso/isolinux/isolinux.cfg<<L
-          DEFAULT menu.c32
+          DEFAULT install
           TIMEOUT 50
-          LABEL i
-            MENU LABEL Install
+          PROMPT 1
+          LABEL install
             KERNEL /boot/vmlinuz
             APPEND initrd=/boot/initrd.gz
           L
           
-          # Add iPXE to ISOLINUX menu if available
-          if [ -f iso/boot/ipxe.lkrn ]; then
-            cat>>iso/isolinux/isolinux.cfg<<L
-          LABEL p
-            MENU LABEL iPXE
-            KERNEL /boot/ipxe.lkrn
-          L
-          fi
-          
-          # Create GRUB config
+          # Create GRUB config for UEFI
           cat>iso/boot/grub/grub.cfg<<G
           set timeout=5
           menuentry "Install Cybr" {
@@ -247,25 +202,21 @@ jobs:
           }
           G
           
-          # Add iPXE to GRUB menu if available
-          if [ -f iso/EFI/BOOT/BOOTX64.EFI ]; then
-            cat>>iso/boot/grub/grub.cfg<<G
-          menuentry "iPXE" {
-            chainloader /EFI/BOOT/BOOTX64.EFI
-          }
-          G
-          fi
+          # Create standalone GRUB EFI bootloader
+          grub-mkstandalone \
+            --format=x86_64-efi \
+            --output=iso/EFI/BOOT/BOOTX64.EFI \
+            --locales="" \
+            --fonts="" \
+            "boot/grub/grub.cfg=iso/boot/grub/grub.cfg"
           
           # Create EFI boot image
           dd if=/dev/zero of=iso/efi.img bs=1M count=10 2>/dev/null
           mkfs.vfat iso/efi.img >/dev/null 2>&1
           mmd -i iso/efi.img ::/EFI ::/EFI/BOOT
+          mcopy -i iso/efi.img iso/EFI/BOOT/BOOTX64.EFI ::/EFI/BOOT/
           
-          if [ -f iso/EFI/BOOT/BOOTX64.EFI ]; then
-            mcopy -i iso/efi.img iso/EFI/BOOT/BOOTX64.EFI ::/EFI/BOOT/
-          fi
-          
-          # Create the ISO
+          # Create hybrid ISO (BIOS + UEFI)
           xorriso -as mkisofs -o "/w/${ISO}.iso" \
             -isohybrid-mbr /usr/lib/ISOLINUX/isohdpfx.bin \
             -c isolinux/boot.cat \
