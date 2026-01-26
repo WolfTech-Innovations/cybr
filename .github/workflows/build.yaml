@@ -33,16 +33,22 @@ jobs:
         run: |
           docker run --rm --privileged -v "$PWD:/w" -e BUILD_TYPE="${{ inputs.build_type || 'full' }}" \
             -e RUN_NUM="${{ github.run_number }}" debian:bookworm bash -c '
-          set -ex; export DEBIAN_FRONTEND=noninteractive
+          set -ex
+          export DEBIAN_FRONTEND=noninteractive
+          
           cat>/etc/apt/sources.list<<S
           deb http://deb.debian.org/debian bookworm main contrib non-free non-free-firmware
           deb http://deb.debian.org/debian-security bookworm-security main contrib non-free non-free-firmware
           deb http://deb.debian.org/debian bookworm-updates main contrib non-free non-free-firmware
           S
+          
           apt-get update && apt-get install -y debootstrap squashfs-tools wget curl gnupg2 xorriso \
             isolinux syslinux-utils dosfstools grub-efi-amd64-bin mtools git build-essential cpio \
             linux-image-amd64 firmware-linux wpasupplicant parted iw ethtool
-          cd /w; BASE="cybr-base-v${RUN_NUM}"; ISO="cybr-netinstall-v${RUN_NUM}"
+          
+          cd /w
+          BASE="cybr-base-v${RUN_NUM}"
+          ISO="cybr-netinstall-v${RUN_NUM}"
           
           if [ "$BUILD_TYPE" = "full" ]; then
             echo "=== Building Base ==="
@@ -76,7 +82,8 @@ jobs:
           VERSION_ID="1.0"
           O
           useradd -m -s /bin/bash -G sudo,audio,video,netdev cybruser
-          echo "cybruser:cybr"|chpasswd; echo "root:root"|chpasswd
+          echo "cybruser:cybr"|chpasswd
+          echo "root:root"|chpasswd
           echo -e "[daemon]\nAutomaticLoginEnable=true\nAutomaticLogin=cybruser">/etc/gdm3/custom.conf
           systemctl enable gdm3 NetworkManager
           apt-get clean && rm -rf /var/lib/apt/lists/* /tmp/*
@@ -88,10 +95,12 @@ jobs:
           fi
           
           echo "=== Building ISO ==="
-          cd /tmp; cp "$(find /boot -name vmlinuz-* | tail -1)" vmlinuz
+          cd /tmp
+          cp "$(find /boot -name vmlinuz-* | tail -1)" vmlinuz
           KVER=$(ls /lib/modules/|tail -1)
           
-          git clone --depth 1 https://github.com/ipxe/ipxe.git; cd ipxe/src
+          git clone --depth 1 https://github.com/ipxe/ipxe.git
+          cd ipxe/src
           cat>e.ipxe<<I
           #!ipxe
           dhcp||goto m
@@ -108,31 +117,39 @@ jobs:
           I
           make bin/ipxe.lkrn EMBED=e.ipxe 2>&1|tail -10||true
           make bin-x86_64-efi/ipxe.efi EMBED=e.ipxe 2>&1|tail -10||true
-          cp bin/ipxe.lkrn bin-x86_64-efi/ipxe.efi /tmp/ 2>/dev/null||true; cd /tmp
+          cp bin/ipxe.lkrn bin-x86_64-efi/ipxe.efi /tmp/ 2>/dev/null||true
+          cd /tmp
           
-          wget -qO bb https://busybox.net/downloads/binaries/1.35.0-x86_64-linux-musl/busybox; chmod +x bb
+          wget -qO bb https://busybox.net/downloads/binaries/1.35.0-x86_64-linux-musl/busybox
+          chmod +x bb
           mkdir -p i/{bin,sbin,proc,sys,dev,mnt,etc,lib/{firmware,modules,x86_64-linux-gnu},lib64}
-          cp bb i/bin/busybox; cd i/bin
-          for c in sh mount umount cat wget ping ip ls modprobe;do ln -s busybox $c;done; cd ../sbin
-          for c in init mdev udhcpc;do ln -s ../bin/busybox $c;done; cd /tmp
+          cp bb i/bin/busybox
+          cd i/bin
+          for c in sh mount umount cat wget ping ip ls modprobe; do ln -s busybox $c; done
+          cd ../sbin
+          for c in init mdev udhcpc; do ln -s ../bin/busybox $c; done
+          cd /tmp
           cp -r /lib/firmware/* i/lib/firmware/
           mkdir -p i/lib/modules/$KVER
-          for d in drivers/net drivers/virtio kernel/net;do
-            find /lib/modules/$KVER/$d -name "*.ko" 2>/dev/null|while read m;do
-              r="${m#/lib/modules/$KVER/}"; mkdir -p "i/lib/modules/$KVER/$(dirname $r)"
+          for d in drivers/net drivers/virtio kernel/net; do
+            find /lib/modules/$KVER/$d -name "*.ko" 2>/dev/null|while read m; do
+              r="${m#/lib/modules/$KVER/}"
+              mkdir -p "i/lib/modules/$KVER/$(dirname $r)"
               cp "$m" "i/lib/modules/$KVER/$r"
             done
           done
           cp /lib/modules/$KVER/modules.* i/lib/modules/$KVER/ 2>/dev/null||true
-          for t in /usr/sbin/unsquashfs /sbin/{parted,wpa_supplicant,iw,ethtool};do
-            [ -f "$t" ]&&cp "$t" i/sbin/&&ldd "$t" 2>/dev/null|grep -oP "/lib[^ ]*"|while read l;do
-              [ -f "$l" ]&&cp --parents "$l" i/;done
+          for t in /usr/sbin/unsquashfs /sbin/{parted,wpa_supplicant,iw,ethtool}; do
+            [ -f "$t" ] && cp "$t" i/sbin/ && ldd "$t" 2>/dev/null|grep -oP "/lib[^ ]*"|while read l; do
+              [ -f "$l" ] && cp --parents "$l" i/
+            done
           done
           cp /lib64/ld-linux-x86-64.so.2 i/lib64/
           for l in libc.so.6 libm.so.6 libnl-*.so.200 libdbus-1.so.3 libblkid.so.1 libuuid.so.1 libz.so.1 \
-                   liblzma.so.5 libresolv.so.2 libnss_*.so.2 libcrypto.so.3 libssl.so.3;do
-            find /lib /usr/lib -name "$l" 2>/dev/null|head -1|while read f;do
-              [ -f "$f" ]&&cp "$f" i/lib/x86_64-linux-gnu/;done
+                   liblzma.so.5 libresolv.so.2 libnss_*.so.2 libcrypto.so.3 libssl.so.3; do
+            find /lib /usr/lib -name "$l" 2>/dev/null|head -1|while read f; do
+              [ -f "$f" ] && cp "$f" i/lib/x86_64-linux-gnu/
+            done
           done
           echo "nameserver 8.8.8.8">i/etc/resolv.conf
           
@@ -168,14 +185,41 @@ jobs:
           while :;do printf "\ncybr>";read c;case $c in 1|wifi)wifi;;2|eth)eth;;3|install)inst;;4|shell)exec sh;;
           reboot)reboot -f;;*)echo "1-4";;esac;done
           F
-          chmod +x i/init;cd i;find .|cpio -oH newc|gzip -9>/tmp/initrd.gz;cd /tmp
+          chmod +x i/init
+          cd i
+          find . | cpio -oH newc | gzip -9 > /tmp/initrd.gz
+          cd /tmp
           
-          mkdir -p iso/{boot/grub,EFI/BOOT,isolinux}
+          # Clean up any existing iso directory/file
+          rm -rf iso
+          
+          # Create fresh ISO directory structure
+          mkdir -p iso/boot/grub iso/EFI/BOOT iso/isolinux
+          
+          # Copy kernel and initrd
           cp vmlinuz initrd.gz iso/boot/
-          [ -f ipxe.lkrn ]&&cp ipxe.lkrn iso/boot/||echo "⚠ iPXE BIOS not built"
-          [ -f ipxe.efi ]&&cp ipxe.efi iso/EFI/BOOT/BOOTX64.EFI||echo "⚠ iPXE EFI not built"
+          
+          # Copy iPXE if available
+          if [ -f ipxe.lkrn ]; then
+            cp ipxe.lkrn iso/boot/
+            echo "✓ iPXE BIOS copied"
+          else
+            echo "⚠ iPXE BIOS not built"
+          fi
+          
+          if [ -f ipxe.efi ]; then
+            cp ipxe.efi iso/EFI/BOOT/BOOTX64.EFI
+            echo "✓ iPXE EFI copied"
+          else
+            echo "⚠ iPXE EFI not built"
+          fi
+          
+          # Copy ISOLINUX files
           cp /usr/lib/ISOLINUX/isolinux.bin iso/isolinux/
-          cp /usr/lib/syslinux/modules/bios/{ldlinux.c32,menu.c32} iso/isolinux/
+          cp /usr/lib/syslinux/modules/bios/ldlinux.c32 iso/isolinux/
+          cp /usr/lib/syslinux/modules/bios/menu.c32 iso/isolinux/
+          
+          # Create ISOLINUX config
           cat>iso/isolinux/isolinux.cfg<<L
           DEFAULT menu.c32
           TIMEOUT 50
@@ -184,27 +228,66 @@ jobs:
             KERNEL /boot/vmlinuz
             APPEND initrd=/boot/initrd.gz
           L
-          [ -f iso/boot/ipxe.lkrn ]&&cat>>iso/isolinux/isolinux.cfg<<L
+          
+          # Add iPXE to ISOLINUX menu if available
+          if [ -f iso/boot/ipxe.lkrn ]; then
+            cat>>iso/isolinux/isolinux.cfg<<L
           LABEL p
             MENU LABEL iPXE
             KERNEL /boot/ipxe.lkrn
           L
+          fi
+          
+          # Create GRUB config
           cat>iso/boot/grub/grub.cfg<<G
           set timeout=5
-          menuentry "Install Cybr" {linux /boot/vmlinuz;initrd /boot/initrd.gz}
+          menuentry "Install Cybr" {
+            linux /boot/vmlinuz
+            initrd /boot/initrd.gz
+          }
           G
-          [ -f iso/EFI/BOOT/BOOTX64.EFI ]&&cat>>iso/boot/grub/grub.cfg<<G
-          menuentry "iPXE" {chainloader /EFI/BOOT/BOOTX64.EFI}
+          
+          # Add iPXE to GRUB menu if available
+          if [ -f iso/EFI/BOOT/BOOTX64.EFI ]; then
+            cat>>iso/boot/grub/grub.cfg<<G
+          menuentry "iPXE" {
+            chainloader /EFI/BOOT/BOOTX64.EFI
+          }
           G
-          mkdir -p iso
-          dd if=/dev/zero of=iso/efi.img bs=1M count=10 2>/dev/null;mkfs.vfat iso/efi.img>/dev/null 2>&1
-          mmd -i iso/efi.img ::/EFI ::/EFI/BOOT;mcopy -i iso/efi.img iso/EFI/BOOT/BOOTX64.EFI ::/EFI/BOOT/
-          xorriso -as mkisofs -o "/w/${ISO}.iso" -isohybrid-mbr /usr/lib/ISOLINUX/isohdpfx.bin \
-            -c isolinux/boot.cat -b isolinux/isolinux.bin -no-emul-boot -boot-load-size 4 \
-            -boot-info-table -eltorito-alt-boot -e efi.img -no-emul-boot -isohybrid-gpt-basdat iso/ 2>&1|tail -3
-          cd /w; sha256sum ${ISO}.iso>${ISO}.iso.sha256
-          [ -f ${BASE}.squashfs ]&&sha256sum ${BASE}.squashfs>${BASE}.squashfs.sha256
-          echo "=== Complete ==="; ls -lh *.iso *.squashfs 2>/dev/null||true
+          fi
+          
+          # Create EFI boot image
+          dd if=/dev/zero of=iso/efi.img bs=1M count=10 2>/dev/null
+          mkfs.vfat iso/efi.img >/dev/null 2>&1
+          mmd -i iso/efi.img ::/EFI ::/EFI/BOOT
+          
+          if [ -f iso/EFI/BOOT/BOOTX64.EFI ]; then
+            mcopy -i iso/efi.img iso/EFI/BOOT/BOOTX64.EFI ::/EFI/BOOT/
+          fi
+          
+          # Create the ISO
+          xorriso -as mkisofs -o "/w/${ISO}.iso" \
+            -isohybrid-mbr /usr/lib/ISOLINUX/isohdpfx.bin \
+            -c isolinux/boot.cat \
+            -b isolinux/isolinux.bin \
+            -no-emul-boot \
+            -boot-load-size 4 \
+            -boot-info-table \
+            -eltorito-alt-boot \
+            -e efi.img \
+            -no-emul-boot \
+            -isohybrid-gpt-basdat \
+            iso/ 2>&1 | tail -3
+          
+          # Generate checksums
+          cd /w
+          sha256sum "${ISO}.iso" > "${ISO}.iso.sha256"
+          if [ -f "${BASE}.squashfs" ]; then
+            sha256sum "${BASE}.squashfs" > "${BASE}.squashfs.sha256"
+          fi
+          
+          echo "=== Complete ==="
+          ls -lh *.iso *.squashfs 2>/dev/null || true
           '
 
       - uses: actions/upload-artifact@v4
@@ -231,11 +314,20 @@ jobs:
           SF_USER: ${{ secrets.SF_USER }}
           SF_PASS: ${{ secrets.SF_PASS }}
         run: |
-          [ -z "$SF_USER" ]&&exit 0
+          [ -z "$SF_USER" ] && exit 0
           sudo apt-get update && sudo apt-get install -y sshpass rsync
-          for f in *.iso;do for i in 1 2 3;do
-            sshpass -p "$SF_PASS" rsync -avP -e "ssh -o StrictHostKeyChecking=no" \
-              "$f" "$SF_USER@frs.sourceforge.net:/home/frs/project/wolfos/gaming/"&&break;sleep 30;done;done
-          for f in *.squashfs;do [ -f "$f" ]||continue;for i in 1 2 3;do
-            sshpass -p "$SF_PASS" rsync -avP -e "ssh -o StrictHostKeyChecking=no" \
-              "$f" "$SF_USER@frs.sourceforge.net:/home/frs/project/wolfos/gaming/base/"&&break;sleep 30;done;done
+          for f in *.iso; do
+            for i in 1 2 3; do
+              sshpass -p "$SF_PASS" rsync -avP -e "ssh -o StrictHostKeyChecking=no" \
+                "$f" "$SF_USER@frs.sourceforge.net:/home/frs/project/wolfos/gaming/" && break
+              sleep 30
+            done
+          done
+          for f in *.squashfs; do
+            [ -f "$f" ] || continue
+            for i in 1 2 3; do
+              sshpass -p "$SF_PASS" rsync -avP -e "ssh -o StrictHostKeyChecking=no" \
+                "$f" "$SF_USER@frs.sourceforge.net:/home/frs/project/wolfos/gaming/base/" && break
+              sleep 30
+            done
+          done
