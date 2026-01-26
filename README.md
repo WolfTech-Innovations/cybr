@@ -36,9 +36,6 @@ This project is licensed under GPL-3.0 and welcomes contributions.
 
 **Note**: Lebnix LXDE is not affiliated with or endorsed by Debian, LXDE, X.Org, or any upstream projects. All trademarks belong to their respective owners.
 
-**Made with ❤️ for the Linux desktop community**
-- Window management via mouse and keyboard
-
 ## System Requirements
 
 - **RAM**: 512MB minimum (1GB+ recommended)
@@ -78,4 +75,4 @@ The ISO boots into a fully functional live system:
 
 **Live System Note**: The live system runs from RAM with an overlay filesystem. Changes persist during the session but are lost on reboot.
 
-**Made with ❤️ for the Linux desktop community**
+**Made with ❤️ for the Linux community**
