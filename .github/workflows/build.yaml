@@ -25,7 +25,6 @@ jobs:
   build-base:
     runs-on: ubuntu-latest
     timeout-minutes: 120
-    if: ${{ !inputs.skip_base }}
     outputs:
       base_name: ${{ steps.set-names.outputs.base_name }}
       iso_name: ${{ steps.set-names.outputs.iso_name }}
@@ -46,7 +45,7 @@ jobs:
           sudo apt-get autoremove -y && sudo apt-get clean
 
       - name: Build Cybr Base System
-        if: ${{ inputs.build_type != 'iso-only' }}
+        if: ${{ inputs.build_type != 'iso-only' && !inputs.skip_base }}
         run: |
           BASE_NAME="${{ steps.set-names.outputs.base_name }}"
           docker run --rm --privileged -v "$PWD:/w" -e BASE_NAME="${BASE_NAME}" debian:bookworm bash -c '
@@ -295,7 +294,7 @@ jobs:
   upload:
     runs-on: ubuntu-latest
     needs: build-base
-    if: ${{ (github.event_name == 'workflow_dispatch' || github.ref == 'refs/heads/main') && !inputs.skip_base }}
+    if: ${{ github.event_name == 'workflow_dispatch' || github.ref == 'refs/heads/main' }}
     steps:
       - uses: actions/download-artifact@v4
         with:
