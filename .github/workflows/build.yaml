@@ -39,6 +39,7 @@ jobs:
           echo "iso_name=cybr-netinstall-v${{ github.run_number }}" >> $GITHUB_OUTPUT
 
       - name: Free disk space
+        if: ${{ inputs.build_type != 'iso-only' && !inputs.skip_base }}
         run: |
           sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /usr/local/share/boost /opt/hostedtoolcache
           sudo docker system prune -af --volumes
