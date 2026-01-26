@@ -171,7 +171,9 @@ jobs:
           chmod +x i/init;cd i;find .|cpio -oH newc|gzip -9>/tmp/initrd.gz;cd /tmp
           
           mkdir -p iso/{boot/grub,EFI/BOOT,isolinux}
-          cp vmlinuz initrd.gz ipxe.lkrn iso/boot/; cp ipxe.efi iso/EFI/BOOT/BOOTX64.EFI
+          cp vmlinuz initrd.gz iso/boot/
+          [ -f ipxe.lkrn ]&&cp ipxe.lkrn iso/boot/||echo "⚠ iPXE BIOS not built"
+          [ -f ipxe.efi ]&&cp ipxe.efi iso/EFI/BOOT/BOOTX64.EFI||echo "⚠ iPXE EFI not built"
           cp /usr/lib/ISOLINUX/isolinux.bin iso/isolinux/
           cp /usr/lib/syslinux/modules/bios/{ldlinux.c32,menu.c32} iso/isolinux/
           cat>iso/isolinux/isolinux.cfg<<L
@@ -181,6 +183,8 @@ jobs:
             MENU LABEL Install
             KERNEL /boot/vmlinuz
             APPEND initrd=/boot/initrd.gz
+          L
+          [ -f iso/boot/ipxe.lkrn ]&&cat>>iso/isolinux/isolinux.cfg<<L
           LABEL p
             MENU LABEL iPXE
             KERNEL /boot/ipxe.lkrn
@@ -188,6 +192,8 @@ jobs:
           cat>iso/boot/grub/grub.cfg<<G
           set timeout=5
           menuentry "Install Cybr" {linux /boot/vmlinuz;initrd /boot/initrd.gz}
+          G
+          [ -f iso/EFI/BOOT/BOOTX64.EFI ]&&cat>>iso/boot/grub/grub.cfg<<G
           menuentry "iPXE" {chainloader /EFI/BOOT/BOOTX64.EFI}
           G
           dd if=/dev/zero of=efi.img bs=1M count=10 2>/dev/null;mkfs.vfat efi.img>/dev/null 2>&1
