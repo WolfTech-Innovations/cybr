@@ -154,50 +154,181 @@ jobs:
           cp /sbin/iw initramfs/sbin/
           cp $(which unsquashfs) initramfs/sbin/ || cp /usr/bin/unsquashfs initramfs/sbin/
           
-          # Copy libs
+          # Copy libs - comprehensive list for networking
           cp /lib64/ld-linux-x86-64.so.2 initramfs/lib64/
-          for lib in libc.so.6 libnl-3.so.200 libnl-genl-3.so.200 libblkid.so.1 libuuid.so.1; do
-            find /lib /usr/lib -name "$lib" -exec cp {} initramfs/lib/x86_64-linux-gnu/ \; 2>/dev/null
+          
+          # Copy all required libraries
+          for lib in libc.so.6 libnl-3.so.200 libnl-genl-3.so.200 libblkid.so.1 libuuid.so.1 \
+                     libdbus-1.so.3 libpthread.so.0 librt.so.1 libdl.so.2 libm.so.6 \
+                     libnl-route-3.so.200 libpcre.so.3 liblzma.so.5 libz.so.1 libzstd.so.1 \
+                     libresolv.so.2 libnss_dns.so.2 libnss_files.so.2; do
+            find /lib /usr/lib -name "$lib" -exec cp {} initramfs/lib/x86_64-linux-gnu/ \; 2>/dev/null || true
           done
+          
+          # Copy SSL certificates for HTTPS
+          mkdir -p initramfs/etc/ssl/certs
+          cp -r /etc/ssl/certs/* initramfs/etc/ssl/certs/ 2>/dev/null || true
           
           cat > initramfs/init <<'"'"'INIT'"'"'
           #!/bin/sh
           export PATH=/bin:/sbin LD_LIBRARY_PATH=/lib/x86_64-linux-gnu:/lib64
           mount -t proc none /proc; mount -t sysfs none /sys; mount -t devtmpfs none /dev; mdev -s
+          
+          # Network setup
+          hostname cybr-installer
+          
           clear
           echo "=== Cybr Installer ==="
-          echo "Commands: wifi, install, shell"
+          echo "Commands: wifi, ethernet, install, shell"
+          
+          ethernet_setup() {
+            ETH=$(ip link | grep -o "e[^:]*" | grep -E "^(eth|enp)" | head -1)
+            [ -z "$ETH" ] && echo "No ethernet adapter found" && return 1
+            echo "Found: $ETH"
+            ip link set "$ETH" up
+            echo "Getting IP via DHCP..."
+            udhcpc -i "$ETH" -q
+            sleep 2
+            if ping -c 1 -W 3 8.8.8.8 > /dev/null 2>&1; then
+              echo "Ethernet connected!"
+              ip addr show "$ETH"
+            else
+              echo "Failed to connect"
+              return 1
+            fi
+          }
+          
           wifi_setup() {
             WLAN=$(ip link | grep -o "wl[^:]*" | head -1)
-            [ -z "$WLAN" ] && echo "No WiFi" && return 1
-            ip link set "$WLAN" up; sleep 2
-            read -p "SSID: " SSID; read -sp "Pass: " PASS; echo
-            echo "network={ssid=\"$SSID\" psk=\"$PASS\"}" > /tmp/wpa.conf
-            wpa_supplicant -B -i "$WLAN" -c /tmp/wpa.conf; sleep 3; udhcpc -i "$WLAN"
-            ping -c 1 8.8.8.8 && echo "Connected" || echo "Failed"
+            [ -z "$WLAN" ] && echo "No WiFi adapter found" && return 1
+            echo "Found: $WLAN"
+            ip link set "$WLAN" up
+            sleep 2
+            
+            echo "Scanning networks..."
+            iw dev "$WLAN" scan | grep SSID | head -10
+            
+            read -p "SSID: " SSID
+            read -sp "Password: " PASS
+            echo
+            
+            cat > /tmp/wpa.conf <<WPA
+          ctrl_interface=/var/run/wpa_supplicant
+          network={
+            ssid="$SSID"
+            psk="$PASS"
           }
+          WPA
+            
+            mkdir -p /var/run/wpa_supplicant
+            wpa_supplicant -B -i "$WLAN" -c /tmp/wpa.conf
+            sleep 5
+            
+            echo "Getting IP via DHCP..."
+            udhcpc -i "$WLAN" -q
+            sleep 2
+            
+            if ping -c 1 -W 3 8.8.8.8 > /dev/null 2>&1; then
+              echo "WiFi connected!"
+              ip addr show "$WLAN"
+            else
+              echo "Failed to connect"
+              return 1
+            fi
+          }
+          
           install_cybr() {
-            ping -c 1 8.8.8.8 || { echo "No internet"; return 1; }
+            if ! ping -c 1 -W 3 8.8.8.8 > /dev/null 2>&1; then
+              echo "No internet connection!"
+              echo "Try: wifi or ethernet"
+              return 1
+            fi
+            
+            echo "Available disks:"
             blkid | grep -v loop
-            read -p "Disk (e.g. sda): " D; D="/dev/$D"
-            read -p "Erase $D? (YES): " C; [ "$C" != "YES" ] && return 1
-            echo "Partitioning..."; parted -s "$D" mklabel gpt mkpart ESP fat32 1MiB 513MiB mkpart primary ext4 513MiB 100%; parted -s "$D" set 1 esp on
-            echo "Formatting..."; mkfs.vfat -F32 "${D}1"; mkfs.ext4 -F "${D}2"
-            echo "Mounting..."; mount "${D}2" /mnt; mkdir -p /mnt/boot/efi; mount "${D}1" /mnt/boot/efi
-            echo "Downloading..."; BASE_URL="https://sourceforge.net/projects/wolfos/files/gaming/base"
+            lsblk -d -o NAME,SIZE,TYPE | grep disk
+            
+            read -p "Disk to install to (e.g. sda): " D
+            D="/dev/$D"
+            
+            [ ! -b "$D" ] && echo "Device $D not found" && return 1
+            
+            echo "WARNING: This will erase ALL data on $D"
+            read -p "Type YES to continue: " C
+            [ "$C" != "YES" ] && echo "Cancelled" && return 1
+            
+            echo "Partitioning $D..."
+            parted -s "$D" mklabel gpt mkpart ESP fat32 1MiB 513MiB mkpart primary ext4 513MiB 100%
+            parted -s "$D" set 1 esp on
+            sleep 2
+            
+            echo "Formatting partitions..."
+            mkfs.vfat -F32 "${D}1"
+            mkfs.ext4 -F "${D}2"
+            
+            echo "Mounting..."
+            mount "${D}2" /mnt
+            mkdir -p /mnt/boot/efi
+            mount "${D}1" /mnt/boot/efi
+            
+            echo "Downloading base system..."
+            BASE_URL="https://sourceforge.net/projects/wolfos/files/gaming/base"
+            
+            echo "Finding latest version..."
             LATEST=$(wget -qO- "$BASE_URL/" | grep -oP "cybr-base-v\d+" | sort -V | tail -1)
-            [ -z "$LATEST" ] && echo "Download failed" && return 1
-            wget -O /tmp/base.sq "${BASE_URL}/${LATEST}.squashfs/download"
-            echo "Extracting..."; unsquashfs -f -d /mnt /tmp/base.sq
-            echo "Installing bootloader..."; mount --bind /dev /mnt/dev; mount --bind /proc /mnt/proc; mount --bind /sys /mnt/sys
+            
+            if [ -z "$LATEST" ]; then
+              echo "ERROR: Could not find latest version"
+              umount -R /mnt
+              return 1
+            fi
+            
+            echo "Latest version: $LATEST"
+            echo "Downloading (this may take a while)..."
+            
+            if ! wget --progress=bar:force -O /tmp/base.sq "${BASE_URL}/${LATEST}.squashfs/download"; then
+              echo "ERROR: Download failed"
+              umount -R /mnt
+              return 1
+            fi
+            
+            echo "Extracting system (this will take a few minutes)..."
+            unsquashfs -f -d /mnt /tmp/base.sq
+            
+            echo "Installing bootloader..."
+            mount --bind /dev /mnt/dev
+            mount --bind /proc /mnt/proc
+            mount --bind /sys /mnt/sys
+            
             chroot /mnt grub-install --target=x86_64-efi --efi-directory=/boot/efi --bootloader-id=Cybr "$D"
             chroot /mnt update-grub
-            umount /mnt/dev /mnt/proc /mnt/sys; sync; umount -R /mnt
-            echo "=== Install Complete ==="
+            
+            umount /mnt/dev /mnt/proc /mnt/sys
+            sync
+            umount -R /mnt
+            
+            echo ""
+            echo "=== Installation Complete ==="
+            echo "You can now reboot and remove the installation media"
+            echo "Type 'reboot' to restart"
           }
+          
+          # Auto-detect and setup ethernet if available
+          echo "Checking for ethernet..."
+          if ethernet_setup > /dev/null 2>&1; then
+            echo "Ethernet connected automatically"
+          fi
+          
           while true; do
             read -p "cybr> " cmd
-            case "$cmd" in wifi) wifi_setup;; install) install_cybr;; shell) exec /bin/sh;; *) echo "Unknown: $cmd";; esac
+            case "$cmd" in
+              wifi) wifi_setup;;
+              ethernet) ethernet_setup;;
+              install) install_cybr;;
+              shell) exec /bin/sh;;
+              reboot) sync; reboot -f;;
+              *) echo "Commands: wifi, ethernet, install, shell, reboot";;
+            esac
           done
           INIT
           chmod +x initramfs/init
