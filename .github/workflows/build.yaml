@@ -156,9 +156,9 @@ jobs:
           mkdir -p initramfs/lib/firmware
           cp -r /lib/firmware/* initramfs/lib/firmware/ 2>/dev/null || true
           
-          # Copy kernel modules
+          # Copy kernel modules (including virtio)
           mkdir -p initramfs/lib/modules/$KVER
-          for module_dir in drivers/net drivers/virtio kernel/net; do
+          for module_dir in drivers/net drivers/virtio kernel/net kernel/drivers/virtio; do
             find /lib/modules/$KVER/$module_dir -name "*.ko" 2>/dev/null | \
             while read module; do
               relative_path="${module#/lib/modules/$KVER/}"
@@ -166,6 +166,19 @@ jobs:
               cp "$module" "initramfs/lib/modules/$KVER/$relative_path"
             done
           done
+          
+          # Explicitly copy critical virtio modules
+          for virtio_mod in virtio.ko virtio_ring.ko virtio_pci.ko virtio_net.ko \
+                            virtio_mmio.ko net_failover.ko failover.ko; do
+            find /lib/modules/$KVER -name "$virtio_mod" 2>/dev/null | \
+            while read module; do
+              relative_path="${module#/lib/modules/$KVER/}"
+              mkdir -p "initramfs/lib/modules/$KVER/$(dirname $relative_path)"
+              cp "$module" "initramfs/lib/modules/$KVER/$relative_path"
+            done
+          done
+          
+          # Copy module dependency files
           cp /lib/modules/$KVER/modules.* initramfs/lib/modules/$KVER/ 2>/dev/null || true
           
           # Copy additional binaries and dependencies
@@ -220,8 +233,9 @@ jobs:
           hostname cybr 2>/dev/null
           
           # Load network modules
-          for m in e1000 e1000e r8169 virtio_net; do
-            modprobe $m 2>/dev/null
+          for m in virtio virtio_ring virtio_pci virtio_net virtio_mmio \
+                   e1000 e1000e r8169 8139too pcnet32 ne2k-pci; do
+            modprobe $m 2>/dev/null && echo "  Loaded: $m"
           done
           sleep 2
           
