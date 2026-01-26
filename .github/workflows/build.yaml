@@ -193,7 +193,17 @@ jobs:
           mkdir -p iso/boot/grub/i386-pc
           cp /usr/lib/grub/i386-pc/*.mod iso/boot/grub/i386-pc/ 2>/dev/null || true
           cp /usr/lib/grub/i386-pc/*.lst iso/boot/grub/i386-pc/ 2>/dev/null || true
-          cp /usr/lib/grub/i386-pc/eltorito.img iso/boot/grub/i386-pc/ 2>/dev/null || true
+          
+          # Create BIOS boot image using cdboot.img and core.img
+          cat /usr/lib/grub/i386-pc/cdboot.img > iso/boot/grub/bios.img
+          grub-mkimage \
+            -d /usr/lib/grub/i386-pc \
+            -O i386-pc \
+            -o core.img \
+            -p /boot/grub \
+            biosdisk iso9660
+          cat core.img >> iso/boot/grub/bios.img
+          rm core.img
           
           # Create GRUB EFI bootloader
           mkdir -p iso/EFI/BOOT
@@ -215,10 +225,12 @@ jobs:
           # Create hybrid ISO with both BIOS and UEFI support
           xorriso -as mkisofs -o "/w/${ISO}.iso" \
             -r -J -joliet-long \
-            -b boot/grub/i386-pc/eltorito.img \
+            -b boot/grub/bios.img \
             -no-emul-boot \
             -boot-load-size 4 \
             -boot-info-table \
+            --grub2-boot-info \
+            --grub2-mbr /usr/lib/grub/i386-pc/boot_hybrid.img \
             -eltorito-alt-boot \
             -e efi.img \
             -no-emul-boot \
