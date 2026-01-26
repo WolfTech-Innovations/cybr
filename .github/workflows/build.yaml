@@ -122,100 +122,63 @@ jobs:
           apt-get update && apt-get install -y linux-image-amd64 firmware-iwlwifi wpasupplicant parted iw
           cd /tmp
           
-          # Get kernel
+          # Get kernel and strip modules
           cp "$(find /boot -name "vmlinuz-*" | tail -1)" vmlinuz
           
-          # Get busybox & create initramfs structure
+          # Get busybox & create minimal initramfs
           wget -qO busybox https://busybox.net/downloads/binaries/1.35.0-x86_64-linux-musl/busybox && chmod +x busybox
-          mkdir -p initramfs/{bin,sbin,proc,sys,dev,mnt,etc,var/run,lib/{firmware/{iwlwifi,rtlwifi,ath10k},x86_64-linux-gnu},lib64}
-          cp busybox initramfs/bin/
+          mkdir -p i/{bin,sbin,proc,sys,dev,mnt,etc,lib/{firmware/iwlwifi,x86_64-linux-gnu},lib64}
+          cp busybox i/bin/
+          cd i/bin && for c in sh mount umount cat wget ping ip grep reboot; do ln -s busybox $c; done
+          cd ../sbin && for c in init mdev udhcpc; do ln -s ../bin/busybox $c; done && cd /tmp
           
-          # Create symlinks
-          cd initramfs/bin && for c in sh ls cp mv rm mkdir mount umount cat echo wget tar gzip cpio dd chmod ln ps sleep ping ip grep head sort tail cut awk sed find reboot; do ln -s busybox $c; done
-          cd ../sbin && for c in init poweroff reboot mdev blkid udhcpc; do ln -s ../bin/busybox $c; done && cd /tmp
+          # Copy minimal firmware (Intel WiFi only - most common)
+          cp /lib/firmware/iwlwifi/iwlwifi-*-*.ucode i/lib/firmware/iwlwifi/ 2>/dev/null | head -20 || true
           
-          # Copy essentials
-          cp -r /lib/firmware/{iwlwifi,rtlwifi,ath10k}/* initramfs/lib/firmware/ 2>/dev/null || true
-          for bin in wpa_supplicant parted iw; do cp /sbin/$bin initramfs/sbin/ && strip initramfs/sbin/$bin 2>/dev/null || true; done
-          cp /usr/sbin/unsquashfs initramfs/sbin/ 2>/dev/null && strip initramfs/sbin/unsquashfs 2>/dev/null || true
+          # Copy only critical tools
+          cp /sbin/wpa_supplicant /sbin/parted /sbin/iw i/sbin/ 2>/dev/null
+          cp /usr/sbin/unsquashfs i/sbin/ 2>/dev/null || true
+          strip i/sbin/* 2>/dev/null || true
           
-          # Copy libraries
-          cp /lib64/ld-linux-x86-64.so.2 initramfs/lib64/
-          for lib in libc.so.6 libm.so.6 libpthread.so.0 libdl.so.2 librt.so.1 libnl-3.so.200 libnl-genl-3.so.200 libnl-route-3.so.200 libdbus-1.so.3 libpcre.so.3 libsystemd.so.0 libblkid.so.1 libuuid.so.1 libz.so.1 liblzma.so.5 libzstd.so.1 libresolv.so.2 libnss_dns.so.2 libnss_files.so.2 libssl.so.3 libcrypto.so.3; do
-            find /lib /usr/lib -name "$lib" 2>/dev/null | head -1 | xargs -I{} sh -c "cp {} initramfs/lib/x86_64-linux-gnu/ && strip initramfs/lib/x86_64-linux-gnu/$lib 2>/dev/null || true"
+          # Copy minimal libs
+          cp /lib64/ld-linux-x86-64.so.2 i/lib64/
+          for lib in libc.so.6 libm.so.6 libnl-3.so.200 libnl-genl-3.so.200 libdbus-1.so.3 libblkid.so.1 libuuid.so.1 libz.so.1 liblzma.so.5 libresolv.so.2 libnss_dns.so.2; do
+            find /lib /usr/lib -name "$lib" 2>/dev/null | head -1 | xargs -I{} cp {} i/lib/x86_64-linux-gnu/ && strip i/lib/x86_64-linux-gnu/$lib 2>/dev/null || true
           done
           
-          # Setup network config
-          mkdir -p initramfs/etc/ssl/certs && cp /etc/ssl/certs/ca-certificates.crt initramfs/etc/ssl/certs/ 2>/dev/null || true
-          echo -e "nameserver 8.8.8.8\nnameserver 1.1.1.1" > initramfs/etc/resolv.conf
-          echo -e "127.0.0.1 localhost\n::1 localhost" > initramfs/etc/hosts
+          # Minimal network config
+          echo -e "nameserver 8.8.8.8" > i/etc/resolv.conf
           
-          cat > initramfs/init <<'"'"'INIT'"'"'
+          cat > i/init <<'"'"'EOF'"'"'
           #!/bin/sh
           export PATH=/bin:/sbin LD_LIBRARY_PATH=/lib/x86_64-linux-gnu:/lib64
-          mount -t proc none /proc; mount -t sysfs none /sys; mount -t devtmpfs none /dev; mdev -s; hostname cybr
-          clear; echo "=== Cybr Installer ==="; echo "Commands: wifi, eth, install, shell, reboot"
+          mount -t proc none /proc;mount -t sysfs none /sys;mount -t devtmpfs none /dev;mdev -s;hostname cybr;clear
+          echo "Cybr Installer - wifi | eth | install | shell"
+          eth(){ E=$(ip link|grep -oE "e[a-z0-9]*"|head -1);ip link set $E up;udhcpc -i $E -qn;ping -c1 8.8.8.8>/dev/null&&echo "OK"||echo "FAIL"; }
+          wifi(){ W=$(ip link|grep -o "wl[^:]*"|head -1);ip link set $W up;sleep 1;read -p "SSID: " S;read -sp "Pass: " P;echo;echo -e "network={\nssid=\"$S\"\npsk=\"$P\"\n}">/tmp/w;wpa_supplicant -B -i $W -c /tmp/w;sleep 3;udhcpc -i $W -qn;ping -c1 8.8.8.8>/dev/null&&echo "OK"||echo "FAIL"; }
+          inst(){ ping -c1 8.8.8.8>/dev/null||{ echo "No net";return; };lsblk -do NAME,SIZE|grep -v loop;read -p "Disk: " D;D="/dev/$D";read -p "ERASE $D? (YES): " C;[ "$C" != "YES" ]&&return;parted -s $D mklabel gpt mkpart ESP fat32 1M 513M mkpart primary ext4 513M 100% set 1 esp on;mkfs.vfat -F32 ${D}1>/dev/null;mkfs.ext4 -F ${D}2>/dev/null;mount ${D}2 /mnt;mkdir -p /mnt/boot/efi;mount ${D}1 /mnt/boot/efi;U="https://sourceforge.net/projects/wolfos/files/gaming/base";L=$(wget -qO- $U|grep -oP "cybr-base-v\d+"|tail -1);echo "DL $L...";wget -qO /tmp/b.sq "$U/$L.squashfs/download"&&echo "Extract..."&&unsquashfs -f -d /mnt /tmp/b.sq>/dev/null&&mount --bind /dev /mnt/dev&&mount --bind /proc /mnt/proc&&mount --bind /sys /mnt/sys&&chroot /mnt grub-install --target=x86_64-efi --efi-directory=/boot/efi --bootloader-id=Cybr $D>/dev/null&&chroot /mnt update-grub>/dev/null;sync;umount -R /mnt;echo "Done! reboot"; }
+          eth>/dev/null 2>&1&&echo "Auto-connected"
+          while :;do read -p "> " c;case $c in wifi)wifi;;eth)eth;;install)inst;;shell)exec sh;;reboot)reboot -f;;*)echo "wifi|eth|install|shell|reboot";;esac;done
+          EOF
+          chmod +x i/init
           
-          eth_setup() {
-            E=$(ip link|grep -oE "e(th|n[ps])[^:]*"|head -1); [ -z "$E" ]&&echo "No ethernet"&&return 1
-            echo "Using: $E"; ip link set $E up; udhcpc -i $E -qn -t5 2>&1|grep -v sending
-            ping -c2 -W2 8.8.8.8>/dev/null 2>&1&&echo "✓ Connected: $(ip -4 a show $E|grep inet|awk '\''{print $2}'\''|cut -d/ -f1)"||echo "✗ Failed"
-          }
+          cd i && find .|cpio -oH newc|gzip -9>/tmp/initrd.gz && cd /tmp
+          echo "Sizes: vmlinuz=$(($(stat -c%s vmlinuz)/1024/1024))M initrd=$(($(stat -c%s initrd.gz)/1024))K"
           
-          wifi_setup() {
-            W=$(ip link|grep -o "wl[^:]*"|head -1); [ -z "$W" ]&&echo "No WiFi"&&return 1
-            echo "Using: $W"; ip link set $W up; sleep 2
-            echo "Networks:"; iw dev $W scan 2>/dev/null|grep "SSID:"|sed "s/.*SSID: //"|grep -v "^$"|head -10
-            read -p "SSID: " S; [ -z "$S" ]&&return 1; read -sp "Pass: " P; echo
-            echo -e "ctrl_interface=/var/run/wpa_supplicant\nap_scan=1\nnetwork={\n  ssid=\"$S\"\n  psk=\"$P\"\n  key_mgmt=WPA-PSK\n}">/tmp/wpa.conf
-            mkdir -p /var/run/wpa_supplicant; killall wpa_supplicant 2>/dev/null
-            wpa_supplicant -B -i $W -c /tmp/wpa.conf -Dnl80211,wext
-            echo -n "Connecting"; for i in 1 2 3 4 5 6 7 8; do sleep 1; echo -n "."; iw dev $W link 2>/dev/null|grep -q Connected&&break; done; echo
-            udhcpc -i $W -qn -t5 2>&1|grep -v sending
-            ping -c2 -W2 8.8.8.8>/dev/null 2>&1&&echo "✓ Connected: $(ip -4 a show $W|grep inet|awk '\''{print $2}'\''|cut -d/ -f1)"||(echo "✗ Failed";killall wpa_supplicant 2>/dev/null)
-          }
-          
-          install() {
-            ping -c2 -W2 8.8.8.8>/dev/null 2>&1||{ echo "✗ No internet. Run: wifi or eth"; return 1; }
-            echo "✓ Internet OK"; lsblk -do NAME,SIZE,TYPE|grep disk
-            read -p "Disk (sda/vda/nvme0n1): " D; D="/dev/$D"; [ ! -b "$D" ]&&echo "✗ Not found"&&return 1
-            echo "⚠ ERASE ALL DATA ON $D ⚠"; read -p "Type YES: " C; [ "$C" != "YES" ]&&return 1
-            echo "[1/6] Partition"; parted -s $D mklabel gpt mkpart ESP fat32 1M 513M mkpart primary ext4 513M 100% set 1 esp on
-            echo "[2/6] Format"; mkfs.vfat -F32 ${D}1>/dev/null 2>&1; mkfs.ext4 -F ${D}2>/dev/null 2>&1
-            echo "[3/6] Mount"; mount ${D}2 /mnt; mkdir -p /mnt/boot/efi; mount ${D}1 /mnt/boot/efi
-            echo "[4/6] Download"; U="https://sourceforge.net/projects/wolfos/files/gaming/base"
-            L=$(wget -qO- --timeout=10 $U|grep -oP "cybr-base-v\d+"|sort -V|tail -1)
-            [ -z "$L" ]&&echo "✗ Failed"&&umount -R /mnt&&return 1
-            echo "Latest: $L"; wget -qO /tmp/base.sq "$U/$L.squashfs/download"||{ echo "✗ Download fail"; umount -R /mnt; return 1; }
-            echo "[5/6] Extract"; unsquashfs -f -d /mnt /tmp/base.sq>/dev/null 2>&1||{ echo "✗ Extract fail"; umount -R /mnt; return 1; }
-            echo "[6/6] Bootloader"; mount --bind /dev /mnt/dev; mount --bind /proc /mnt/proc; mount --bind /sys /mnt/sys
-            chroot /mnt grub-install --target=x86_64-efi --efi-directory=/boot/efi --bootloader-id=Cybr $D>/dev/null 2>&1
-            chroot /mnt update-grub>/dev/null 2>&1; umount /mnt/{dev,proc,sys}; sync; umount -R /mnt
-            echo ""; echo "✓ Done! Type: reboot"
-          }
-          
-          eth_setup>/dev/null 2>&1&&echo "Ethernet connected"
-          while true; do read -p "cybr> " c; case $c in wifi)wifi_setup;;eth)eth_setup;;install)install;;shell)exec /bin/sh;;reboot)sync;reboot -f;;*)echo "wifi, eth, install, shell, reboot";;esac; done
-          INIT
-          chmod +x initramfs/init
-          
-          cd initramfs && find .|cpio -oH newc|gzip -9>/tmp/initrd.gz && cd /tmp
-          echo "ISO sizes: vmlinuz=$(stat -c%s vmlinuz|awk '\''{print int($1/1024/1024)}'\''|head -1)MB initrd=$(stat -c%s initrd.gz|awk '\''{print int($1/1024)}'\''|head -1)KB"
-          
-          # Build ISO
+          # Build tiny ISO
           mkdir -p /w/iso/{boot,isolinux,EFI/BOOT}
           cp vmlinuz initrd.gz /w/iso/boot/
-          echo -e "DEFAULT linux\nLABEL linux\n  KERNEL /boot/vmlinuz\n  APPEND initrd=/boot/initrd.gz quiet">/w/iso/isolinux/isolinux.cfg
+          echo -e "DEFAULT linux\nLABEL linux\nKERNEL /boot/vmlinuz\nAPPEND initrd=/boot/initrd.gz">/w/iso/isolinux/isolinux.cfg
           cp /usr/lib/ISOLINUX/isolinux.bin /w/iso/isolinux/
-          cp /usr/lib/syslinux/modules/bios/{ldlinux,libcom32,libutil}.c32 /w/iso/isolinux/
-          echo -e "set timeout=5\nset default=0\nmenuentry \"Cybr\" {\n  linux /boot/vmlinuz quiet\n  initrd /boot/initrd.gz\n}">/w/iso/EFI/BOOT/grub.cfg
-          grub-mkstandalone --format=x86_64-efi --output=/w/iso/EFI/BOOT/BOOTX64.EFI --locales="" --fonts="" "boot/grub/grub.cfg=/w/iso/EFI/BOOT/grub.cfg"
-          dd if=/dev/zero of=/w/efiboot.img bs=1M count=10 2>/dev/null
-          mkfs.vfat /w/efiboot.img>/dev/null 2>&1
-          mmd -i /w/efiboot.img ::/EFI ::/EFI/BOOT
-          mcopy -i /w/efiboot.img /w/iso/EFI/BOOT/BOOTX64.EFI ::/EFI/BOOT/
-          xorriso -as mkisofs -o "/w/${ISO_NAME}.iso" -isohybrid-mbr /usr/lib/ISOLINUX/isohdpfx.bin -c isolinux/boot.cat -b isolinux/isolinux.bin -no-emul-boot -boot-load-size 4 -boot-info-table -eltorito-alt-boot -e --interval:appended_partition_2:all:: -no-emul-boot -isohybrid-gpt-basdat -append_partition 2 C12A7328-F81F-11D2-BA4B-00A0C93EC93B /w/efiboot.img /w/iso/ 2>&1|grep -v "xorriso :"
-          echo "Final ISO: $(stat -c%s /w/${ISO_NAME}.iso|awk '\''{print int($1/1024/1024)}'\''|head -1)MB"
+          cp /usr/lib/syslinux/modules/bios/ldlinux.c32 /w/iso/isolinux/
+          echo -e "set timeout=3\nmenuentry \"Cybr\" {\nlinux /boot/vmlinuz\ninitrd /boot/initrd.gz\n}">/w/iso/EFI/BOOT/grub.cfg
+          grub-mkstandalone --format=x86_64-efi --output=/w/iso/EFI/BOOT/BOOTX64.EFI --locales="" --fonts="" "boot/grub/grub.cfg=/w/iso/EFI/BOOT/grub.cfg" 2>/dev/null
+          dd if=/dev/zero of=/w/efi.img bs=1M count=4 2>/dev/null
+          mkfs.vfat /w/efi.img>/dev/null 2>&1
+          mmd -i /w/efi.img ::/EFI ::/EFI/BOOT
+          mcopy -i /w/efi.img /w/iso/EFI/BOOT/BOOTX64.EFI ::/EFI/BOOT/
+          xorriso -as mkisofs -o "/w/${ISO_NAME}.iso" -isohybrid-mbr /usr/lib/ISOLINUX/isohdpfx.bin -c isolinux/boot.cat -b isolinux/isolinux.bin -no-emul-boot -boot-load-size 4 -boot-info-table -eltorito-alt-boot -e --interval:appended_partition_2:all:: -no-emul-boot -isohybrid-gpt-basdat -append_partition 2 C12A7328-F81F-11D2-BA4B-00A0C93EC93B /w/efi.img /w/iso/ 2>&1|grep -E "ISO image|Final"
+          echo "ISO: $(($(stat -c%s /w/${ISO_NAME}.iso)/1024/1024))MB"
           '
             -eltorito-alt-boot \
             -e --interval:appended_partition_2:all:: \
