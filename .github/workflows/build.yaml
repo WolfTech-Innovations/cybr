@@ -196,8 +196,8 @@ jobs:
           [ -f iso/EFI/BOOT/BOOTX64.EFI ]&&cat>>iso/boot/grub/grub.cfg<<G
           menuentry "iPXE" {chainloader /EFI/BOOT/BOOTX64.EFI}
           G
-          dd if=/dev/zero of=efi.img bs=1M count=10 2>/dev/null;mkfs.vfat efi.img>/dev/null 2>&1
-          mmd -i efi.img ::/EFI ::/EFI/BOOT;mcopy -i efi.img iso/EFI/BOOT/BOOTX64.EFI ::/EFI/BOOT/
+          dd if=/dev/zero of iso/efi.img bs=1M count=10 2>/dev/null;mkfs.vfat iso/efi.img>/dev/null 2>&1
+          mmd -i iso/efi.img ::/EFI ::/EFI/BOOT;mcopy -i iso/efi.img iso/EFI/BOOT/BOOTX64.EFI ::/EFI/BOOT/
           xorriso -as mkisofs -o "/w/${ISO}.iso" -isohybrid-mbr /usr/lib/ISOLINUX/isohdpfx.bin \
             -c isolinux/boot.cat -b isolinux/isolinux.bin -no-emul-boot -boot-load-size 4 \
             -boot-info-table -eltorito-alt-boot -e efi.img -no-emul-boot -isohybrid-gpt-basdat iso/ 2>&1|tail -3
