@@ -1,0 +1,407 @@
+name: "Lebnix Build"
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main, develop]
+  schedule:
+    - cron: '0 2 * * 0'
+
+jobs:
+  build-and-upload:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Free disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache
+          sudo docker system prune -af --volumes
+
+      - name: Create build script
+        run: |
+          cat > build.sh << 'BUILD_SCRIPT_EOF'
+          #!/bin/bash
+          set -ex
+          export DEBIAN_FRONTEND=noninteractive
+          
+          # Install live-build
+          apt-get update && apt-get install -y \
+            live-build debootstrap xorriso git
+          
+          cd /w
+          ISO="lebnix-v${RUN_NUM}"
+          
+          echo "=== Configuring live-build ==="
+          
+          # Initialize live-build
+          lb config \
+            --distribution bookworm \
+            --architectures amd64 \
+            --archive-areas "main contrib non-free non-free-firmware" \
+            --debian-installer live \
+            --debian-installer-gui false \
+            --binary-images iso-hybrid \
+            --mode debian \
+            --system live \
+            --bootappend-live "boot=live components quiet splash" \
+            --bootappend-install "auto=true priority=critical" \
+            --iso-application "Lebnix" \
+            --iso-volume "LEBNIX"
+          
+          echo "=== Adding packages ==="
+          
+          # Create package list for live system
+          mkdir -p config/package-lists
+          cat > config/package-lists/lxde.list.chroot << 'PACKAGES'
+          # Base system
+          linux-image-amd64
+          firmware-linux
+          systemd
+          sudo
+          network-manager
+          wpasupplicant
+          wget
+          
+          # LXDE Desktop
+          lxde-core
+          lxdm
+          xorg
+          xserver-xorg
+          
+          # Boot splash
+          plymouth
+          plymouth-themes
+          
+          # Applications
+          firefox-esr
+          pcmanfm
+          lxterminal
+          gparted
+          
+          # File systems
+          ntfs-3g
+          e2fsprogs
+          
+          # Editors
+          nano
+          vim
+          
+          # Boot loader
+          grub-efi-amd64
+          grub-pc-bin
+          PACKAGES
+          
+          echo "=== Creating preseed file ==="
+          
+          # Create preseed for automated installation
+          mkdir -p config/includes.installer
+          cat > config/includes.installer/preseed.cfg << 'PRESEED'
+          ### Localization
+          d-i debian-installer/locale string en_US.UTF-8
+          d-i keyboard-configuration/xkb-keymap select us
+          
+          ### Network configuration
+          d-i netcfg/choose_interface select auto
+          d-i netcfg/get_hostname string lebnix
+          d-i netcfg/get_domain string localdomain
+          d-i netcfg/wireless_wep string
+          
+          ### Mirror settings
+          d-i mirror/country string manual
+          d-i mirror/http/hostname string deb.debian.org
+          d-i mirror/http/directory string /debian
+          d-i mirror/http/proxy string
+          
+          ### Account setup
+          d-i passwd/user-fullname string Lebnix User
+          d-i passwd/username string lebnix
+          d-i passwd/user-password password lebnix
+          d-i passwd/user-password-again password lebnix
+          d-i passwd/user-default-groups string audio cdrom video sudo netdev plugdev
+          d-i passwd/root-password password root
+          d-i passwd/root-password-again password root
+          
+          ### Clock and time zone setup
+          d-i clock-setup/utc boolean true
+          d-i time/zone string US/Eastern
+          d-i clock-setup/ntp boolean true
+          
+          ### Partitioning
+          d-i partman-auto/method string regular
+          d-i partman-auto/choose_recipe select atomic
+          d-i partman-lvm/device_remove_lvm boolean true
+          d-i partman-md/device_remove_md boolean true
+          d-i partman-lvm/confirm boolean true
+          d-i partman-lvm/confirm_nooverwrite boolean true
+          d-i partman-auto-lvm/guided_size string max
+          d-i partman-partitioning/confirm_write_new_label boolean true
+          d-i partman/choose_partition select finish
+          d-i partman/confirm boolean true
+          d-i partman/confirm_nooverwrite boolean true
+          d-i partman/mount_style select uuid
+          
+          ### Base system installation
+          d-i base-installer/install-recommends boolean true
+          d-i base-installer/kernel/image string linux-image-amd64
+          
+          ### Apt setup
+          d-i apt-setup/non-free boolean true
+          d-i apt-setup/contrib boolean true
+          
+          ### Package selection
+          tasksel tasksel/first multiselect standard
+          d-i pkgsel/include string lxde-core lxdm firefox-esr plymouth plymouth-themes wget
+          d-i pkgsel/upgrade select full-upgrade
+          popularity-contest popularity-contest/participate boolean false
+          
+          ### Boot loader installation
+          d-i grub-installer/only_debian boolean true
+          d-i grub-installer/with_other_os boolean true
+          d-i grub-installer/bootdev string default
+          
+          ### Finishing up the installation
+          d-i finish-install/reboot_in_progress note
+          d-i cdrom-detect/eject boolean false
+          
+          ### Post-install configuration
+          d-i preseed/late_command string \
+            in-target sed -i 's/# autologin=dgod/autologin=lebnix/' /etc/lxdm/lxdm.conf; \
+            in-target systemctl enable lxdm; \
+            in-target systemctl enable NetworkManager; \
+            in-target mkdir -p /usr/share/lebnix; \
+            in-target wget -O /usr/share/lebnix/logo.png https://github.com/WolfTech-Innovations/lebnix/raw/6c4708c0764291a750fc080a06528308e6acf71d/logo.png || true
+          PRESEED
+          
+          echo "=== Creating custom configuration hook ==="
+          
+          # Create hook to customize live system
+          mkdir -p config/hooks/live
+          cat > config/hooks/live/0100-customize.hook.chroot << 'HOOK'
+          #!/bin/bash
+          set -e
+          
+          # Install Plymouth for boot splash
+          apt-get update
+          apt-get install -y plymouth plymouth-themes wget
+          
+          # Download Lebnix watermark
+          mkdir -p /usr/share/lebnix
+          wget -O /usr/share/lebnix/logo.png https://github.com/WolfTech-Innovations/lebnix/raw/6c4708c0764291a750fc080a06528308e6acf71d/logo.png
+          
+          # Create custom Plymouth spinner theme
+          mkdir -p /usr/share/plymouth/themes/lebnix-spinner
+          
+          # Create Plymouth theme configuration
+          cat > /usr/share/plymouth/themes/lebnix-spinner/lebnix-spinner.plymouth << 'PLYMOUTH_THEME'
+          [Plymouth Theme]
+          Name=Lebnix Spinner
+          Description=Lebnix boot splash with spinner
+          ModuleName=script
+          
+          [script]
+          ImageDir=/usr/share/plymouth/themes/lebnix-spinner
+          ScriptFile=/usr/share/plymouth/themes/lebnix-spinner/lebnix-spinner.script
+          PLYMOUTH_THEME
+          
+          # Create Plymouth script
+          cat > /usr/share/plymouth/themes/lebnix-spinner/lebnix-spinner.script << 'PLYMOUTH_SCRIPT'
+          # Lebnix Plymouth Theme Script
+          
+          # Background
+          Window.SetBackgroundTopColor(0.00, 0.00, 0.00);
+          Window.SetBackgroundBottomColor(0.00, 0.00, 0.00);
+          
+          # Logo
+          logo.image = Image("watermark.png");
+          logo.sprite = Sprite(logo.image);
+          logo.opacity_angle = 0;
+          
+          # Center logo
+          logo.x = Window.GetX() + Window.GetWidth() / 2 - logo.image.GetWidth() / 2;
+          logo.y = Window.GetY() + Window.GetHeight() / 2 - logo.image.GetHeight() / 2 - 100;
+          logo.sprite.SetPosition(logo.x, logo.y, 0);
+          
+          # Spinner
+          for (i = 0; i < 32; i++) {
+              spinner_image[i] = Image("spinner-" + i + ".png");
+          }
+          
+          spinner.sprite = Sprite();
+          spinner.frame = 0;
+          
+          spinner.x = Window.GetX() + Window.GetWidth() / 2 - spinner_image[0].GetWidth() / 2;
+          spinner.y = logo.y + logo.image.GetHeight() + 50;
+          spinner.sprite.SetPosition(spinner.x, spinner.y, 1);
+          
+          # Progress callback
+          fun progress_callback(duration, progress) {
+              spinner.frame = Math.Int(progress * 32) % 32;
+              spinner.sprite.SetImage(spinner_image[spinner.frame]);
+          }
+          
+          Plymouth.SetRefreshFunction(progress_callback);
+          
+          # Message
+          message_sprite = Sprite();
+          message_sprite.SetPosition(10, 10, 10000);
+          
+          fun message_callback(text) {
+              message_image = Image.Text(text, 1, 1, 1);
+              message_sprite.SetImage(message_image);
+          }
+          
+          Plymouth.SetMessageFunction(message_callback);
+          PLYMOUTH_SCRIPT
+          
+          # Copy watermark to theme directory
+          cp /usr/share/lebnix/logo.png /usr/share/plymouth/themes/lebnix-spinner/watermark.png
+          
+          # Copy spinner images from spinner theme (we'll use the default spinner images)
+          if [ -d /usr/share/plymouth/themes/spinner ]; then
+              cp /usr/share/plymouth/themes/spinner/spinner-*.png /usr/share/plymouth/themes/lebnix-spinner/ 2>/dev/null || true
+          fi
+          
+          # Set Lebnix spinner as default Plymouth theme
+          update-alternatives --install /usr/share/plymouth/themes/default.plymouth default.plymouth /usr/share/plymouth/themes/lebnix-spinner/lebnix-spinner.plymouth 100
+          update-alternatives --set default.plymouth /usr/share/plymouth/themes/lebnix-spinner/lebnix-spinner.plymouth
+          
+          # Configure GRUB branding
+          cat >> /etc/default/grub << 'GRUB_CONFIG'
+          
+          # Lebnix GRUB Branding
+          GRUB_DISTRIBUTOR="Lebnix"
+          GRUB_TIMEOUT=5
+          GRUB_CMDLINE_LINUX_DEFAULT="quiet splash"
+          GRUB_CMDLINE_LINUX=""
+          GRUB_GFXMODE=1024x768
+          GRUB_BACKGROUND=/usr/share/lebnix/grub-background.png
+          GRUB_CONFIG
+          
+          # Create GRUB background (simple black background with logo)
+          # We'll create a simple text-based one since we can't easily generate images
+          # The watermark will be displayed by Plymouth instead
+          
+          # Configure LXDM auto-login for live system
+          sed -i 's/# autologin=dgod/autologin=user/' /etc/lxdm/lxdm.conf
+          
+          # Enable services
+          systemctl enable lxdm || true
+          systemctl enable NetworkManager || true
+          systemctl enable plymouth || true
+          
+          # Create live user
+          if ! id -u user >/dev/null 2>&1; then
+            useradd -m -s /bin/bash -G sudo,audio,video,netdev,plugdev user
+            echo "user:live" | chpasswd
+          fi
+          
+          # Configure sudoers for live user
+          echo "user ALL=(ALL) NOPASSWD: ALL" > /etc/sudoers.d/live-user
+          chmod 440 /etc/sudoers.d/live-user
+          
+          # Set hostname
+          echo "lebnix-live" > /etc/hostname
+          
+          # Create OS release
+          cat > /etc/os-release << 'EOF'
+          NAME="Lebnix"
+          ID=lebnix
+          ID_LIKE=debian
+          VERSION_ID="1.0"
+          PRETTY_NAME="Lebnix - Little Debian Linux"
+          HOME_URL="https://lebnix.org"
+          SUPPORT_URL="https://github.com/WolfTech-Innovations/lebnix/issues"
+          BUG_REPORT_URL="https://github.com/WolfTech-Innovations/lebnix/issues"
+          EOF
+          
+          # Create issue file for login screen
+          cat > /etc/issue << 'EOF'
+          Lebnix \r (\l)
+          Little Debian Linux
+          
+          EOF
+          
+          # Create motd
+          cat > /etc/motd << 'EOF'
+          
+           _          _           _      
+          | |    ___ | |__  _ __ (_)_  __
+          | |   / _ \| '_ \| '_ \| \ \/ /
+          | |__|  __/| |_) | | | | |>  < 
+          |_____\___||_.__/|_| |_|_/_/\_\
+          
+          Little Debian Linux
+          
+          Welcome to Lebnix!
+          
+          EOF
+          HOOK
+          
+          chmod +x config/hooks/live/0100-customize.hook.chroot
+          
+          echo "=== Building ISO ==="
+          
+          # Build the ISO
+          lb build 2>&1 | tee build.log
+          
+          # Find the generated ISO
+          if [ -f live-image-amd64.hybrid.iso ]; then
+            mv live-image-amd64.hybrid.iso "${ISO}.iso"
+            
+            # Generate checksum
+            sha256sum "${ISO}.iso" > "${ISO}.iso.sha256"
+            
+            echo ""
+            echo "═══ Build Complete ═══"
+            ls -lh "${ISO}.iso"
+          else
+            echo "ERROR: ISO file not found!"
+            exit 1
+          fi
+          BUILD_SCRIPT_EOF
+          
+          chmod +x build.sh
+
+      - name: Run build in Docker
+        run: |
+          docker run --rm --privileged \
+            -v "$PWD:/w" \
+            -e RUN_NUM="${{ github.run_number }}" \
+            debian:bookworm \
+            /w/build.sh
+
+      - name: Upload to SourceForge
+        if: github.event_name == 'workflow_dispatch' || github.ref == 'refs/heads/main'
+        env:
+          SF_USER: ${{ secrets.SF_USER }}
+          SF_PASS: ${{ secrets.SF_PASS }}
+        run: |
+          # Skip upload if secrets aren't configured
+          if [ -z "$SF_USER" ] || [ -z "$SF_PASS" ]; then
+            echo "SourceForge credentials not configured. Skipping upload."
+            exit 0
+          fi
+          
+          sudo apt-get update
+          sudo apt-get install -y sshpass rsync
+          
+          for iso_file in *.iso; do
+            [ -f "$iso_file" ] || continue
+            echo "Uploading $iso_file to SourceForge..."
+            for attempt in 1 2 3; do
+              if sshpass -p "$SF_PASS" rsync -avP \
+                -e "ssh -o StrictHostKeyChecking=no" \
+                "$iso_file" \
+                "$SF_USER@frs.sourceforge.net:/home/frs/project/lebnix/releases/"; then
+                echo "Successfully uploaded $iso_file"
+                break
+              else
+                echo "Upload attempt $attempt failed, retrying in 30s..."
+                sleep 30
+              fi
+            done
+          done
