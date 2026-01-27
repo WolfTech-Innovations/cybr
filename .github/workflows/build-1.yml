@@ -385,7 +385,7 @@ jobs:
               if sshpass -p "$SF_PASS" rsync -avP \
                 -e "ssh -o StrictHostKeyChecking=no" \
                 "$iso_file" \
-                "$SF_USER@frs.sourceforge.net:/home/frs/project/lebnix/releases/"; then
+                "$SF_USER@frs.sourceforge.net:/home/frs/project/wolfos/"; then
                 echo "Successfully uploaded $iso_file"
                 break
               else
