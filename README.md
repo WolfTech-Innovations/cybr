@@ -55,17 +55,6 @@ Create a bootable USB drive using:
 - **Windows**: Rufus or Etcher
 - **Linux/macOS**: Etcher or `dd`
 
-### Step 3: Boot from USB
-1. Boot your device from the USB drive
-2. Select "Cybr K9 Live" from GRUB menu
-3. K9 Desktop Environment will start automatically
-
-### Step 4: Live System
-The ISO boots into a fully functional live system:
-- All changes are stored in RAM (non-persistent)
-- Perfect for testing before installation
-- Full K9 desktop experience
-- Network connectivity available
 
 ## Default Credentials
 
