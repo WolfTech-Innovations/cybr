@@ -1,5 +1,5 @@
 # Welcome to Lebnix: Little Debian Linux
-![Logo]()
+![Logo](https://github.com/WolfTech-Innovations/lebnix/blob/6c4708c0764291a750fc080a06528308e6acf71d/logo.png)
 ## Credits
 
 Lebnix LXDE is built on amazing open source projects:
